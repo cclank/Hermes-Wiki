@@ -1,0 +1,9 @@
+# Raw sources (optional, can be large)
+# raw/
+
+# Topic tracker (internal)
+_topic_tracker.json
+
+# OS files
+.DS_Store
+Thumbs.db
