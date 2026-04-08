@@ -4,7 +4,7 @@ created: 2026-04-08
 updated: 2026-04-08
 type: concept
 tags: [architecture, module, component, agent, context-compression]
-sources: [agent/context_compressor.py]
+sources: [agent/context_compressor.py, run_agent.py, hermes_state.py]
 ---
 
 # Context Compressor — 上下文压缩架构
@@ -210,6 +210,79 @@ else:
 # 如果两种角色都会造成冲突 → 合并到第一条尾部消息中
 ```
 
+## 上下文管理全景
+
+### 无限轮对话
+
+Hermes **不限制对话轮数**。没有 `max_history`、没有固定轮数截断。全部对话历史保留在内存中，靠压缩器循环压缩维持：
+
+```text
+对话开始 → 消息累积 → 达到上下文窗口 50% → 自动压缩
+                                              │
+                                        修剪 + 摘要 + 重组
+                                              │
+                                        继续累积 → 再次达到 50% → 再次压缩 → ...
+```
+
+理论上可以无限对话。每次压缩生成迭代更新的摘要，不是从头重新摘要。
+
+### Session 分裂
+
+压缩时会**拆分 session**，目的是保留完整原始消息供 `session_search` 日后检索。
+
+```text
+压缩前:
+  session "abc" (DB 中已有 msg 0-49 完整原始消息)
+  内存中 msg 2-40 即将被压缩成摘要
+
+压缩后:
+  session "abc" (结束, reason="compression")
+    → DB 中 msg 0-49 完整保留 ← session_search 可搜到原始内容
+
+  session "abc-2" (新建, parent_session_id="abc")
+    → 摘要 + 尾部消息 + 后续新消息
+    → _last_flushed_db_idx 重置为 0
+
+多次压缩形成链:
+  abc → abc-2 → abc-3 → ...
+  每一段都是完整的，通过 parent_session_id 链保持血缘
+```
+
+**为什么不原地替换？** 如果把压缩后的消息覆盖回同一个 session，DB 里前半段是原始消息、后半段是摘要，session_search 搜到的是不一致的数据。分裂保证每个 session 片段内容完整一致。
+
+### 消息持久化机制
+
+消息**不是实时逐条写入 DB**，而是在退出点批量 flush：
+
+```python
+def _flush_messages_to_session_db(self, messages, conversation_history):
+    # 增量写入：从上次水位线开始，只写新增消息
+    flush_from = max(start_idx, self._last_flushed_db_idx)
+    for msg in messages[flush_from:]:
+        db.append_message(session_id, role, content, ...)
+    self._last_flushed_db_idx = len(messages)  # 更新水位线
+```
+
+**触发时机**（代码中 20 个调用点，覆盖所有退出路径）：
+
+| 场景 | 保证 |
+|------|------|
+| 对话正常完成 | ✅ 写入 |
+| API 错误 max retry 耗尽 | ✅ 放弃前写入 |
+| 用户中断（Ctrl+C） | ✅ 中断前写入 |
+| Rate limit 等待中被中断 | ✅ 写入 |
+| 413/context overflow 压缩失败 | ✅ 写入 |
+| 工具执行异常 | ✅ 写入 |
+| Fallback provider 全部失败 | ✅ 写入 |
+
+**水位线防重复**：`_last_flushed_db_idx` 记录已写入位置。即使多个退出路径重复调用 `_persist_session()`，同一条消息不会写入两次（修复了 issue #860）。
+
+```text
+第一次 flush:  messages[0:15] → DB,  水位线 = 15
+第二次 flush:  messages[15:23] → DB, 水位线 = 23
+第三次 flush:  messages[23:23] → 跳过（无新消息）
+```
+
 ## 设计优越性
 
 ### 对比丢弃旧消息
@@ -287,3 +360,5 @@ while api_call_count < max_iterations and iteration_budget.remaining > 0:
 - [[prompt-builder-architecture]] — 压缩后的消息传给 prompt builder 重建提示
 - [[prompt-caching-optimization]] — 压缩策略与 prompt caching 协调
 - [[large-tool-result-handling]] — 工具输出修剪与大型结果处理理念相通
+- [[session-search-and-sessiondb]] — Session 分裂后原始消息保留在 DB 中供检索
+- [[memory-system-architecture]] — 压缩前 flush_memories 和 on_pre_compress 通知
