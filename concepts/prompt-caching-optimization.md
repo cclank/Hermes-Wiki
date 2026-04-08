@@ -1,214 +1,146 @@
 ---
-title: Prompt 缓存优化与 Anthropic 适配
+title: Prompt Caching 优化架构
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-08
 type: concept
-tags: [architecture, performance, cost-optimization, anthropic]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+tags: [architecture, module, performance, cost-optimization, anthropic]
+sources: [agent/prompt_caching.py, run_agent.py]
 ---
 
-# Prompt 缓存优化与 Anthropic 适配
+# Prompt Caching — Anthropic 缓存优化架构
 
-## 设计原理
+## 概述
 
-Anthropic Claude 模型支持 **Prompt Caching**，可以缓存对话历史的前缀，大幅降低多轮对话的输入成本。Hermes 实现了智能的 `system_and_3` 缓存策略，在最多 4 个断点处设置缓存控制。
+Prompt Caching 位于 `agent/prompt_caching.py`（2KB/72行），实现 **Anthropic `system_and_3` 缓存策略**，在多轮对话中减少约 75% 的输入 token 成本。
 
-## system_and_3 缓存策略
+核心理念：**最多 4 个 cache_control 断点 — 系统提示 + 最后 3 条非系统消息。**
+
+## 架构原理
+
+### system_and_3 策略
+
+Anthropic 的 prompt cache 允许在消息中标记 `cache_control` 断点。断点前的内容会被缓存，后续请求命中缓存时只收取极低的 cache_read 费用（约为正常费用的 10%）。
+
+Anthropic 限制**最多 4 个断点**，Hermes 的分配策略：
+
+| 断点 | 位置 | 缓存内容 | 稳定性 |
+|---|---|---|---|
+| 1 | 系统提示 | 身份 + 平台提示 + 技能索引 | 最高（跨所有轮次不变） |
+| 2 | 倒数第 3 条消息 | 早期对话内容 | 高（前 2 轮不变） |
+| 3 | 倒数第 2 条消息 | 中期对话内容 | 中（前 1 轮不变） |
+| 4 | 最后 1 条消息 | 最近的对话内容 | 低（每轮滚动） |
+
+### 滚动窗口机制
 
 ```
-对话结构：
-[系统提示] ← 断点 1（所有轮次相同）
-[用户消息 1]
-[助手回复 1] ← 断点 2（滚动窗口）
-[用户消息 2]
-[助手回复 2] ← 断点 3（滚动窗口）
-[用户消息 3]
-[助手回复 3] ← 断点 4（滚动窗口）
-[用户消息 4] ← 最新（无缓存，每次重新计算）
+轮次 1: [系统提示★] [用户1★] [助手1] [助手2]
+                        ↑断点2 ↑断点3  ↑断点4
+
+轮次 2: [系统提示★] [用户1] [助手1★] [用户2★] [助手2★]
+                        ↑新断点2 ↑新断点3 ↑新断点4
+
+轮次 3: [系统提示★] [用户1] [助手1] [用户2] [助手2★] [用户3★] [助手3★]
+                                                      ↑新断点2 ↑新断点3 ↑新断点4
 ```
 
-### 核心实现
+★ = cache_control 标记。每次新请求时，断点窗口向后滚动。
+
+## 核心组件
+
+### 1. cache_control 标记注入
+
+```python
+def _apply_cache_marker(msg, cache_marker, native_anthropic=False):
+    """
+    处理所有消息格式变体:
+    
+    1. tool 角色 → 只在 native_anthropic 模式下标记
+    2. 空内容 → 直接在消息级别标记
+    3. 字符串内容 → 转换为 [{"type": "text", "text": ..., "cache_control": ...}]
+    4. 列表内容 → 在最后一个元素上添加 cache_control
+    """
+```
+
+**设计考量**：Anthropic API 接受多种消息格式（字符串、对象列表、工具结果），`_apply_cache_marker` 统一处理所有格式。
+
+### 2. 主函数
 
 ```python
 def apply_anthropic_cache_control(
-    api_messages: List[Dict],
-    cache_ttl: str = "5m",      # 默认 5 分钟 TTL
-    native_anthropic: bool = False,
-) -> List[Dict]:
-    """应用 system_and_3 缓存策略"""
-    
-    messages = copy.deepcopy(api_messages)
-    marker = {"type": "ephemeral"}
-    if cache_ttl == "1h":
-        marker["ttl"] = "1h"
-    
-    breakpoints_used = 0
-    
-    # 断点 1：系统提示（所有轮次稳定）
-    if messages[0].get("role") == "system":
-        _apply_cache_marker(messages[0], marker, native_anthropic)
-        breakpoints_used += 1
-    
-    # 断点 2-4：最后 3 个非系统消息（滚动窗口）
-    remaining = 4 - breakpoints_used  # Anthropic 最多 4 个断点
-    non_sys = [i for i in range(len(messages)) if messages[i].get("role") != "system"]
-    for idx in non_sys[-remaining:]:
-        _apply_cache_marker(messages[idx], marker, native_anthropic)
-    
-    return messages
+    api_messages,
+    cache_ttl="5m",        # 缓存 TTL: 5分钟 或 1小时
+    native_anthropic=False # 是否使用原生 Anthropic 格式
+):
+    """
+    1. 深拷贝消息（不修改原始数据）
+    2. 创建 marker: {"type": "ephemeral"} 或 {"type": "ephemeral", "ttl": "1h"}
+    3. 系统提示添加断点（如果是第一条消息）
+    4. 从后向前找最后 3 条非系统消息，添加断点
+    5. 返回标记后的消息列表
+    """
 ```
 
-### 缓存标记应用
+### 3. 不同角色的处理
+
+| 角色 | 缓存策略 |
+|---|---|
+| system | 始终标记（最稳定的缓存点） |
+| tool | 仅 native_anthropic 模式下在消息级别标记 |
+| assistant/user | 在 content 的最后一个元素上标记 |
+
+## TTL 配置
 
 ```python
-def _apply_cache_marker(msg: dict, cache_marker: dict, native_anthropic: bool = False):
-    """为消息添加 cache_control 标记"""
-    
-    role = msg.get("role", "")
-    content = msg.get("content")
-    
-    if role == "tool":
-        if native_anthropic:
-            msg["cache_control"] = cache_marker
-        return
-    
-    if content is None or content == "":
-        msg["cache_control"] = cache_marker
-        return
-    
-    if isinstance(content, str):
-        # 字符串内容 → 转换为数组格式
-        msg["content"] = [
-            {"type": "text", "text": content, "cache_control": cache_marker}
-        ]
-        return
-    
-    if isinstance(content, list) and content:
-        # 多部分内容 → 标记最后一部分
-        last = content[-1]
-        if isinstance(last, dict):
-            last["cache_control"] = cache_marker
+marker = {"type": "ephemeral"}         # 默认: 5 分钟 TTL
+marker = {"type": "ephemeral", "ttl": "1h"}  # 1 小时 TTL
 ```
 
-## 自动启用条件
+**使用场景**：
+- **5m（默认）**：适合快速连续对话，缓存命中率高
+- **1h**：适合长时间对话间隔，容忍更高的缓存未命中
+
+## 成本效益
+
+假设系统提示 2000 tokens，每次对话平均 5000 tokens：
+
+| 场景 | 无缓存成本 | 缓存命中成本 | 节省 |
+|---|---|---|---|
+| 单轮（系统提示 + 1 条消息） | ~7000 tokens × 价格 | ~2000 tokens × cache_read + 5000 × 正常 | ~70% |
+| 10 轮对话 | 10 × 7000 = 70K tokens | ~2000 × cache_read + (70K-2000) × 正常 | ~75% |
+| 50 轮对话 | 50 × 7000 = 350K tokens | ~2000 × cache_read + (350K-2000) × 正常 | ~85% |
+
+## 设计优越性
+
+### 对比无缓存方案
+
+| 维度 | 无缓存 | Prompt Caching |
+|---|---|---|
+| 系统提示成本 | 每次付费 | 仅首次付费 |
+| 早期对话成本 | 每次付费 | 命中时仅付 cache_read |
+| 延迟 | 无影响 | 缓存命中时降低 |
+| 代码复杂度 | 低 | 72 行纯函数 |
+| 适用场景 | 所有模型 | 仅 Anthropic 模型 |
+
+### 纯函数设计
 
 ```python
-# run_agent.py __init__()
-is_openrouter = self._is_openrouter_url()
-is_claude = "claude" in self.model.lower()
-is_native_anthropic = self.api_mode == "anthropic_messages"
-
-# 自动启用缓存
-self._use_prompt_caching = (is_openrouter and is_claude) or is_native_anthropic
-self._cache_ttl = "5m"  # 默认 5 分钟 TTL（1.25x 写入成本）
+# 无类状态，无 AIAgent 依赖
+# 输入消息列表 → 输出标记后的消息列表
+# 深拷贝确保不修改原始数据
 ```
 
-### 启用场景
+这使得缓存逻辑可以独立测试，且不影响主对话流程。
 
-| 场景 | 启用缓存 | 原因 |
-|------|----------|------|
-| OpenRouter + Claude | ✅ | OpenRouter 支持 Anthropic 缓存 |
-| 原生 Anthropic API | ✅ | 原生支持 |
-| OpenRouter + GPT | ❌ | OpenAI 不支持此缓存 |
-| 其他提供商 | ❌ | 不兼容 |
+## 集成点
 
-## 缓存 TTL 选择
+Prompt caching 在 `run_agent.py` 的 `_build_api_kwargs()` 中被调用：
+1. 构建完整消息列表
+2. 如果当前 provider 是 Anthropic → 调用 `apply_anthropic_cache_control()`
+3. 如果 `developer_role` 需要切换 → 将 system 消息转为 developer 角色
+4. 发送给 API
 
-```python
-# 5m TTL（默认）
-# 写入成本：1.25x 正常输入
-# 读取成本：0.1x 正常输入（90% 节省）
-# 适用场景：多轮对话，5 分钟内多次调用
+## 与其他系统的关系
 
-# 1h TTL
-# 写入成本：2x 正常输入
-# 读取成本：0.1x 正常输入
-# 适用场景：长时间运行的任务
-```
-
-## 成本优化效果
-
-### 示例：10 轮对话
-
-**无缓存：**
-```
-每轮输入：10,000 tokens
-10 轮总输入：100,000 tokens
-成本：$0.30（假设 $3/MTok）
-```
-
-**有缓存（system_and_3）：**
-```
-第 1 轮：10,000 tokens（写入缓存）→ $0.0375（1.25x）
-第 2 轮：10,000 tokens（写入缓存）→ $0.0375
-第 3 轮：10,000 tokens（写入缓存）→ $0.0375
-第 4-10 轮：每轮 7,500 tokens 读取缓存 → $0.0075 × 7
-第 4-10 轮：每轮 2,500 tokens 新输入 → $0.0075 × 7
-
-总成本：约 $0.15（节省 50%+）
-轮次越多，节省越大
-```
-
-### 实际节省
-
-| 对话轮次 | 无缓存成本 | 有缓存成本 | 节省 |
-|----------|------------|------------|------|
-| 5 轮 | $0.15 | $0.10 | ~33% |
-| 10 轮 | $0.30 | $0.15 | ~50% |
-| 20 轮 | $0.60 | $0.20 | ~67% |
-| 50 轮 | $1.50 | $0.35 | ~77% |
-
-## 与上下文压缩的协同
-
-```python
-# 压缩后重建系统提示 → 缓存失效 → 重新缓存
-if compression_occurred:
-    self._cached_system_prompt = None  # 清除缓存
-    # 下次调用会重建系统提示并重新设置缓存断点
-```
-
-## 与系统提示缓存的协同
-
-```python
-# 系统提示在会话期间保持稳定
-if self._cached_system_prompt is None:
-    self._cached_system_prompt = self._build_system_prompt()
-    # 存储到 SessionDB 以便后续轮次重用
-    self._session_db.update_system_prompt(self.session_id, self._cached_system_prompt)
-else:
-    # 继续会话 → 使用存储的系统提示
-    # 这样 Anthropic 缓存前缀匹配，命中缓存
-    self._cached_system_prompt = stored_prompt
-```
-
-## 与其他 Agent 框架对比
-
-| 特性 | Hermes | Cursor | Claude Desktop |
-|------|--------|--------|----------------|
-| Prompt Caching | ✅ system_and_3 | ✅ 自动 | ✅ 自动 |
-| 可配置 TTL | ✅ 5m/1h | ❌ 固定 | ❌ 固定 |
-| 成本估算 | ✅ 实时显示 | ❌ 无 | ❌ 无 |
-| 压缩后重建 | ✅ 自动清除 | ✅ 自动 | N/A |
-
-## 配置指南
-
-### 启用/禁用
-
-```yaml
-# ~/.hermes/config.yaml
-agent:
-  prompt_caching: true  # 默认启用（Claude 模型）
-  cache_ttl: "5m"       # 或 "1h"
-```
-
-### 环境变量
-
-```bash
-# 无环境变量控制，硬编码在 run_agent.py 中
-```
-
-## 相关文件
-
-- `agent/prompt_caching.py` — 缓存控制实现
-- `run_agent.py` — 自动启用逻辑
-- `agent/context_compressor.py` — 压缩后缓存重建
+- [[model-metadata-and-routing]] — 缓存成本信息来自 models.dev
+- [[auxiliary-client-architecture]] — 辅助模型不使用 prompt caching
+- [[context-compressor-architecture]] — 上下文压缩减少消息数量，间接影响缓存断点位置

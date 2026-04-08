@@ -111,3 +111,14 @@
 - 源码: tools/delegate_tool.py (40KB/978行), batch_runner.py (54KB/1285行), tools/send_message_tool.py (39KB/952行)
 - 核心内容: 分层子代理委派（单任务/并行最多3个），安全沙箱（5类禁止工具+深度限制），凭证继承与池共享，ACP 异构 Agent 编排，批量处理引擎，跨平台消息投递
 - index.md 更新为 35 页
+## [2026-04-08] update | 三专题 wiki 页面创建（Prompt Caching + Smart Model Routing + Hook System）
+- 文件: concepts/prompt-caching-optimization.md (updated)
+  - 源码: agent/prompt_caching.py (2KB/72行)
+  - 核心内容: Anthropic system_and_3 缓存策略，4断点滚动窗口，纯函数设计
+- 文件: concepts/smart-model-routing.md
+  - 源码: agent/model_metadata.py (36KB/941行), agent/models_dev.py (25KB/781行), hermes_cli/model_switch.py (32KB/927行)
+  - 核心内容: 10级上下文长度解析链，models.dev 4000+模型数据库，本地服务器自动探测(4种)，别名系统，token估算
+- 文件: concepts/hook-system-architecture.md
+  - 源码: gateway/hooks.py (170行), hermes_cli/plugins.py (609行)
+  - 核心内容: Gateway Hooks 事件驱动(8种事件+通配符)，Plugin System 三级来源(用户/项目/pip)，PluginContext API(工具注册/消息注入/CLI命令/钩子)，缓存友好上下文注入
+- index.md 更新为 37 页
