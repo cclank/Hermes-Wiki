@@ -1,10 +1,12 @@
 # 📘 Hermes Agent Architecture Wiki
 
-[![Wiki](https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown)](https://github.com/cclank/Hermes-Wiki)
-[![Source](https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github)](https://github.com/NousResearch/hermes-agent)
-[![Knowledge Base](https://img.shields.io/badge/Knowledge_Base-37_pages-orange?style=for-the-badge)](https://github.com/cclank/Hermes-Wiki)
-[![Verified](https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge)](https://github.com/cclank/Hermes-Wiki)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](https://opensource.org/licenses/MIT)
+<div align="center">
+  <img src="https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown" alt="Wiki">
+  <img src="https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github" alt="Source">
+  <img src="https://img.shields.io/badge/Knowledge_Base-37_pages-orange?style=for-the-badge" alt="Knowledge Base">
+  <img src="https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge" alt="Verified">
+  <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License">
+</div>
 
 > 基于 Nous Research [Hermes Agent](https://github.com/NousResearch/hermes-agent) 源码的深度架构文档。
 > 所有页面均经过**逐行源码验证**，确保准确性与时效性。
