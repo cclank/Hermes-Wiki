@@ -3,7 +3,7 @@ title: Gateway Session 会话管理架构
 created: 2026-04-08
 updated: 2026-04-08
 type: concept
-tags: [architecture, module, component, gateway, session-store, platform]
+tags: [architecture, module, component, gateway, session-store, multi-platform]
 sources: [gateway/session.py, gateway/config.py]
 ---
 
@@ -11,7 +11,7 @@ sources: [gateway/session.py, gateway/config.py]
 
 ## 概述
 
-Gateway Session 位于 `gateway/session.py`（41KB/1081行），管理网关的**会话生命周期**：会话上下文追踪、消息持久化、重置策略评估、动态系统提示注入。
+Gateway Session 位于 `gateway/session.py`（44KB/1081行），管理网关的**会话生命周期**：会话上下文追踪、消息持久化、重置策略评估、动态系统提示注入。
 
 核心理念：**每个平台/用户/线程的组合都有独立的会话，会话知道它从哪里来、要到哪里去。**
 
@@ -19,7 +19,7 @@ Gateway Session 位于 `gateway/session.py`（41KB/1081行），管理网关的*
 
 ### 核心数据模型
 
-```
+```text
 SessionSource (消息来源)
     ↓
 SessionContext (完整会话上下文)

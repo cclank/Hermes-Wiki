@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [architecture, credentials, security, isolation]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
 # 凭证池与环境隔离系统
@@ -185,6 +185,12 @@ singularity.py # Singularity 容器隔离
 | OAuth 刷新 | ✅ 自动 | ❌ | ❌ |
 | Profile 隔离 | ✅ HERMES_HOME | ❌ | ❌ |
 | 终端后端隔离 | ✅ 6 种后端 | ❌ | ✅ Docker |
+
+## 相关页面
+
+- [[interrupt-and-fault-tolerance]] — 中断传播与容错机制（凭证轮换逻辑）
+- [[auxiliary-client-architecture]] — 辅助客户端使用凭证池获取认证
+- [[configuration-and-profiles]] — Profile 隔离与凭证管理
 
 ## 相关文件
 

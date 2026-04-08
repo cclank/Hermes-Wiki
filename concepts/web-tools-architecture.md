@@ -11,7 +11,7 @@ sources: [tools/web_tools.py]
 
 ## 概述
 
-Web Tools 位于 `tools/web_tools.py`（85KB/2099行），提供**多后端 Web 搜索/提取/爬取**能力。支持 4 种后端提供商，所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口。
+Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 搜索/提取/爬取**能力。支持 4 种后端提供商，所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口。
 
 核心理念：**内容获取优先于浏览器自动化**——简单信息检索使用 web_search/web_extract（更快、更便宜），仅在需要交互时才使用 browser 工具。
 

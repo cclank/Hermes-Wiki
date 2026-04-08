@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [architecture, tool, reliability, fuzzy-matching]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
 # 模糊匹配引擎 — 8 策略链
@@ -246,6 +246,12 @@ def _unicode_normalize(text: str) -> str:
 | Unicode 规范化 | ✅ | ❌ | ✅ |
 | 相似度匹配 | ✅ | ❌ | ❌ |
 | 位置映射 | ✅ 精确 | N/A | ✅ |
+
+## 相关页面
+
+- [[model-tools-dispatch]] — 工具编排与调度（调用模糊匹配的上层）
+- [[tool-registry-architecture]] — 工具注册系统（文件工具通过 registry 注册）
+- [[skills-system-architecture]] — 技能管理工具中使用模糊匹配
 
 ## 相关文件
 

@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [architecture, cli, terminal, ux]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
 # CLI 架构与终端交互设计
@@ -46,10 +46,10 @@ from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 session = PromptSession(
     history=FileHistory("~/.hermes/input_history"),
     auto_suggest=AutoSuggestFromHistory(),
-    completer=SlashCommandCompleter(),
+    completer=SlashCommandCompleter(),  # 定义在 hermes_cli/commands.py
 )
 
-user_input = session.prompt("🐍 > ")
+user_input = session.prompt(get_active_prompt_symbol())  # 提示符号通过 skin engine 配置
 ```
 
 ### 斜杠命令补全
@@ -73,9 +73,10 @@ class SlashCommandCompleter(Completer):
 class KawaiiSpinner:
     """动画加载指示器"""
     
-    FACES = ["◕‿◕", "◕_◕", "◔‿◔", "⊙‿⊙", "◕︵◕"]
-    VERBS = ["thinking", "processing", "calculating", "pondering", "wondering"]
-    WINGS = ["♪", "♫", "♬", "✧", "✦"]
+    SPINNERS: dict          # 9 种命名动画集 ('dots', 'bounce', 'grow', ...)
+    KAWAII_WAITING: list     # 10 个多字符颜文字
+    KAWAII_THINKING: list    # 15 个多字符颜文字
+    THINKING_VERBS: list    # 15 个动词 ("pondering", "contemplating", "musing", "cogitating", "ruminating", ...)
     
     def show(self, message: str):
         """显示加载动画"""
@@ -103,15 +104,16 @@ def get_cute_tool_message(tool_name: str) -> str:
 
 ```python
 # hermes_cli/skin_engine.py
-class SkinEngine:
-    """CLI 主题引擎"""
-    
-    def __init__(self, skin_config: dict):
-        self.banner_colors = skin_config.get("banner_colors", {})
-        self.spinner_faces = skin_config.get("spinner_faces", KawaiiSpinner.FACES)
-        self.spinner_verbs = skin_config.get("spinner_verbs", KawaiiSpinner.VERBS)
-        self.tool_prefix = skin_config.get("tool_prefix", "┊")
-        self.response_box = skin_config.get("response_box", "rounded")
+@dataclass
+class SkinConfig:
+    """皮肤配置数据类"""
+    ...
+
+# 模块级函数（非类）
+def init_skin_from_config(): ...
+def get_active_skin() -> SkinConfig: ...
+def list_skins() -> list: ...
+def set_active_skin(name: str): ...
 
 # 配置示例
 # ~/.hermes/config.yaml
@@ -131,6 +133,12 @@ display:
 | 动画加载 | ✅ KawaiiSpinner | ✅ 简单 | ✅ 简单 |
 | 主题系统 | ✅ Skin Engine | ❌ | ❌ |
 | 工具调用预览 | ✅ 格式化 | ✅ | ❌ |
+
+## 相关页面
+
+- [[configuration-and-profiles]] — 配置管理与 Profile 系统
+- [[hook-system-architecture]] — Hook 与插件扩展系统
+- [[session-search-and-sessiondb]] — 会话搜索与 SessionDB
 
 ## 相关文件
 

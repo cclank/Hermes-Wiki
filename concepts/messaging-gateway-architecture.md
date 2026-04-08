@@ -4,12 +4,12 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [gateway, architecture, module, telegram, discord, messaging]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
-# Messaging Gateway Architecture
+# 消息网关架构
 
-## Overview
+## 概述
 
 Gateway 是 Hermes Agent 的**统一消息网关**，支持 14+ 消息平台，从单一进程管理所有平台的连接和消息分发。
 
@@ -48,25 +48,52 @@ gateway/
     └── base.py
 ```
 
+## 平台支持
+
+| 平台 | 类型 | 特性 |
+|------|------|------|
+| Telegram | Bot API | 群组/私聊、语音转录、贴纸 |
+| Discord | Bot API | 服务器/私聊、语音频道、Slash Commands |
+| Slack | Bot API | Workspace 集成、Thread 支持 |
+| WhatsApp | Bridge (Node.js) | 群组/私聊、允许列表 |
+| Signal | Bot API | 加密消息 |
+| Email | IMAP/SMTP | 邮件交互 |
+| SMS | Twilio | 短信，字符限制 |
+| Home Assistant | WebSocket | 智能家居事件 |
+| Matrix | E2E 加密 | 去中心化消息 |
+| Mattermost | Bot API | 自托管团队消息 |
+| 钉钉 | Stream | 企业消息 |
+| 飞书/Lark | Stream | 企业消息 |
+| 企业微信 | Stream | 企业微信消息 |
+| Webhook | HTTP | 外部事件接收 |
+
 ## 平台适配器基类
 
 ```python
 # gateway/platforms/base.py
 class BasePlatform:
-    def __init__(self, config):
-        ...
+    """平台适配器基类"""
+    
+    def __init__(self, config: dict, gateway):
+        self.config = config
+        self.gateway = gateway
+        self.platform_name = self.__class__.__name__.lower()
     
     async def start(self):
         """启动平台连接"""
+        raise NotImplementedError
     
     async def stop(self):
         """停止平台连接"""
+        raise NotImplementedError
     
-    async def send_message(self, chat_id, text, ...):
+    async def send_message(self, chat_id: str, text: str, **kwargs):
         """发送消息"""
+        raise NotImplementedError
     
-    async def handle_message(self, event):
+    async def handle_message(self, event: MessageEvent):
         """处理接收消息"""
+        await self.gateway.process_event(event)
 ```
 
 ## 消息处理流程
@@ -91,7 +118,7 @@ GatewayRunner.process_event(event)
 通过平台适配器发送回复
 ```
 
-## Session 管理
+## 会话管理
 
 ```python
 # gateway/session.py
@@ -157,9 +184,24 @@ Agent 响应包含 MEDIA: 路径
 通过平台原生方式发送
 ```
 
-## Gateway 服务管理
+## 网关服务管理
 
 ### Linux (systemd)
+
+```ini
+# ~/.config/systemd/user/hermes-gateway.service
+[Unit]
+Description=Hermes Agent Gateway
+After=network-online.target
+
+[Service]
+ExecStart=/path/to/hermes gateway run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+```
 
 ```bash
 hermes gateway start    # 启动服务
@@ -170,6 +212,26 @@ hermes gateway status   # 检查状态
 服务单元：`hermes-gateway.service` 或 `hermes-gateway-<profile>.service`
 
 ### macOS (launchd)
+
+```xml
+<!-- ~/Library/LaunchAgents/com.nousresearch.hermes-gateway.plist -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nousresearch.hermes-gateway</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/hermes</string>
+        <string>gateway</string>
+        <string>run</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+```
 
 ```bash
 hermes gateway start    # 启动 launchd 服务
@@ -212,6 +274,23 @@ hermes gateway status   # 状态
 - 设备控制
 - 自动化触发
 
+### 与其他 Agent 框架对比
+
+| 特性 | Hermes | OpenClaw | Claude |
+|------|--------|----------|--------|
+| 平台数量 | 14+ | 14+ | 1 |
+| 统一网关 | 单一进程 | 支持 | N/A |
+| 会话共享 | 跨平台 | 支持 | N/A |
+| 语音转录 | Telegram/Discord | 支持 | N/A |
+| 群组支持 | 多平台 | 支持 | N/A |
+| 服务管理 | systemd/launchd | 支持 | N/A |
+
+## 相关页面
+
+- [[gateway-session-management]] — 网关会话管理架构
+- [[cron-scheduling]] — Cron 调度器由网关驱动
+- [[hook-system-architecture]] — 网关事件钩子系统
+
 ## 相关文件
 
 - `gateway/run.py` — 主循环和消息分发
@@ -219,4 +298,5 @@ hermes gateway status   # 状态
 - `gateway/platforms/base.py` — 平台基类
 - `gateway/delivery.py` — 消息投递
 - `gateway/config.py` — 网关配置
+- `gateway/platforms/` — 平台适配器目录
 - `hermes_cli/gateway.py` — Gateway CLI 命令

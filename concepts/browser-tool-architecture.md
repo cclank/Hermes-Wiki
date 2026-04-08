@@ -3,7 +3,7 @@ title: Browser Tool 浏览器自动化架构
 created: 2026-04-08
 updated: 2026-04-08
 type: concept
-tags: [tool, toolset, architecture, component, gateway]
+tags: [tool, toolset, architecture, component, browser]
 sources: [tools/browser_tool.py, tools/browser_providers/]
 ---
 
@@ -17,7 +17,7 @@ Browser Tool 位于 `tools/browser_tool.py`（84KB/2202行），提供**多后�
 
 ## 架构原理
 
-### 四大后端
+### 多种后端
 
 | 后端 | 模式 | 依赖 | 成本 |
 |---|---|---|---|
@@ -144,7 +144,7 @@ if any(pattern in title_lower for pattern in blocked_patterns):
 
 导航返回的页面标题包含 bot 检测关键词时，主动警告并提供解决方案（延迟操作/启用隐身模式/更换站点）。
 
-## 工具集（11 个工具）
+## 工具集（10 个工具）
 
 | 工具 | 功能 |
 |---|---|
@@ -158,7 +158,6 @@ if any(pattern in title_lower for pattern in blocked_patterns):
 | `browser_console` | 获取控制台输出和 JS 错误 |
 | `browser_get_images` | 提取页面图片 URL 和 alt 文本 |
 | `browser_vision` | 截图 + 视觉 AI 分析 |
-| `browser_close` | 关闭会话，释放资源 |
 
 ### 自动快照优化
 
@@ -287,6 +286,6 @@ export CAMOFOX_URL="http://camofox-server:8080"
 ## 与其他系统的关系
 
 - [[auxiliary-client-architecture]] — browser_vision 通过 call_llm(task="vision") 调用
-- [[tool-registry-architecture]] — 11 个浏览器工具通过 registry.register() 注册
+- [[tool-registry-architecture]] — 10 个浏览器工具通过 registry.register() 注册
 - [[web-tools-architecture]] — 文档建议简单信息获取优先 web_search/web_extract
 - [[security-defense-system]] — 浏览器工具的 SSRF 和注入防护是整体安全的一部分

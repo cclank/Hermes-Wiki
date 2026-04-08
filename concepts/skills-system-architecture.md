@@ -4,12 +4,12 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [skill, architecture, module, prompt-builder]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
-# Skills System Architecture
+# 技能系统架构
 
-## Overview
+## 概述
 
 Hermes Agent 的技能系统是一个**渐进式披露（Progressive Disclosure）**架构，灵感来自 Anthropic 的 Claude Skills 系统。核心理念是：只在需要时加载完整指令，平时只保留轻量元数据，以节省 token 预算。
 
@@ -121,6 +121,12 @@ _build_skills_index(available_tools, available_toolsets) → str
 2. 如果缺失且在 CLI 模式，通过回调交互式收集
 3. 在 Gateway 模式，提示用户手动配置
 4. 保存后持久化到 `.env` 文件
+
+## 相关页面
+
+- [[prompt-builder-architecture]] — 技能索引构建与条件激活
+- [[skills-and-memory-interaction]] — 技能与记忆的交互设计
+- [[security-defense-system]] — 技能安全扫描与信任级别策略
 
 ## 相关文件
 

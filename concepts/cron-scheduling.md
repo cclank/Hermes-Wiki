@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [architecture, cron, automation, scheduling]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
 # Cron 调度与自动化工作流
@@ -19,7 +19,7 @@ Hermes 内置 Cron 调度器，支持**自然语言定时任务**，可以自动
 # tools/cronjob_tools.py
 
 def cronjob(
-    action: str,           # create/list/update/pause/resume/remove/run
+    action: str,           # create/list/update/pause/resume/remove
     prompt: str = None,    # 任务提示
     schedule: str = None,  # 调度表达式
     name: str = None,      # 任务名称
@@ -40,142 +40,81 @@ def cronjob(
         return _resume_job(job_id)
     elif action == "remove":
         return _remove_job(job_id)
-    elif action == "run":
-        return _run_job(job_id)
 ```
 
 ## 调度器
 
-```python
-# cron/scheduler.py
+调度器使用**模块级函数**架构（非类），由 Gateway 每 60 秒调用 `tick()` 驱动：
 
-class Scheduler:
-    """Cron 调度器"""
+```python
+# cron/scheduler.py — 模块级函数架构
+
+def tick():
+    """由 Gateway 每 60 秒调用一次，检查并执行到期任务"""
+    now = datetime.now()
+    jobs = _load_jobs()  # 从 jobs.json 加载
+    for job in jobs.values():
+        if _should_run(job, now):
+            run_job(job)
+
+def run_job(job: dict):
+    """执行单个任务"""
+    # 创建新的 Agent 实例
+    agent = AIAgent(
+        model=job.get("model"),
+        platform="cron",
+        enabled_toolsets=job.get("toolsets", ["terminal", "web", "file"]),
+    )
     
-    def __init__(self):
-        self.jobs: dict[str, Job] = {}
-        self._running = False
+    # 执行任务
+    result = agent.run_conversation(job["prompt"])
     
-    def add_job(self, job: Job):
-        """添加任务"""
-        self.jobs[job.id] = job
-        self._save_jobs()
-    
-    def remove_job(self, job_id: str):
-        """移除任务"""
-        if job_id in self.jobs:
-            del self.jobs[job_id]
-            self._save_jobs()
-    
-    def run(self):
-        """运行调度器"""
-        self._running = True
-        while self._running:
-            now = datetime.now()
-            for job in self.jobs.values():
-                if job.should_run(now):
-                    self._execute_job(job)
-            time.sleep(60)  # 每分钟检查一次
-    
-    async def _execute_job(self, job: Job):
-        """执行任务"""
-        # 创建新的 Agent 实例
-        agent = AIAgent(
-            model=job.model,
-            platform="cron",
-            enabled_toolsets=job.toolsets,
-        )
-        
-        # 执行任务
-        result = agent.run_conversation(job.prompt)
-        
-        # 投递结果
-        if job.deliver:
-            await self._deliver_result(job.deliver, result)
+    # 投递结果
+    if job.get("deliver"):
+        _deliver_result(job["deliver"], result)
+
+async def _deliver_result(target: str, result: dict):
+    """投递结果到目标平台"""
+    ...
 ```
 
-## 调度表达式
+## 任务数据结构
+
+任务以**纯 dict** 形式存储在 `jobs.json` 中（非类）：
 
 ```python
-# cron/jobs.py
+# cron/jobs.py — 任务是纯 dict，存储在 jobs.json
 
-class Job:
-    """定时任务"""
-    
-    def __init__(
-        self,
-        id: str,
-        prompt: str,
-        schedule: str,
-        name: str = None,
-        deliver: str = None,
-        model: str = None,
-        toolsets: list = None,
-    ):
-        self.id = id
-        self.prompt = prompt
-        self.schedule = schedule
-        self.name = name or id
-        self.deliver = deliver
-        self.model = model
-        self.toolsets = toolsets or ["terminal", "web", "file"]
-        self.is_paused = False
-        self.created_at = datetime.now()
-        self.last_run = None
-        self.next_run = self._parse_schedule(schedule)
-    
-    def _parse_schedule(self, schedule: str) -> datetime:
-        """解析调度表达式"""
-        # 支持格式：
-        # - cron: "0 9 * * *" (每天 9 点)
-        # - 相对: "30m", "every 2h", "daily"
-        # - ISO: "2026-04-08T09:00:00"
-        
-        if schedule.startswith("0 ") or schedule.count(" ") == 4:
-            # Cron 表达式
-            from croniter import croniter
-            return croniter(schedule, datetime.now()).get_next(datetime)
-        
-        elif schedule.startswith("every "):
-            # 相对时间
-            parts = schedule.split()
-            amount = int(parts[1])
-            unit = parts[2]
-            
-            if unit.startswith("m"):
-                return datetime.now() + timedelta(minutes=amount)
-            elif unit.startswith("h"):
-                return datetime.now() + timedelta(hours=amount)
-            elif unit.startswith("d"):
-                return datetime.now() + timedelta(days=amount)
-        
-        else:
-            # ISO 格式
-            return datetime.fromisoformat(schedule)
-    
-    def should_run(self, now: datetime) -> bool:
-        """判断是否应该运行"""
-        if self.is_paused:
-            return False
-        return now >= self.next_run
+# 任务 dict 结构示例
+job = {
+    "id": "daily-report",
+    "prompt": "生成今日工作总结报告",
+    "schedule": "0 18 * * *",       # cron 表达式
+    "name": "daily-report",
+    "deliver": "telegram",
+    "model": "gpt-4",
+    "toolsets": ["terminal", "web", "file"],
+    "is_paused": False,
+    "created_at": "2026-04-07T10:00:00",
+    "last_run": None,
+    "next_run": "2026-04-07T18:00:00",
+}
+
+# 调度表达式支持格式：
+# - cron: "0 9 * * *" (每天 9 点)
+# - 相对: "30m", "every 2h", "daily"
+# - ISO: "2026-04-08T09:00:00"
 ```
 
 ## 投递目标
 
 ```python
-# 投递目标
-DELIVER_TARGETS = {
-    "origin",     # 返回到原始聊天
-    "local",      # 保存到本地文件
-    "telegram",   # Telegram
-    "discord",    # Discord
-    "slack",      # Slack
-    "whatsapp",   # WhatsApp
-    "signal",     # Signal
-    "email",      # Email
-    "sms",        # SMS
-    "webhook",    # Webhook
-    # ... 更多平台
+# 已知投递平台
+_KNOWN_DELIVERY_PLATFORMS = {
+    "telegram", "discord", "slack", "whatsapp", "signal",
+    "matrix", "mattermost", "homeassistant",
+    "dingtalk", "feishu", "wecom",
+    "sms", "email", "webhook",
 }
 
 async def _deliver_result(target: str, result: dict):
@@ -231,8 +170,8 @@ cronjob(
 # 启动 Gateway（包含调度器）
 hermes gateway start
 
-# 调度器作为 Gateway 的一部分运行
-# 无需单独启动
+# Gateway 每 60 秒调用 scheduler.tick()
+# 调度器无独立事件循环，由 Gateway 驱动
 ```
 
 ## 优越性分析
@@ -243,7 +182,7 @@ hermes gateway start
 |------|--------|-------------|--------|
 | 内置调度器 | ✅ | ❌ | ❌ |
 | 自然语言调度 | ✅ | ❌ | ❌ |
-| 多平台投递 | ✅ 10+ | ❌ | ❌ |
+| 多平台投递 | ✅ 14 平台 | ❌ | ❌ |
 | Cron 表达式 | ✅ | ❌ | ❌ |
 | 相对时间 | ✅ "30m", "every 2h" | ❌ | ❌ |
 | 任务管理 | ✅ CLI/Gateway | ❌ | ❌ |
@@ -255,9 +194,14 @@ hermes gateway start
 cron:
   enabled: true
   timezone: "Asia/Shanghai"
-  max_jobs: 50
   output_dir: "~/.hermes/cron/output"
 ```
+
+## 相关页面
+
+- [[messaging-gateway-architecture]] — 网关驱动调度器 tick() 循环
+- [[hook-system-architecture]] — 网关事件钩子与 Cron 任务的协作
+- [[gateway-session-management]] — 会话 origin 用于 Cron 投递路由
 
 ## 相关文件
 

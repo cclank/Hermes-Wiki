@@ -141,6 +141,6 @@ Prompt caching 在 `run_agent.py` 的 `_build_api_kwargs()` 中被调用：
 
 ## 与其他系统的关系
 
-- [[model-metadata-and-routing]] — 缓存成本信息来自 models.dev
+- [[smart-model-routing]] — 缓存成本信息来自 models.dev
 - [[auxiliary-client-architecture]] — 辅助模型不使用 prompt caching
 - [[context-compressor-architecture]] — 上下文压缩减少消息数量，间接影响缓存断点位置

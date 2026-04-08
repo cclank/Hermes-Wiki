@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: entity
 tags: [component, memory, module]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
 # MemoryStore Class
@@ -57,6 +57,12 @@ class MemoryStore:
 - **原子写入** — 临时文件 + os.replace() 保证一致性
 - **文件锁** — fcntl.flock() 用于并发安全
 - **安全扫描** — 检测注入和泄露模式
+
+## 相关页面
+
+- [[memory-system-architecture]] — 记忆系统整体架构
+- [[skills-and-memory-interaction]] — 技能与记忆的交互设计
+- [[security-defense-system]] — 记忆内容安全扫描
 
 ## 相关文件
 

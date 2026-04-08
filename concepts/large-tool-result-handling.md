@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [architecture, context-management, performance]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
 # 大型工具结果处理与上下文保护
@@ -284,6 +284,12 @@ def _strip_budget_warnings_from_history(messages: list) -> None:
 | Surrogate 清理 | ✅ | ❌ | ❌ |
 | 预算警告清理 | ✅ | N/A | N/A |
 | 安全 stdio | ✅ | N/A | N/A |
+
+## 相关页面
+
+- [[context-compressor-architecture]] — 上下文压缩与预飞行压缩机制
+- [[parallel-tool-execution]] — 并行工具执行产生大型结果的场景
+- [[model-tools-dispatch]] — 工具结果经过统一格式处理
 
 ## 相关文件
 

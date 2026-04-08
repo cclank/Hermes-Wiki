@@ -25,13 +25,13 @@ sources: [raw/articles/来源文件名.md]
 
 ## Tag Taxonomy
 - **架构**: architecture, module, component, interface, reliability, fault-tolerance, interrupt, extensibility
+- **Meta**: comparison, architecture-diagram, code-pattern, best-practice
 - **Skills**: skill, skill-sync, skill-management, skill-lifecycle, skills-guard
 - **Memory**: memory, memory-provider, session-search, user-profile, session-store
 - **Tools**: tool, toolset, tool-registry, terminal-tool, browser-tool, terminal, environments
 - **Agent**: agent, agent-loop, prompt-builder, context-compression, delegation
 - **Gateway**: gateway, platform, telegram, discord, messaging, multi-platform
 - **CLI**: cli, command, setup, config, ux, profile
-- **Meta**: comparison, architecture-diagram, code-pattern, best-practice
 - **性能**: performance, concurrency, cost-optimization, caching, model-routing, fuzzy-matching
 - **安全**: security, injection-defense, credentials, isolation
 - **数据**: data-generation, training, trajectory

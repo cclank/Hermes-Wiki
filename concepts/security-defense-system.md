@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [architecture, security, injection-defense, skills-guard]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
 # 安全防御体系 — 多层注入检测
@@ -151,6 +151,7 @@ MAX_SINGLE_FILE_KB = 256  # 单文件 > 256KB 可疑
 SUSPICIOUS_BINARY_EXTENSIONS = {
     '.exe', '.dll', '.so', '.dylib', '.bin',
     '.msi', '.dmg', '.app', '.deb', '.rpm',
+    '.dat', '.com',
 }
 ```
 
@@ -204,12 +205,17 @@ _MEMORY_THREAT_PATTERNS = [
     (r'ignore\s+(previous|all|above|prior)\s+instructions', "prompt_injection"),
     (r'you\s+are\s+now\s+', "role_hijack"),
     (r'do\s+not\s+tell\s+the\s+user', "deception_hide"),
+    (r'system\s+prompt\s+override', "sys_prompt_override"),
+    (r'act\s+as\s+(if|though)\s+.*no\s+(restrictions|limits)', "bypass_restrictions"),
     # 密钥泄露
     (r'curl\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET)', "exfil_curl"),
     (r'cat\s+[^\n]*(\.env|credentials|\.netrc)', "read_secrets"),
+    (r'base64\s+(-d|--decode)\s*\|', "base64_decode_pipe"),
     # 持久化后门
     (r'authorized_keys', "ssh_backdoor"),
     (r'\$HOME/\.ssh|\~/\.ssh', "ssh_access"),
+    (r'crontab', "persistence_cron"),
+    (r'\.(bashrc|zshrc|profile)', "shell_rc_mod"),
 ]
 
 def _scan_memory_content(content: str) -> Optional[str]:
@@ -232,12 +238,15 @@ def _scan_memory_content(content: str) -> Optional[str]:
 ```python
 _CONTEXT_THREAT_PATTERNS = [
     (r'ignore\s+(previous|all|above|prior)\s+instructions', "prompt_injection"),
+    (r'you\s+are\s+now\s+', "role_hijack"),
     (r'do\s+not\s+tell\s+the\s+user', "deception_hide"),
     (r'system\s+prompt\s+override', "sys_prompt_override"),
+    (r'act\s+as\s+(if|though)\s+.*no\s+(restrictions|limits)', "bypass_restrictions"),
     (r'curl\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET)', "exfil_curl"),
     (r'cat\s+[^\n]*(\.env|credentials)', "read_secrets"),
     (r'<!--[^>]*(?:ignore|override|system|secret|hidden)[^>]*-->', "html_comment_injection"),
     (r'<\s*div\s+style\s*=\s*["\'].*display\s*:\s*none', "hidden_div"),
+    (r'base64\s+(-d|--decode)\s*\|', "base64_decode_pipe"),
 ]
 
 def _scan_context_content(content: str, filename: str) -> str:
@@ -256,7 +265,7 @@ def _scan_context_content(content: str, filename: str) -> str:
     
     if findings:
         logger.warning("Context file %s blocked: %s", filename, ", ".join(findings))
-        return f"[BLOCKED: {filename} 包含潜在提示注入 ({', '.join(findings)})]"
+        return f"[BLOCKED: {filename} contained potential prompt injection ({', '.join(findings)}). Content not loaded.]"
     
     return content  # 安全，返回原始内容
 ```
@@ -323,9 +332,28 @@ if scan_error:
 | 自动回滚 | ✅ | N/A | N/A |
 | 破坏性命令检测 | ✅ 启发式 | ❌ | ❌ |
 
+## 额外安全层
+
+除上述 5 层防御外，Hermes 还包含以下安全模块：
+
+- `tools/approval.py` — 命令审批系统（31 个模式匹配规则），对危险终端命令要求用户确认
+- `tools/tirith_security.py` — Tirith 安全策略引擎
+- `tools/url_safety.py` — URL 安全检查（SSRF 防护）
+- `tools/osv_check.py` — 依赖恶意软件扫描（OSV 数据库）
+
+## 相关页面
+
+- [[memory-system-architecture]] — 记忆内容安全扫描机制
+- [[skills-system-architecture]] — 技能安装时的安全扫描与信任策略
+- [[prompt-builder-architecture]] — 上下文文件注入扫描防护
+
 ## 相关文件
 
 - `tools/skills_guard.py` — Skills Guard 安全扫描
 - `tools/memory_tool.py` — Memory 内容扫描
 - `agent/prompt_builder.py` — 上下文文件扫描
 - `run_agent.py` — 终端命令启发式检测
+- `tools/approval.py` — 命令审批（31 模式）
+- `tools/tirith_security.py` — Tirith 安全策略
+- `tools/url_safety.py` — SSRF 防护
+- `tools/osv_check.py` — 恶意软件扫描

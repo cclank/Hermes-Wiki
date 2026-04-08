@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [agent-loop, prompt-builder, architecture, component]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
 # Agent Loop and Prompt Assembly
@@ -103,7 +103,7 @@ def _build_system_prompt(self) -> str:
 
 ### 通用工具使用强制指导
 
-```
+```text
 # Tool-use enforcement
 You MUST use your tools to take action — do not describe what you would do
 or plan to do without actually doing it.
@@ -190,6 +190,12 @@ _SKILLS_PROMPT_CACHE_LOCK = threading.Lock()
 DEVELOPER_ROLE_MODELS = ("gpt-5", "codex")
 # 在 API 边界 _build_api_kwargs() 中切换
 ```
+
+## 相关页面
+
+- [[aiagent-class]] — AIAgent 核心对话循环类
+- [[prompt-builder-architecture]] — 系统提示模块化构建架构
+- [[context-compressor-architecture]] — 上下文压缩与摘要机制
 
 ## 相关文件
 

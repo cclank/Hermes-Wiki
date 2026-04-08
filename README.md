@@ -3,7 +3,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown" alt="Wiki" height="28">
   <img src="https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github" alt="Source" height="28">
-  <img src="https://img.shields.io/badge/Knowledge_Base-37_pages-orange?style=for-the-badge" alt="Knowledge Base" height="28">
+  <img src="https://img.shields.io/badge/Knowledge_Base-33_pages-orange?style=for-the-badge" alt="Knowledge Base" height="28">
   <img src="https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge" alt="Verified" height="28">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" height="28">
 </p>
@@ -67,7 +67,7 @@
 
 ## 📊 统计信息
 
-- **总页面数**: 37
+- **总页面数**: 33
 - **核心模块**: 9 个
 - **源码覆盖**: 4753+ 行关键代码分析
 - **最后更新**: 2026-04-08

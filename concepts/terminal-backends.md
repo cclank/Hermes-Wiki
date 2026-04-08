@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [architecture, environments, terminal, isolation]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
 # 终端后端与环境抽象层
@@ -62,35 +62,25 @@ def terminal(
 # tools/environments/base.py
 
 class BaseEnvironment:
-    """终端后端基类"""
+    """终端后端基类（同步方法，非异步）"""
     
-    def __init__(self, config: dict):
-        self.config = config
-        self.session_id = None
+    def __init__(self, cwd: str, timeout: int, env: dict = None):
+        self.cwd = cwd
+        self.timeout = timeout
+        self.env = env or {}
     
-    async def start(self):
-        """启动环境"""
-        raise NotImplementedError
-    
-    async def stop(self):
-        """停止环境"""
-        raise NotImplementedError
-    
-    async def run_command(
+    def execute(
         self,
         command: str,
-        timeout: int = 180,
-        workdir: str = None,
+        cwd: str = None,
+        timeout: int = None,
+        stdin_data: str = None,
     ) -> dict:
-        """执行命令"""
+        """执行命令，返回 {"output": str, "returncode": int}"""
         raise NotImplementedError
     
-    async def upload_file(self, local_path: str, remote_path: str):
-        """上传文件"""
-        raise NotImplementedError
-    
-    async def download_file(self, remote_path: str, local_path: str):
-        """下载文件"""
+    def cleanup(self):
+        """清理环境资源"""
         raise NotImplementedError
 ```
 
@@ -136,7 +126,7 @@ class DaytonaEnvironment(BaseEnvironment):
     """Daytona 沙箱环境"""
     
     async def start(self):
-        from daytona_sdk import Daytona
+        from daytona import Daytona
         
         self.client = Daytona(api_key=self.config.get("api_key"))
         self.sandbox = self.client.create(
@@ -156,27 +146,26 @@ class DaytonaEnvironment(BaseEnvironment):
 ```python
 # tools/environments/persistent_shell.py
 
-class PersistentShell:
-    """持久化 Shell 会话"""
+class PersistentShellMixin:
+    """持久化 Shell Mixin（基于文件 IPC 的进程间通信）
     
-    def __init__(self, backend: BaseEnvironment):
-        self.backend = backend
-        self.shell_process = None
+    不是独立类，而是作为 mixin 混入具体后端实现。
+    使用临时文件进行命令输入/输出的 IPC，而非 async stdin/stdout 流。
+    """
     
-    async def start(self):
-        self.shell_process = await self.backend.run_command(
-            "bash -i",
-            background=True,
-            pty=True,
-        )
+    def _start_persistent_shell(self):
+        """启动持久化 shell 进程，使用临时文件进行 IPC"""
+        import tempfile
+        self._cmd_file = tempfile.NamedTemporaryFile(delete=False, suffix=".cmd")
+        self._out_file = tempfile.NamedTemporaryFile(delete=False, suffix=".out")
+        # 通过文件系统传递命令和读取输出
     
-    async def send_command(self, command: str) -> str:
-        await self.shell_process.stdin.write(command + "\n")
-        return await self.shell_process.stdout.read()
-    
-    async def stop(self):
-        if self.shell_process:
-            await self.shell_process.stdin.write("exit\n")
+    def _send_command_via_file(self, command: str) -> str:
+        """通过临时文件发送命令并读取输出"""
+        # 写入命令到 cmd 文件
+        # 等待 out 文件产生输出
+        # 返回输出内容
+        pass
 ```
 
 ## 环境上下文
@@ -238,6 +227,12 @@ terminal:
     api_key: "${DAYTONA_API_KEY}"
     image: "ubuntu:22.04"
 ```
+
+## 相关页面
+
+- [[credential-pool-and-isolation]] — 凭证池与环境隔离（终端后端环境）
+- [[multi-agent-architecture]] — 子代理使用独立终端后端执行
+- [[tool-registry-architecture]] — 终端工具通过 registry 注册
 
 ## 相关文件
 

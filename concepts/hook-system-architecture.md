@@ -273,5 +273,5 @@ pip install hermes-agent-my-plugin
 
 - [[tool-registry-architecture]] — 插件通过 registry.register() 注册工具
 - [[mcp-and-plugins]] — MCP 是另一种工具发现机制，与插件系统互补
-- [[gateway-multi-platform]] — Gateway Hooks 在网关生命周期中触发
+- [[messaging-gateway-architecture]] — Gateway Hooks 在网关生命周期中触发
 - [[model-tools-dispatch]] — pre/post_tool_call 钩子在 handle_function_call 中调用

@@ -4,12 +4,12 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [toolset, tool, tool-registry, architecture]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
-# Toolsets System
+# 工具集系统
 
-## Overview
+## 概述
 
 Toolsets 是 Hermes Agent 的**工具分组系统**，允许将工具组合成有意义的集合，并为不同场景/平台启用不同的工具集。
 
@@ -52,7 +52,7 @@ _HERMES_CORE_TOOLS = [
 ]
 ```
 
-## Toolset 定义
+## 工具集定义
 
 ```python
 TOOLSETS = {
@@ -89,12 +89,9 @@ TOOLSETS = {
         "includes": []
     },
     
-    # 特殊工具集
-    "all": {
-        "description": "所有工具",
-        "tools": [],
-        "includes": ["hermes-gateway"]  # 递归展开所有
-    }
+    # 注意："all" 不是 TOOLSETS 的一个条目
+    # 它在 resolve_toolset() 中作为特殊情况处理
+    # if name in {"all", "*"}: ...
 }
 ```
 
@@ -172,14 +169,14 @@ def _get_plugin_toolset_names() -> Set[str]:
 ```python
 # tools/registry.py
 class ToolRegistry:
-    def register(self, name, schema, handler, ...):
-        """注册工具到中央注册表"""
+    def register(self, name, toolset, schema, handler, ...):
+        """注册工具到中央注册表（需要 toolset 参数）"""
     
-    def get_tool(self, name):
-        """获取工具定义"""
+    def get_schema(self, name):
+        """获取工具的 schema 定义"""
     
-    def get_all_tools(self):
-        """获取所有已注册工具"""
+    def get_all_tool_names(self):
+        """获取所有已注册工具名称"""
 ```
 
 每个工具文件在导入时自动注册：
@@ -190,6 +187,7 @@ from tools.registry import registry
 
 registry.register(
     name="terminal",
+    toolset="terminal",
     schema=TERMINAL_SCHEMA,
     handler=terminal_handler,
     ...
@@ -219,6 +217,12 @@ model_tools.py  (导入 tools/registry + 触发工具发现)
        ↑
 run_agent.py, cli.py, batch_runner.py, environments/
 ```
+
+## 相关页面
+
+- [[tool-registry-architecture]] — 中央工具注册表（Registry 按 toolset 组织工具）
+- [[model-tools-dispatch]] — 工具编排层通过 toolset 过滤工具定义
+- [[mcp-and-plugins]] — 插件动态注册扩展工具集
 
 ## 相关文件
 

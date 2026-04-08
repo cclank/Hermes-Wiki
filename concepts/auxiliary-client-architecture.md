@@ -272,7 +272,7 @@ print(get_available_vision_backends())
 
 ## 与其他系统的关系
 
-- [[context-compression]] — 使用 get_text_auxiliary_client("compression")
+- [[context-compressor-architecture]] — 使用 get_text_auxiliary_client("compression")
 - [[tool-registry-architecture]] — web_tools 和 browser_tool 通过 registry 注册
 - [[credential-pool-and-isolation]] — 使用 load_pool() 获取凭证
 - [[prompt-builder-architecture]] — 辅助客户端不参与主对话提示构建

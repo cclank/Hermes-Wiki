@@ -11,7 +11,7 @@ sources: [agent/prompt_builder.py]
 
 ## 概述
 
-Prompt Builder 位于 `agent/prompt_builder.py`（40KB/959行），负责**组装系统提示**——身份定义、平台提示、技能索引、上下文文件。所有函数无状态，由 `AIAgent._build_system_prompt()` 调用拼接各模块。
+Prompt Builder 位于 `agent/prompt_builder.py`（44KB/959行），负责**组装系统提示**——身份定义、平台提示、技能索引、上下文文件。所有函数无状态，由 `AIAgent._build_system_prompt()` 调用拼接各模块。
 
 核心理念：**系统提示是模块化拼接的，每个组件可独立测试和替换。**
 
@@ -54,7 +54,7 @@ _CONTEXT_INVISIBLE_CHARS = {
 
 **双重防护**：
 1. **威胁模式检测**：10 种常见注入模式（忽略指令、隐藏行为、执行注入、密钥外泄等）
-2. **不可见 Unicode 检测**：11 种零宽字符和双向文本控制字符（可能用于视觉欺骗）
+2. **不可见 Unicode 检测**：10 种零宽字符和双向文本控制字符（5 种零宽 + 5 种双向控制，可能用于视觉欺骗）
 
 检测到威胁时：替换为 `[BLOCKED: filename contained potential prompt injection]`
 
@@ -233,6 +233,6 @@ skills:
 ## 与其他系统的关系
 
 - [[tool-registry-architecture]] — 技能条件激活依赖可用工具集
-- [[context-compression]] — 压缩后的消息列表传给 prompt builder 重建提示
+- [[context-compressor-architecture]] — 压缩后的消息列表传给 prompt builder 重建提示
 - [[memory-system-architecture]] — memory 指导是提示的一部分
 - [[agent-loop-and-prompt-assembly]] — prompt builder 被 agent 循环调用

@@ -11,6 +11,8 @@ sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.
 
 ## 概述
 
+> **注意**：本页涵盖**多个模块**的协作，而非仅 `agent/smart_model_routing.py`。`smart_model_routing.py` 本身只是一个约 195 行的轻量启发式模块，负责 cheap/strong 消息路由（决定用便宜模型还是强模型处理当前消息）。本页讨论的更广泛的模型基础设施——元数据解析、上下文长度探测、模型切换管道——分布在下列四个核心模块中。
+
 Smart Model Routing 是 Hermes Agent 的**模型元数据解析与上下文长度自动检测**系统，由四个核心模块组成：
 
 | 模块 | 源码 | 职责 |
@@ -34,12 +36,11 @@ def get_model_context_length(model, base_url, api_key, config_context_length, pr
     2. 活跃端点元数据（/models 端点，仅限自定义端点）
     3. 本地服务器查询（Ollama/LM Studio/vLLM/llama.cpp）
     4. Anthropic /v1/models API（仅 API Key，不含 OAuth）
-    5. models.dev 注册表（提供商感知）
+    5. models.dev 注册表（提供商感知，含 Nous 后缀匹配）
     6. OpenRouter 实时 API 元数据
-    7. Nous 后缀匹配（通过 OpenRouter 缓存）
-    8. 硬编码默认值（模糊匹配，最长 key 优先）
-    9. 本地服务器最后尝试
-    10. 默认回退: 128K
+    7. 硬编码默认值（模糊匹配，最长 key 优先）
+    8. 本地服务器最后尝试
+    9. 默认回退: 128K
     """
 ```
 
@@ -251,7 +252,7 @@ def estimate_request_tokens_rough(messages, system_prompt, tools):
 |---|---|---|
 | 新模型支持 | 需要更新代码 | models.dev 自动更新 |
 | 本地服务器 | 手动配置 | 自动探测 4 种服务器类型 |
-| 上下文长度 | 静态字典 | 10 级解析链 |
+| 上下文长度 | 静态字典 | 10 级解析链（0-9） |
 | 凭证管理 | 硬编码 | 通过 runtime_provider 解析 |
 | 错误恢复 | 无 | 从错误消息提取限制 |
 | 离线支持 | 无 | 打包快照 + 磁盘缓存 |
@@ -275,6 +276,126 @@ model_aliases:
     model: "qwen3.5:397b"
     provider: custom
     base_url: "https://ollama.com/v1"
+```
+
+## 定价估算
+
+```python
+# agent/usage_pricing.py
+
+def estimate_usage_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """估算 API 调用成本"""
+    pricing = {
+        "claude-opus-4.6": {"input": 15.0, "output": 75.0},  # $/MTok
+        "claude-sonnet-4": {"input": 3.0, "output": 15.0},
+        "gpt-4o": {"input": 2.5, "output": 10.0},
+        # ...
+    }
+    
+    prices = pricing.get(model, {"input": 5.0, "output": 15.0})
+    input_cost = (prompt_tokens / 1_000_000) * prices["input"]
+    output_cost = (completion_tokens / 1_000_000) * prices["output"]
+    return input_cost + output_cost
+```
+
+## OpenRouter 提供商路由
+
+```python
+# 提供商偏好
+provider_preferences = {}
+if self.providers_allowed:
+    provider_preferences["order"] = self.providers_allowed
+if self.providers_ignored:
+    provider_preferences["ignore"] = self.providers_ignored
+if self.providers_order:
+    provider_preferences["order"] = self.providers_order
+if self.provider_sort:
+    provider_preferences["sort"] = self.provider_sort
+
+# 发送到 OpenRouter
+extra_body["provider"] = provider_preferences
+```
+
+### 提供商排序选项
+
+```python
+# sort 选项
+"sort": "price"       # 按价格排序
+"sort": "throughput"  # 按吞吐量排序
+"sort": "latency"     # 按延迟排序
+```
+
+## 元数据缓存
+
+```python
+# OpenRouter 模型元数据缓存（1 小时 TTL）
+_model_metadata_cache: dict = {}
+_metadata_cache_time: float = 0
+_METADATA_CACHE_TTL = 3600  # 1 小时
+
+def fetch_model_metadata(model: str = None) -> dict:
+    """获取模型元数据（带缓存）"""
+    now = time.time()
+    if now - _metadata_cache_time < _METADATA_CACHE_TTL:
+        return _model_metadata_cache
+    
+    # 后台线程预温缓存
+    threading.Thread(
+        target=lambda: fetch_model_metadata(),
+        daemon=True,
+    ).start()
+```
+
+## 推理模型支持
+
+```python
+def _supports_reasoning_extra_body(self) -> bool:
+    """判断是否可以安全发送 reasoning extra_body"""
+    
+    # 直接 Nous Portal
+    if "nousresearch" in self._base_url_lower:
+        return True
+    
+    # OpenRouter 路由
+    if "openrouter" not in self._base_url_lower:
+        return False
+    
+    # 已知支持推理的模型前缀
+    reasoning_model_prefixes = (
+        "deepseek/",
+        "anthropic/",
+        "openai/",
+        "x-ai/",
+        "google/gemini-2",
+        "qwen/qwen3",
+    )
+    return any(self.model.lower().startswith(prefix) for prefix in reasoning_model_prefixes)
+```
+
+## 会话状态跟踪
+
+```python
+# 累积 token 使用量
+self.session_prompt_tokens = 0
+self.session_completion_tokens = 0
+self.session_total_tokens = 0
+self.session_api_calls = 0
+self.session_input_tokens = 0
+self.session_output_tokens = 0
+self.session_cache_read_tokens = 0
+self.session_cache_write_tokens = 0
+self.session_reasoning_tokens = 0
+self.session_estimated_cost_usd = 0.0
+self.session_cost_status = "unknown"
+self.session_cost_source = "none"
+
+def reset_session_state(self):
+    """重置所有会话级 token 计数器"""
+    self.session_total_tokens = 0
+    self.session_input_tokens = 0
+    self.session_output_tokens = 0
+    # ... 重置所有计数器
+    self._user_turn_count = 0
 ```
 
 ## 与其他系统的关系

@@ -39,6 +39,7 @@ TOOL_TO_TOOLSET_MAP: dict          # 供 batch_runner.py 使用
 TOOLSET_REQUIREMENTS: dict         # 供 cli.py, doctor.py 使用
 get_all_tool_names() → list
 get_available_toolsets() → dict
+check_tool_availability(quiet) → tuple
 ```
 
 ## 核心组件
@@ -79,14 +80,18 @@ def _discover_tools():
         "tools.browser_tool",
         "tools.code_execution_tool",
         "tools.delegate_tool",
-        "tools.mcp_tool",
-        # ... 20+ 工具模块
+        # ... 20 个工具模块
     ]
     for mod_name in _modules:
         try:
             importlib.import_module(mod_name)
         except Exception:
             pass  # 可选工具导入失败不影响其他工具
+
+# 注意：MCP 工具发现不在 _discover_tools() 的模块列表中，
+# 而是在 _discover_tools() 外部单独处理（约 lines 173-177）：
+#   from tools.mcp_tool import discover_mcp_tools
+#   discover_mcp_tools()
 ```
 
 **三层发现机制**：

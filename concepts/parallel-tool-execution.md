@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [architecture, tool, performance, concurrency]
-sources: [raw/articles/code-analysis-2026-04-07.md]
+sources: [hermes-agent 源码分析 2026-04-07]
 ---
 
 # 并行工具执行系统 — 智能并发安全检测
@@ -181,6 +181,12 @@ _PATH_SCOPED_TOOLS = frozenset({
     "your_file_tool",  # 需要 path 参数的工具
 })
 ```
+
+## 相关页面
+
+- [[model-tools-dispatch]] — 工具编排与调度（并行执行的上层控制）
+- [[tool-registry-architecture]] — 工具注册系统与元数据管理
+- [[large-tool-result-handling]] — 并行工具产生大型结果时的处理
 
 ## 相关文件
 

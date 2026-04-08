@@ -2,7 +2,7 @@
 
 > 内容目录。每个 wiki 页面按类型列出，附一行摘要。
 > 查询前先读此文件找到相关页面。
-> Last updated: 2026-04-08 | Total pages: 37
+> Last updated: 2026-04-08 | Total pages: 33
 
 ## Entities
 
@@ -28,7 +28,6 @@
 - [[prompt-caching-optimization]] — Anthropic system_and_3 缓存策略，75% 成本节省
 - [[fuzzy-matching-engine]] — 8 策略链模糊匹配，从精确到相似度匹配
 - [[smart-model-routing]] — 智能模型路由，10级上下文长度解析链+本地服务器自动探测
-- [[model-metadata-and-routing]] — 模型元数据缓存、提供商路由、定价估算
 - [[large-tool-result-handling]] — 大型结果文件化、预飞行压缩、Surrogate 清理
 
 ### 安全与可靠性
@@ -36,11 +35,9 @@
 - [[interrupt-and-fault-tolerance]] — 中断传播、凭证池轮换、Fallback 模型链
 - [[credential-pool-and-isolation]] — 多密钥自动轮换、Profile 隔离
 - [[multi-agent-architecture]] — 多 Agent 体系，子代理委派+批量处理+跨平台通信
-- [[iteration-budget-and-delegation]] — 迭代预算、子代理委派、并行任务
 
 ### 平台与扩展
 - [[cli-architecture]] — CLI 架构、斜杠命令补全、Skin 引擎
-- [[gateway-multi-platform]] — 14+ 平台统一网关、会话共享、服务管理
 - [[configuration-and-profiles]] — 分层配置、Profile 隔离、自动迁移
 - [[hook-system-architecture]] — Hook 系统（Gateway Hooks + Plugin System），事件驱动+工具注册+上下文注入
 - [[mcp-and-plugins]] — MCP 集成、插件钩子系统、OAuth 支持
@@ -49,11 +46,7 @@
 - [[trajectory-and-data-generation]] — 轨迹保存、批量运行器、RL 训练环境
 - [[prompt-builder-architecture]] — 系统提示模块化组装，注入防护+技能缓存+模型特定指导
 - [[context-compressor-architecture]] — 自动上下文压缩，结构化摘要+迭代更新+工具对完整性保障
-- [[context-compression]] — 自动上下文压缩、摘要生成、阈值控制
 - [[model-tools-dispatch]] — 工具编排与调度，异步桥接+动态 schema 调整+参数类型强制
 - [[gateway-session-management]] — 网关会话管理，多平台会话隔离+PII 脱敏+重置策略
 - [[messaging-gateway-architecture]] — 消息网关架构、平台适配器、DM 配对
 
-## Comparisons
-
-## Queries
