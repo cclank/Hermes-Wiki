@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [architecture, context-management, performance]
-sources: [hermes-agent 源码分析 2026-04-07]
+sources: [tools/tool_result_storage.py, tools/budget_config.py, run_agent.py]
 ---
 
 # 大型工具结果处理与上下文保护
@@ -13,60 +13,44 @@ sources: [hermes-agent 源码分析 2026-04-07]
 
 工具可能返回大型结果（如 `search_files` 搜索整个代码库、`terminal` 执行长输出命令）。如果直接放入对话历史，会快速消耗上下文窗口。Hermes 实现了**智能文件化机制**，将大型结果保存到磁盘，只保留预览。
 
-## 阈值配置
+## 三层溢出防护
 
-```python
-# 100K 字符 ≈ 25K tokens
-_LARGE_RESULT_CHARS = 100_000
+大型工具结果通过三层机制递进防护（`tools/tool_result_storage.py` + `tools/budget_config.py`）：
 
-# 内联预览字符数
-_LARGE_RESULT_PREVIEW_CHARS = 1_500
+```text
+Layer 1: 工具内截断        — 各工具自己预截断输出（search_files 等）
+Layer 2: 单结果持久化      — 超 100K 字符 → 写入 sandbox 磁盘，context 只保留 1.5K 预览
+Layer 3: 轮次聚合预算      — 单轮所有结果合计超 200K → 最大的溢出到磁盘
 ```
 
-## 处理流程
+### 阈值配置（`tools/budget_config.py`）
 
 ```python
-def _save_oversized_tool_result(function_name: str, function_result: str) -> str:
-    """将超大工具结果替换为文件引用 + 预览"""
-    
-    original_len = len(function_result)
-    if original_len <= _LARGE_RESULT_CHARS:
-        return function_result  # 正常大小，直接返回
-    
-    try:
-        # 1. 创建存储目录
-        response_dir = os.path.join(get_hermes_home(), "cache", "tool_responses")
-        os.makedirs(response_dir, exist_ok=True)
-        
-        # 2. 生成文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        safe_name = re.sub(r"[^\w\-]", "_", function_name)[:40]
-        filename = f"{safe_name}_{timestamp}.txt"
-        filepath = os.path.join(response_dir, filename)
-        
-        # 3. 写入完整结果
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(function_result)
-        
-        # 4. 生成预览 + 文件引用
-        preview = function_result[:_LARGE_RESULT_PREVIEW_CHARS]
-        return (
-            f"{preview}\n\n"
-            f"[Large tool response: {original_len:,} characters total — "
-            f"only the first {_LARGE_RESULT_PREVIEW_CHARS:,} shown above. "
-            f"Full output saved to: {filepath}\n"
-            f"Use read_file or search_files on that path to access the rest.]"
-        )
-    except Exception as exc:
-        # 5. 回退：破坏性截断
-        logger.warning("Failed to save large tool result to file: %s", exc)
-        return (
-            function_result[:_LARGE_RESULT_CHARS]
-            + f"\n\n[Truncated: tool response was {original_len:,} chars, "
-            f"exceeding the {_LARGE_RESULT_CHARS:,} char limit. "
-            f"File save failed: {exc}]"
-        )
+DEFAULT_RESULT_SIZE_CHARS  = 100_000   # Layer 2: 单结果持久化阈值
+DEFAULT_TURN_BUDGET_CHARS  = 200_000   # Layer 3: 轮次聚合上限
+DEFAULT_PREVIEW_SIZE_CHARS = 1_500     # 持久化后的内联预览大小
+
+# read_file 被 pin 为 ∞，防止"持久化→读取→再持久化"死循环
+PINNED_THRESHOLDS = {"read_file": float("inf")}
 ```
+
+阈值解析优先级：`PINNED_THRESHOLDS > tool_overrides > registry per-tool > default`
+
+### Layer 2: 单结果持久化（`maybe_persist_tool_result()`）
+
+工具返回后，如果输出超过阈值：
+1. 通过 `env.execute()` 将完整结果写入 sandbox 的 `/tmp/hermes-results/{tool_use_id}.txt`
+2. context 内容替换为 `<persisted-output>` 标签，包含 1,500 字符预览 + 文件路径
+3. agent 可通过 `read_file` 访问完整输出
+4. sandbox 写入失败时回退为内联截断
+
+### Layer 3: 轮次聚合预算（`enforce_turn_budget()`）
+
+单轮内如果多个中等大小结果合计超过 200K 字符：
+- 按大小降序排列未持久化的结果
+- 逐个溢出到磁盘，直到总量低于预算
+
+这层捕获的是"单个不超限但合计超限"的场景。
 
 ## 上下文窗口保护
 
@@ -279,7 +263,7 @@ def _strip_budget_warnings_from_history(messages: list) -> None:
 | 特性 | Hermes | Cursor | OpenCode |
 |------|--------|--------|----------|
 | 大型结果文件化 | ✅ 自动 | ✅ 自动 | ❌ 截断 |
-| 可配置阈值 | ✅ 硬编码 | ❌ 固定 | N/A |
+| 可配置阈值 | ✅ BudgetConfig | ❌ 固定 | N/A |
 | 预飞行压缩 | ✅ | ✅ | ❌ |
 | Surrogate 清理 | ✅ | ❌ | ❌ |
 | 预算警告清理 | ✅ | N/A | N/A |
@@ -293,5 +277,7 @@ def _strip_budget_warnings_from_history(messages: list) -> None:
 
 ## 相关文件
 
-- `run_agent.py` — 大型结果处理、Surrogate 清理、预算警告清理
+- `tools/tool_result_storage.py` — 三层溢出防护（Layer 2 + Layer 3）
+- `tools/budget_config.py` — 阈值配置与优先级解析
+- `run_agent.py` — Surrogate 清理、预算警告清理
 - `agent/context_compressor.py` — 上下文压缩

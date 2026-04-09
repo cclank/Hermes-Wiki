@@ -189,13 +189,18 @@ def _align_boundary_backward(messages, idx):
 
 ```python
 def _find_tail_cut_by_tokens(messages, head_end, token_budget):
-    """
-    从末尾向前累加 token，直到达到预算
-    保证至少保护 protect_last_n 条消息
-    不切割工具调用组
-    如果预算过小（小于固定保护），回退到固定数量保护
-    """
+    # 硬底线：至少保护 3 条尾部消息
+    min_tail = min(3, n - head_end - 1)
+    
+    # 软上限：允许预算 1.5 倍超额，避免在超大消息中间切割
+    soft_ceiling = int(token_budget * 1.5)
+    
+    # 从末尾向前累加，直到超过 soft_ceiling 且已满足 min_tail
+    # 如果预算不足以覆盖 min_tail → 回退到 n - min_tail（强制保护 3 条）
+    # 如果预算覆盖全部 → 强制在 head 之后切割，确保压缩仍执行
 ```
+
+关键变化（2026-04-09）：从固定消息数保护改为 **token 预算 + 硬底线 min_tail=3**，对长消息和短消息都更合理。
 
 ### 10. 摘要角色选择
 

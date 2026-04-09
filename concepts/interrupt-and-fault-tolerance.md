@@ -202,27 +202,36 @@ def _try_activate_fallback(self):
     return True
 ```
 
-### 速率限制快速回退
+### 结构化错误分类（error_classifier.py）
+
+2026-04-09 引入的集中式错误分类器，替代了 `run_agent.py` 中分散的字符串匹配。所有 API 错误被分类为 13 种 `FailoverReason`，每种对应不同的恢复策略：
+
+| 错误类型 | 恢复策略 |
+|---------|---------|
+| `auth` | 刷新/轮换凭证 |
+| `billing` | 立即切换 Provider |
+| `rate_limit` | 退避等待后轮换 |
+| `context_overflow` | 压缩上下文 |
+| `payload_too_large` | 压缩 payload |
+| `timeout` | 重建客户端 + 重试 |
+| `model_not_found` | fallback 到其他模型 |
+| `server_error` / `overloaded` | 重试 / 退避 |
+| `thinking_signature` | Anthropic thinking block 签名无效 |
+| `long_context_tier` | 降级到 200K 标准层级 |
+
+分类结果是结构化的 `ClassifiedError`，包含恢复提示：
 
 ```python
-is_rate_limited = (
-    status_code == 429
-    or "rate limit" in error_msg
-    or "too many requests" in error_msg
-    or "rate_limit" in error_msg
-    or "usage limit" in error_msg
-    or "quota" in error_msg
-)
-
-if is_rate_limited and self._fallback_index < len(self._fallback_chain):
-    # 如果凭证池可能恢复，不要急切回退
-    pool_may_recover = pool is not None and pool.has_available()
-    if not pool_may_recover:
-        self._emit_status("⚠️ Rate limited — switching to fallback provider...")
-        if self._try_activate_fallback():
-            retry_count = 0  # 重置重试计数
-            continue
+@dataclass
+class ClassifiedError:
+    reason: FailoverReason
+    retryable: bool = True
+    should_compress: bool = False
+    should_rotate_credential: bool = False
+    should_fallback: bool = False
 ```
+
+重试循环直接读取这些字段决策，不再重复解析错误消息。
 
 ### 连接健康检查
 
@@ -365,6 +374,7 @@ HERMES_API_TIMEOUT=1800.0             # API 总超时（秒）
 
 ### 相关文件
 
-- `run_agent.py` — 中断机制、容错逻辑
+- `agent/error_classifier.py` — 结构化 API 错误分类（13 种 FailoverReason）
+- `run_agent.py` — 中断机制、重试循环
 - `tools/credential_pool.py` — 凭证池
 - `tools/interrupt.py` — 中断工具

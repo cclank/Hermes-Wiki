@@ -42,6 +42,7 @@ gateway/
     ├── dingtalk.py
     ├── feishu.py
     ├── wecom.py
+    ├── bluebubbles.py
     ├── homeassistant.py
     ├── webhook.py
     ├── api_server.py
@@ -65,6 +66,7 @@ gateway/
 | 钉钉 | Stream | 企业消息 |
 | 飞书/Lark | Stream | 企业消息 |
 | 企业微信 | Stream | 企业微信消息 |
+| BlueBubbles | REST + Webhook | iMessage（macOS），tapback、已读回执 |
 | Webhook | HTTP | 外部事件接收 |
 
 ## 平台适配器基类

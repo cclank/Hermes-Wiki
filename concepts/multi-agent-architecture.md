@@ -13,12 +13,12 @@ sources: [tools/delegate_tool.py, tools/send_message_tool.py, tools/mixture_of_a
 
 Hermes 的多 Agent 能力分为**四种运行时机制**，全部在 Agent 对话过程中触发，不涉及外部脚本或离线工具：
 
-| 机制 | 触发方式 | 用途 |
-|------|---------|------|
-| **Delegate Task** | LLM tool call（模型自主决定） | 并行子任务，最多 3 路 |
-| **Mixture of Agents** | LLM tool call（模型自主决定） | 多模型协同推理 |
-| **Background Review** | 系统计数器自动触发 | 后台提炼经验 → 创建/改进 skill |
-| **Send Message** | LLM tool call（模型自主决定） | 跨平台消息投递 |
+| 机制                    | 触发方式                  | 用途                   |
+| --------------------- | --------------------- | -------------------- |
+| **Delegate Task**     | LLM tool call（模型自主决定） | 并行子任务，最多 3 路         |
+| **Mixture of Agents** | LLM tool call（模型自主决定） | 多模型协同推理              |
+| **Background Review** | 系统计数器自动触发             | 后台提炼经验 → 创建/改进 skill |
+| **Send Message**      | LLM tool call（模型自主决定） | 跨平台消息投递              |
 
 ## 触发机制
 
@@ -449,8 +449,28 @@ delegate_task(tasks=[
 mixture_of_agents(user_prompt="证明 P ≠ NP 的已知最强结果是什么？")
 ```
 
+## 多 Agent 的两个层面
+
+Hermes 实际上有两种多 Agent 方案，服务于不同场景：
+
+| | 会话内 multi-agent（本页） | 多 Profile |
+|---|---|---|
+| 粒度 | 一个会话内的子任务 | 完全独立的 agent 实例 |
+| 上下文 | 子 agent 继承父 agent 的对话 | 完全隔离，互不可见 |
+| terminal backend | 继承父 agent，**不能切换** | 每个 Profile **独立配置** |
+| 记忆 | 共享（同一个 MemoryManager） | 各自独立的 MEMORY.md / USER.md |
+| 模型 | 可以不同 | 可以不同 |
+| 协作方式 | 自动派发 + 结果回传 | 人工切换，无自动协作 |
+
+**会话内 multi-agent 是"一个大脑指挥多只手"**——适合一次任务内的并行分工。
+
+**多 Profile 是"多个独立的人各管各的"**——适合按职能隔离不同安全边界、模型、技能集。例如：`coder` Profile 用 `local` backend 做日常开发，`ops` Profile 用 `docker` backend 做危险操作。
+
+详见 → [[configuration-and-profiles]]
+
 ## 相关页面
 
+- [[configuration-and-profiles]] — 多 Profile 架构（另一种多 Agent 方案）
 - [[tool-registry-architecture]] — 子代理通过 registry 获取受限工具集
 - [[auxiliary-client-architecture]] — 子代理可配置独立的辅助模型
 - [[credential-pool-and-isolation]] — 凭证池共享与轮换

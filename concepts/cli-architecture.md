@@ -145,5 +145,6 @@ display:
 - `cli.py` — CLI 主类
 - `hermes_cli/main.py` — 入口点和子命令
 - `hermes_cli/commands.py` — 斜杠命令定义
+- `hermes_cli/dump.py` — `hermes dump` 环境摘要（纯文本，用于调试/提 issue）
 - `agent/display.py` — 显示系统
 - `hermes_cli/skin_engine.py` — 皮肤引擎

@@ -1,7 +1,7 @@
 ---
 title: 终端后端与环境抽象层
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-09
 type: concept
 tags: [architecture, environments, terminal, isolation]
 sources: [hermes-agent 源码分析 2026-04-07]
@@ -56,117 +56,30 @@ def terminal(
         return _run_singularity(command, timeout, workdir)
 ```
 
-## 后端基类
+## 统一执行模型：Spawn-per-call
 
-```python
-# tools/environments/base.py
+所有 6 种后端共享同一个执行模型——**每次命令独立 spawn `bash -c` 进程**，通过 session snapshot 保持环境一致性：
 
-class BaseEnvironment:
-    """终端后端基类（同步方法，非异步）"""
-    
-    def __init__(self, cwd: str, timeout: int, env: dict = None):
-        self.cwd = cwd
-        self.timeout = timeout
-        self.env = env or {}
-    
-    def execute(
-        self,
-        command: str,
-        cwd: str = None,
-        timeout: int = None,
-        stdin_data: str = None,
-    ) -> dict:
-        """执行命令，返回 {"output": str, "returncode": int}"""
-        raise NotImplementedError
-    
-    def cleanup(self):
-        """清理环境资源"""
-        raise NotImplementedError
+```text
+初始化时:
+  login shell → 捕获 session snapshot（env vars、functions、aliases）
+
+每次命令执行:
+  spawn bash -c → source snapshot → 执行命令 → 捕获 CWD → 退出
 ```
 
-## Modal 后端
+**BaseEnvironment**（`tools/environments/base.py`）定义统一接口：
 
-```python
-# tools/environments/modal.py
+- `init_session()` — 启动一次 login shell，捕获环境快照
+- `_wrap_command(cmd)` — 注入 snapshot source + CWD 追踪标记
+- `execute(cmd)` — 统一入口：wrap → spawn → 等待 → 返回 `{output, returncode}`
+- `_run_bash(wrapped_cmd)` → 抽象方法，各后端实现具体的进程创建
 
-class ModalEnvironment(BaseEnvironment):
-    """Modal 无服务器环境"""
-    
-    async def start(self):
-        import modal
-        
-        # 创建或获取沙箱
-        self.sandbox = modal.Sandbox.create(
-            "bash", "-c", "sleep infinity",
-            app=self.app,
-        )
-    
-    async def run_command(self, command: str, timeout: int = 180) -> dict:
-        process = self.sandbox.exec("bash", "-c", command)
-        output = process.stdout.read()
-        exit_code = process.wait()
-        
-        return {
-            "output": output,
-            "exit_code": exit_code,
-        }
-    
-    async def snapshot(self):
-        """创建快照用于持久化"""
-        # Modal 支持沙箱快照
-        pass
-```
+**CWD 跨调用持久化**通过输出标记实现：
+- 本地后端：临时文件
+- 远程后端（Docker/SSH/Modal）：stdout 内嵌标记
 
-## Daytona 后端
-
-```python
-# tools/environments/daytona.py
-
-class DaytonaEnvironment(BaseEnvironment):
-    """Daytona 沙箱环境"""
-    
-    async def start(self):
-        from daytona import Daytona
-        
-        self.client = Daytona(api_key=self.config.get("api_key"))
-        self.sandbox = self.client.create(
-            image=self.config.get("image", "ubuntu:22.04"),
-        )
-    
-    async def run_command(self, command: str, timeout: int = 180) -> dict:
-        result = self.sandbox.process.execute(command, timeout=timeout)
-        return {
-            "output": result.output,
-            "exit_code": result.exit_code,
-        }
-```
-
-## 持久化 Shell
-
-```python
-# tools/environments/persistent_shell.py
-
-class PersistentShellMixin:
-    """持久化 Shell Mixin（基于文件 IPC 的进程间通信）
-    
-    不是独立类，而是作为 mixin 混入具体后端实现。
-    使用临时文件进行命令输入/输出的 IPC，而非 async stdin/stdout 流。
-    """
-    
-    def _start_persistent_shell(self):
-        """启动持久化 shell 进程，使用临时文件进行 IPC"""
-        import tempfile
-        self._cmd_file = tempfile.NamedTemporaryFile(delete=False, suffix=".cmd")
-        self._out_file = tempfile.NamedTemporaryFile(delete=False, suffix=".out")
-        # 通过文件系统传递命令和读取输出
-    
-    def _send_command_via_file(self, command: str) -> str:
-        """通过临时文件发送命令并读取输出"""
-        # 写入命令到 cmd 文件
-        # 等待 out 文件产生输出
-        # 返回输出内容
-        pass
-```
+> 注：旧版的 `PersistentShellMixin`（`persistent_shell.py`）已在 2026-04-09 删除，被 spawn-per-call + session snapshot 完全替代。
 
 ## 环境上下文
 
@@ -200,7 +113,7 @@ class ToolContext:
 | 无服务器支持 | ✅ Modal | ❌ | ❌ |
 | 沙箱隔离 | ✅ Daytona | ❌ | ❌ |
 | HPC 支持 | ✅ Singularity | ❌ | ❌ |
-| 持久化 Shell | ✅ | ❌ | ❌ |
+| Session Snapshot | ✅ | ❌ | ❌ |
 | 环境快照 | ✅ Modal | ❌ | ❌ |
 
 ## 配置文件

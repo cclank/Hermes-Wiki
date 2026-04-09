@@ -137,6 +137,16 @@ LLM 生成摘要
 返回结构化结果
 ```
 
+## Session 删除与修剪
+
+`delete_session()` 和 `prune_sessions()` 采用 **orphan 策略**而非级联删除：
+
+- 删除父 session 时，子 session 的 `parent_session_id` 被置为 `NULL`（孤立），而非一并删除
+- 压缩分裂产生的子 session 在父 session 被清理后仍然可搜索
+- `prune_sessions(older_than_days=90)` 只清理已结束的 session，活跃 session 不受影响
+
+设计意图：保护历史数据完整性，避免清理操作误删有价值的对话记录。
+
 ## 相关页面
 
 - [[gateway-session-management]] — 网关会话管理（SessionStore 使用 SessionDB）
