@@ -4,7 +4,7 @@ created: 2026-04-07
 updated: 2026-04-07
 type: concept
 tags: [architecture, credentials, security, isolation]
-sources: [hermes-agent 源码分析 2026-04-07]
+sources: [agent/credential_pool.py, hermes_cli/auth.py]
 ---
 
 # 凭证池与环境隔离系统
@@ -20,60 +20,32 @@ Hermes 实现了**凭证池系统**，支持多密钥自动轮换。
 
 ## 凭证池架构
 
-```python
-# tools/credential_pool.py
+核心数据结构位于 `agent/credential_pool.py`（不是 `tools/`）：
 
-class CredentialEntry:
-    """单个凭证条目"""
-    id: str
-    runtime_api_key: str
-    runtime_base_url: str
-    is_exhausted: bool = False  # 是否已耗尽
-    exhaustion_count: int = 0   # 耗尽次数
-    last_exhausted_at: float = 0
+- **`PooledCredential`** — 单个凭证条目（dataclass），包含 `runtime_api_key`、`runtime_base_url`、耗尽状态和计数
+- **`CredentialPool`** — 凭证池，管理多个凭证的选择、轮换和恢复
 
-class CredentialPool:
-    """凭证池"""
-    
-    def __init__(self, entries: list[CredentialEntry]):
-        self.entries = entries
-        self.current_index = 0
-    
-    def get_current(self) -> CredentialEntry:
-        """获取当前凭证"""
-        return self.entries[self.current_index]
-    
-    def mark_exhausted_and_rotate(self, status_code: int, ...) -> Optional[CredentialEntry]:
-        """标记当前凭证为耗尽并轮换到下一个"""
-        current = self.entries[self.current_index]
-        current.is_exhausted = True
-        current.exhaustion_count += 1
-        current.last_exhausted_at = time.time()
-        
-        # 轮换到下一个可用凭证
-        next_entry = self._find_next_available()
-        if next_entry:
-            self.current_index = self.entries.index(next_entry)
-            return next_entry
-        return None
-    
-    def try_refresh_current(self) -> Optional[CredentialEntry]:
-        """尝试刷新当前凭证（OAuth token 轮换）"""
-        current = self.get_current()
-        try:
-            new_token = resolve_token(current.id)
-            if new_token and new_token != current.runtime_api_key:
-                current.runtime_api_key = new_token
-                current.is_exhausted = False
-                return current
-        except Exception:
-            pass
-        return None
-    
-    def has_available(self) -> bool:
-        """是否还有可用凭证"""
-        return any(not e.is_exhausted for e in self.entries)
+### 4 种选池策略
+
+```yaml
+# config.yaml
+credential_pool:
+  strategy: round_robin  # 默认
 ```
+
+| 策略 | 行为 |
+|------|------|
+| `fill_first` | 一直用第一个，直到耗尽才切下一个 |
+| `round_robin` | 依次轮换，均匀分担 |
+| `random` | 随机选一个可用的 |
+| `least_used` | 选使用次数最少的 |
+
+### 关键方法
+
+- `select()` — 按策略选择下一个可用凭证
+- `mark_exhausted(entry)` — 标记耗尽 + 自动轮换（耗尽 TTL 为 1 小时，过期自动恢复）
+- `try_refresh(entry)` — OAuth token 刷新
+- `has_available()` — 是否还有可用凭证
 
 ## 凭证轮换逻辑
 
@@ -194,6 +166,6 @@ singularity.py # Singularity 容器隔离
 
 ## 相关文件
 
-- `tools/credential_pool.py` — 凭证池
+- `agent/credential_pool.py` — 凭证池（4 种策略 + 耗尽恢复）
 - `hermes_cli/auth.py` — 凭证解析
 - `tools/environments/` — 终端后端环境

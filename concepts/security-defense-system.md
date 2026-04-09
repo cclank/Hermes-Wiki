@@ -332,13 +332,51 @@ if scan_error:
 | 自动回滚 | ✅ | N/A | N/A |
 | 破坏性命令检测 | ✅ 启发式 | ❌ | ❌ |
 
+## 危险命令审批系统（tools/approval.py — 877 行）
+
+当 agent 执行的终端命令匹配危险模式时，系统拦截并要求用户确认。
+
+### 三种审批模式
+
+```yaml
+# config.yaml
+approvals:
+  mode: smart   # manual | smart | off
+```
+
+| 模式 | 行为 |
+|------|------|
+| `manual` | 所有匹配危险模式的命令都要人工确认 |
+| `smart` | 先用 auxiliary LLM 评估风险，低风险自动放行，高风险才问用户 |
+| `off`（yolo） | 跳过所有审批（危险，仅限可信环境） |
+
+### 审批选项（CLI 交互）
+
+用户看到危险命令后可选择：
+- **once** — 本次允许
+- **session** — 本次会话内同类命令都允许
+- **always** — 永久允许（写入 config.yaml）
+- **deny** — 拒绝执行
+
+超时未响应（45 秒）→ 默认拒绝（fail-closed）。
+
+### 危险模式检测
+
+匹配规则涵盖：
+- 破坏性操作：`rm -rf`、`mkfs`、`dd`、`truncate` 等
+- 权限提升：`sudo`、`su`、`chmod 777`
+- 敏感文件写入：`/etc/`、`~/.ssh/`、`~/.hermes/.env`
+- 网络操作：`curl | bash`、端口监听
+- 环境变量操控：覆盖 `PATH`、`LD_PRELOAD`
+
+### Per-session 状态
+
+审批状态按 session 隔离（`contextvars.ContextVar`），gateway 多用户并发时互不影响。"session" 级别的允许只在当前会话有效，不跨 session。
+
 ## 额外安全层
 
-除上述 5 层防御外，Hermes 还包含以下安全模块：
-
-- `tools/approval.py` — 命令审批系统（31 个模式匹配规则），对危险终端命令要求用户确认
-- `tools/tirith_security.py` — Tirith 安全策略引擎
-- `tools/url_safety.py` — URL 安全检查（SSRF 防护）
+- `tools/tirith_security.py` — Tirith 安全策略引擎（homograph URL、pipe-to-shell、terminal 注入）
+- `tools/url_safety.py` — URL 安全检查（SSRF 防护：拦截私有网络、云元数据地址、验证重定向）
 - `tools/osv_check.py` — 依赖恶意软件扫描（OSV 数据库）
 
 ## 相关页面
