@@ -4,52 +4,50 @@ created: 2026-04-08
 updated: 2026-04-08
 type: concept
 tags: [architecture, module, agent, delegation, concurrency]
-sources: [tools/delegate_tool.py, tools/send_message_tool.py, tools/mixture_of_agents_tool.py, run_agent.py]
+sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, run_agent.py]
 ---
 
 # Hermes 多 Agent 架构
 
 ## 概述
 
-Hermes 的多 Agent 能力分为**四种运行时机制**，全部在 Agent 对话过程中触发，不涉及外部脚本或离线工具：
+Hermes 的多 Agent 能力分为**三种运行时机制**，全部在 Agent 对话过程中触发，不涉及外部脚本或离线工具：
 
 | 机制                    | 触发方式                  | 用途                   |
 | --------------------- | --------------------- | -------------------- |
 | **Delegate Task**     | LLM tool call（模型自主决定） | 并行子任务，最多 3 路         |
 | **Mixture of Agents** | LLM tool call（模型自主决定） | 多模型协同推理              |
 | **Background Review** | 系统计数器自动触发             | 后台提炼经验 → 创建/改进 skill |
-| **Send Message**      | LLM tool call（模型自主决定） | 跨平台消息投递              |
 
 ## 触发机制
 
 四种机制分为两类触发方式：
 
-### LLM 自主调用（Delegate Task / MoA / Send Message）
+### LLM 自主调用（Delegate Task / MoA）
 
 和 `web_search`、`read_file` 完全一样 — 模型在系统 prompt 中看到工具描述，根据用户问题**自己判断**是否调用，没有任何代码逻辑强制触发。
 
 ```text
-用户提问 → LLM 推理 → 决定调用 delegate_task / mixture_of_agents / send_message
+用户提问 → LLM 推理 → 决定调用 delegate_task / mixture_of_agents
                               │
                               ▼
                   run_agent._invoke_tool()
                               │
             ┌─────────────────┼──────────────────┐
-            ▼                 ▼                  ▼
-    delegate_task         registry.dispatch()  registry.dispatch()
-    (特殊分支，需注入      → mixture_of_agents   → send_message
+            ▼                                    ▼
+    delegate_task                          registry.dispatch()
+    (特殊分支，需注入                        → mixture_of_agents
      parent_agent 引用)
 ```
 
 LLM 看到的工具描述：
 
-| 工具 | LLM 看到的描述（决策依据） |
-|------|------------------------|
-| `delegate_task` | *"Spawn subagents to work on tasks in isolated contexts. Only the final summary is returned."* |
+| 工具                  | LLM 看到的描述（决策依据）                                                                                             |
+| ------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `delegate_task`     | *"Spawn subagents to work on tasks in isolated contexts. Only the final summary is returned."*              |
 | `mixture_of_agents` | *"Route a hard problem through multiple frontier LLMs collaboratively. Makes 5 API calls — use sparingly."* |
-| `send_message` | *"Send a message to a connected messaging platform, or list available targets."* |
 
-`delegate_task` 在 `_invoke_tool()` 中有显式分支（line 6108），因为需要注入 `parent_agent`。其他两个走通用 registry dispatch。
+`delegate_task` 在 `_invoke_tool()` 中有显式分支（line 6108），因为需要注入 `parent_agent`。`mixture_of_agents` 走通用 registry dispatch。
 
 ### 系统自动触发（Background Review）
 
@@ -116,7 +114,7 @@ DELEGATE_BLOCKED_TOOLS = frozenset([
     "delegate_task",   # 禁止递归委派
     "clarify",         # 子代理不能向用户提问
     "memory",          # 不能写入共享 MEMORY.md
-    "send_message",    # 不能产生跨平台副作用
+    "send_message",    # 不能产生跨平台副作用（send_message 是消息投递工具，不属于多 Agent 机制）
     "execute_code",    # 子代理应逐步推理
 ])
 
@@ -285,13 +283,13 @@ MIN_SUCCESSFUL_REFERENCES = 1   # 最少 1 个成功即可聚合
 
 ### 与 Delegate Task 的区别
 
-| | Delegate Task | Mixture of Agents |
-|---|---|---|
-| **目的** | 并行执行不同任务 | 同一问题多角度推理 |
-| **隔离** | 完全对话隔离 | 只共享参考回复 |
-| **模型** | 同模型或可覆盖 | 4 参考 + 1 聚合（5 个 API 调用） |
-| **输出** | 每个任务独立摘要 | 单一综合答案 |
-| **场景** | 研究、调试、多工作流 | 复杂数学、算法、高难度推理 |
+|        | Delegate Task | Mixture of Agents       |
+| ------ | ------------- | ----------------------- |
+| **目的** | 并行执行不同任务      | 同一问题多角度推理               |
+| **隔离** | 完全对话隔离        | 只共享参考回复                 |
+| **模型** | 同模型或可覆盖       | 4 参考 + 1 聚合（5 个 API 调用） |
+| **输出** | 每个任务独立摘要      | 单一综合答案                  |
+| **场景** | 研究、调试、多工作流    | 复杂数学、算法、高难度推理           |
 
 ---
 
@@ -453,14 +451,14 @@ mixture_of_agents(user_prompt="证明 P ≠ NP 的已知最强结果是什么？
 
 Hermes 实际上有两种多 Agent 方案，服务于不同场景：
 
-| | 会话内 multi-agent（本页） | 多 Profile |
-|---|---|---|
-| 粒度 | 一个会话内的子任务 | 完全独立的 agent 实例 |
-| 上下文 | 子 agent 继承父 agent 的对话 | 完全隔离，互不可见 |
-| terminal backend | 继承父 agent，**不能切换** | 每个 Profile **独立配置** |
-| 记忆 | 共享（同一个 MemoryManager） | 各自独立的 MEMORY.md / USER.md |
-| 模型 | 可以不同 | 可以不同 |
-| 协作方式 | 自动派发 + 结果回传 | 人工切换，无自动协作 |
+|                  | 会话内 multi-agent（本页）   | 多 Profile                 |
+| ---------------- | --------------------- | ------------------------- |
+| 粒度               | 一个会话内的子任务             | 完全独立的 agent 实例            |
+| 上下文              | 子 agent 继承父 agent 的对话 | 完全隔离，互不可见                 |
+| terminal backend | 继承父 agent，**不能切换**    | 每个 Profile **独立配置**       |
+| 记忆               | 共享（同一个 MemoryManager） | 各自独立的 MEMORY.md / USER.md |
+| 模型               | 可以不同                  | 可以不同                      |
+| 协作方式             | 自动派发 + 结果回传           | 人工切换，无自动协作                |
 
 **会话内 multi-agent 是"一个大脑指挥多只手"**——适合一次任务内的并行分工。
 
@@ -481,5 +479,5 @@ Hermes 实际上有两种多 Agent 方案，服务于不同场景：
 
 - `tools/delegate_tool.py` — 子代理委派实现
 - `tools/mixture_of_agents_tool.py` — 多模型协同推理
-- `tools/send_message_tool.py` — 跨平台消息投递
+- `tools/send_message_tool.py` — 跨平台消息投递（不属于多 Agent，归类于 messaging-gateway）
 - `run_agent.py` — IterationBudget 类、Background Review、中断传播
