@@ -197,3 +197,5 @@ print(registry.check_toolset_requirements())
 - [[model-tools-dispatch]] — model_tools.py 通过 Registry 发现工具
 - [[mcp-and-plugins]] — MCP 使用 deregister/register 实现动态工具发现
 - [[large-tool-result-handling]] — 调度结果经过统一错误格式处理
+- [[fuzzy-matching-engine]] — patch 工具使用的 8 层模糊匹配引擎
+- [[code-execution-sandbox]] — execute_code 沙箱工具

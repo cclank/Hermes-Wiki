@@ -139,6 +139,11 @@ display:
 - [[configuration-and-profiles]] — 配置管理与 Profile 系统
 - [[hook-system-architecture]] — Hook 与插件扩展系统
 - [[session-search-and-sessiondb]] — 会话搜索与 SessionDB
+- [[voice-mode-architecture]] — 语音模式（Push-to-talk → STT → TTS）
+- [[skin-engine]] — 皮肤/主题自定义
+- [[context-references]] — @file/@diff/@url 引用系统
+- [[worktree-isolation]] — Git Worktree 并行隔离
+- [[code-execution-sandbox]] — 代码执行沙箱
 
 ## 相关文件
 
