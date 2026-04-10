@@ -540,6 +540,33 @@ Hermes 实际上有两种多 Agent 方案，服务于不同场景：
 
 **多 Profile 是"多个独立的人各管各的"**——适合按职能隔离不同安全边界、模型、技能集。例如：`coder` Profile 用 `local` backend 做日常开发，`ops` Profile 用 `docker` backend 做危险操作。
 
+### 多 Profile 之间能通信吗？
+
+**没有原生通信通道。** 每个 Profile 是独立进程、独立 DB、独立记忆，互不知道对方存在。
+
+但可以通过**消息平台间接交互**——两个 Profile 各绑一个 Discord bot，碰巧在同一个频道里：
+
+```text
+Profile A (Bot A) → send_message 工具主动发消息到 Discord 频道
+                              ↓
+                      Discord 频道（消息中转）
+                              ↓
+Profile B (Bot B) → DISCORD_ALLOW_BOTS=all → 收到，当普通用户消息处理
+```
+
+这需要两个独立配置配合：
+- `send_message` — 工具，主动发出消息（Bot A 侧）
+- `DISCORD_ALLOW_BOTS` — 环境变量，控制是否接收其他 bot 的消息（Bot B 侧）
+
+```bash
+# Bot B 的 .env
+DISCORD_ALLOW_BOTS=none       # 默认：忽略所有 bot 消息
+DISCORD_ALLOW_BOTS=mentions   # 只接收 @提及自己的 bot 消息
+DISCORD_ALLOW_BOTS=all        # 接收所有 bot 消息
+```
+
+**注意**：这不是 Hermes 设计的 agent 间通信功能，是两个独立 bot 通过平台消息碰巧交互。有延迟、无事务保证，且容易产生死循环（A 发 → B 回 → A 又回 → 无限循环），使用时需注意控制。
+
 详见 → [[configuration-and-profiles]]
 
 ## 相关页面
