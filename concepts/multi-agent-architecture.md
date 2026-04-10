@@ -342,27 +342,103 @@ def _spawn_background_review(self, messages_snapshot, review_memory, review_skil
 
 ---
 
-## 四、Send Message — 跨平台通信
+## 四、Agent 间通信机制
 
-Agent 主动向其他平台/会话发送消息。
+Hermes 的 agent 间通信**没有消息队列、没有共享内存、没有 IPC**——全部在单进程内通过 Python 原生机制完成。
 
-### 目标格式
+### Delegate Task 的通信
 
-```text
-"telegram"                    → home channel
-"telegram:#general"           → 人类可读频道名（解析为 ID）
-"telegram:123456789"          → 数字 chat_id
-"telegram:123456789:42"       → Telegram topic（thread_id）
-"signal:+1234567890"          → 手机号
+父子 agent 通过 **ThreadPoolExecutor + Future** 通信，本质是线程间函数调用：
+
+```python
+# delegate_tool.py line 619-633
+# 父线程：提交任务到线程池
+with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_CHILDREN) as executor:
+    for i, t, child in children:
+        future = executor.submit(
+            _run_single_child,              # 子 agent 执行函数
+            task_index=i, goal=t["goal"],
+            child=child, parent_agent=parent_agent,
+        )
+        futures[future] = i
+
+    # 父线程：阻塞等待，谁先完成先收谁
+    for future in as_completed(futures):
+        entry = future.result()             # ← 这就是"通信"
+        results.append(entry)
 ```
 
-### 支持的 14 个平台
+```python
+# _run_single_child 内部（line 373）
+result = child.run_conversation(user_message=goal)  # 子 agent 跑完
+summary = result.get("final_response") or ""         # 直接取返回值
+```
 
-Telegram, Discord, Slack, WhatsApp, Signal, Email, SMS, Matrix, Mattermost, Home Assistant, DingTalk, Feishu, WeChat(WeCom), Webhook
+**单任务时更简单**，连线程池都不用（line 612）：
+```python
+result = _run_single_child(0, _t["goal"], child, parent_agent)
+```
 
-### 媒体附件
+### Mixture of Agents 的通信
 
-图片（jpg/png/webp/gif）、视频（mp4/mov）、音频（ogg/mp3/wav）、语音。完整媒体支持仅 Telegram 和 Feishu，其他平台仅文本。
+MoA 连线程都没有，是**同一线程内的异步 HTTP 请求 + 内存聚合**：
+
+```python
+# mixture_of_agents_tool.py line 311
+# 4 个 HTTP 请求并发发出（asyncio 协程，不是多线程）
+model_results = await asyncio.gather(*[
+    _run_reference_model_safe(model, user_prompt, REFERENCE_TEMPERATURE)
+    for model in ref_models
+])
+
+# 结果收集到 list 里（纯内存变量）
+successful_responses = []
+for model_name, content, success in model_results:
+    if success:
+        successful_responses.append(content)
+
+# 拼成 prompt 发第 5 个请求
+aggregator_system_prompt = _construct_aggregator_prompt(
+    AGGREGATOR_SYSTEM_PROMPT, successful_responses
+)
+```
+
+4 个模型的中间回答存在函数栈的 list 里，聚合完成后垃圾回收，不落盘。
+
+### 子 agent 之间
+
+**完全不通信。** 多个子 agent 并行跑在各自的线程里，互不知道对方存在，没有任何协调机制。
+
+### 中断时的结果处理
+
+用户在子 agent 执行期间发新消息时：
+
+```python
+# run_agent.py line 2527-2538
+def interrupt(self, message):
+    self._interrupt_requested = True
+    # 传播到所有正在跑的子 agent
+    with self._active_children_lock:
+        children_copy = list(self._active_children)
+    for child in children_copy:
+        child.interrupt(message)    # 逐个中断
+```
+
+中断后：
+- 子 agent 返回 `status: "interrupted"`，已产出的部分结果保留在返回值中
+- 父 agent 的 `_persist_session` 触发，把包含中断结果的消息写入 SQLite
+- **但中断结果不会作为有效答案展示给用户**——父 agent 标记 `completed: False`，进入处理新消息的下一轮
+- 子 agent 自身 `persist_session=False`，不会独立写 DB——其部分结果以"父 agent 对话中的工具返回消息"形式存在 DB 里
+
+### 通信模型总结
+
+| 机制 | 通信方式 | 并发模型 | 中间结果存储 |
+|------|---------|---------|------------|
+| Delegate Task | `Future.result()`（线程间返回值） | ThreadPoolExecutor 多线程 | 不落盘，函数返回值 |
+| Mixture of Agents | `asyncio.gather`（异步协程收集） | 单线程异步 | 不落盘，内存 list |
+| Background Review | 守护线程 fire-and-forget | 单独守护线程 | 直接写 skill/memory 文件 |
+
+**一句话：全部在单进程内完成，没有任何进程间通信。**
 
 ---
 
