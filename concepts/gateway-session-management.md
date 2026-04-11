@@ -246,9 +246,53 @@ gateway:
 store._entries  # Dict[session_key, SessionEntry]
 ```
 
+## Agent 运行中收到新消息的处理（gateway/run.py line 1920+）
+
+当同一 session 的 agent 正在执行时，用户发新消息的处理逻辑：
+
+```text
+同一 session 收到新消息
+    │
+    ├── /stop         → 硬中断：interrupt + 强制清除 _running_agents 锁，立即解锁 session
+    ├── /reset /new   → 中断 + 清空 pending queue（防旧文本重放 #2170）→ 执行 reset
+    ├── /queue <text> → 排队：不打断，等当前轮次结束后作为下一轮输入
+    ├── /status       → 不打断，直接返回当前状态
+    ├── /model        → 拒绝："Agent is running — wait or /stop first"
+    ├── /approve /deny→ 绕过中断，直接路由到审批处理器（agent 阻塞在 approval event 上）
+    ├── 照片          → 排队不打断，多张照片自动合并到同一个 pending event
+    └── 普通文本      → interrupt(event.text) + 文本追加到 _pending_messages
+```
+
+### 普通文本打断的完整流程
+
+```python
+# gateway/run.py line 2033-2038
+running_agent.interrupt(event.text)      # 设置中断信号
+if _quick_key in self._pending_messages:
+    self._pending_messages[_quick_key] += "\n" + event.text  # 追加
+else:
+    self._pending_messages[_quick_key] = event.text          # 新建
+```
+
+agent 在下一个检查点发现中断信号 → 停止当前轮次 → pending 文本作为新一轮输入继续处理。
+
+### 跨 Session 完全隔离
+
+`_running_agents` 的 key 是 `_quick_key`（由 platform + user_id + chat_id 组成），不同 session 有独立的 key：
+
+| 场景 | 是否打断 | 原因 |
+|------|:---:|------|
+| 同一聊天窗口发普通文本 | ✅ | interrupt() 打断当前 agent |
+| 同一聊天窗口发 /queue | ❌ | 排队等当前完成 |
+| 同一聊天窗口发照片 | ❌ | 自动排队合并 |
+| 不同聊天窗口 / 不同用户 | ❌ | 不同 _quick_key，独立线程并行 |
+
+不同 session 的 agent 通过 `run_in_executor` 在线程池中执行，真正并行。
+
 ## 与其他系统的关系
 
 - [[messaging-gateway-architecture]] — Session 是网关的核心组件
+- [[multi-agent-architecture]] — 中断传播到子 agent（`_active_children`）
 - [[session-search-and-sessiondb]] — SQLite SessionDB 提供 FTS5 搜索
 - [[cron-scheduling]] — 会话 origin 用于 cron 投递路由
 - [[memory-system-architecture]] — 过期会话触发 memory flush
