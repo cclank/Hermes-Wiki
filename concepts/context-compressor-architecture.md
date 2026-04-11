@@ -4,14 +4,35 @@ created: 2026-04-08
 updated: 2026-04-08
 type: concept
 tags: [architecture, module, component, agent, context-compression]
-sources: [agent/context_compressor.py, run_agent.py, hermes_state.py]
+sources: [agent/context_engine.py, agent/context_compressor.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
 ---
 
 # Context Compressor — 上下文压缩架构
 
 ## 概述
 
-Context Compressor 位于 `agent/context_compressor.py`（30KB/696行），是一个**自动上下文窗口压缩**类。当对话接近模型上下文限制时，使用辅助 LLM（廉价/快速模型）对中间轮次进行结构化摘要，同时保护头部和尾部上下文。
+Context Compressor 位于 `agent/context_compressor.py`，是一个**自动上下文窗口压缩**类。当对话接近模型上下文限制时，使用辅助 LLM（廉价/快速模型）对中间轮次进行结构化摘要，同时保护头部和尾部上下文。
+
+### Context Engine 插件化（2026-04-10）
+
+`ContextCompressor` 现在继承自 `ContextEngine` ABC（`agent/context_engine.py`），是默认的上下文引擎。第三方可以实现自己的引擎替换它：
+
+```yaml
+# config.yaml
+context:
+  engine: "compressor"   # 默认；设为插件名切换（如 "lcm"）
+```
+
+**ContextEngine ABC 要求实现 3 个核心方法**：
+- `name` — 引擎标识（property）
+- `should_compress(prompt_tokens)` — 是否需要压缩
+- `compress(messages, current_tokens)` — 执行压缩，返回新消息列表
+
+**可选方法**：`on_session_start/end`、`get_tool_schemas`（引擎可暴露工具给 agent）、`handle_tool_call`、`update_model`。
+
+**插件目录**：`plugins/context_engine/<name>/`，包含 `plugin.yaml` + `__init__.py`（实现 `register(ctx)` 或暴露 `ContextEngine` 子类）。
+
+**只允许一个引擎活跃**，同 MemoryProvider 的 "至多一个外部" 约束。
 
 核心理念：**长对话不需要丢弃上下文——用结构化摘要替代旧轮次，保留关键信息。**
 

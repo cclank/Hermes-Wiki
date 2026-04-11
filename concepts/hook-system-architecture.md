@@ -13,10 +13,10 @@ sources: [gateway/hooks.py, hermes_cli/plugins.py]
 
 Hermes Agent 有两套互补的扩展系统：
 
-| 系统 | 位置 | 职责 | 源码量 |
-|---|---|---|---|
-| **Gateway Hooks** | gateway/hooks.py | 网关事件驱动钩子（startup/session/agent/command） | 170 行 |
-| **Plugin System** | hermes_cli/plugins.py | 插件生命周期钩子 + 工具注册 + CLI 命令扩展 | 609 行 |
+| 系统                | 位置                    | 职责                                      | 源码量   |
+| ----------------- | --------------------- | --------------------------------------- | ----- |
+| **Gateway Hooks** | gateway/hooks.py      | 网关事件驱动钩子（startup/session/agent/command） | 170 行 |
+| **Plugin System** | hermes_cli/plugins.py | 插件生命周期钩子 + 工具注册 + CLI 命令扩展              | 609 行 |
 
 核心理念：**Hooks 处理事件通知，Plugins 处理功能扩展——两者互补。**
 

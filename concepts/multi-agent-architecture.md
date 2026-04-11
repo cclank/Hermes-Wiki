@@ -497,6 +497,7 @@ delegation:
   provider: openrouter            # 可选：子代理用专用 provider
   model: google/gemini-3-flash    # 可选：子代理用廉价模型
   max_iterations: 50              # 每个子代理最大迭代次数
+  reasoning_effort: low           # 可选：控制子代理推理深度（low/medium/high/xhigh）
   # 或直接指定端点
   base_url: https://api.openai.com/v1
   api_key: sk-xxx
@@ -544,26 +545,31 @@ Hermes 实际上有两种多 Agent 方案，服务于不同场景：
 
 **没有原生通信通道。** 每个 Profile 是独立进程、独立 DB、独立记忆，互不知道对方存在。
 
-但可以通过**消息平台间接交互**——两个 Profile 各绑一个 Discord bot，碰巧在同一个频道里：
+但可以通过**消息平台间接交互**——两个 Profile 各绑一个 bot，在同一个频道里：
 
 ```text
-Profile A (Bot A) → send_message 工具主动发消息到 Discord 频道
+Profile A (Bot A) → send_message 工具主动发消息到频道
                               ↓
-                      Discord 频道（消息中转）
+                      Discord / Slack 频道（消息中转）
                               ↓
-Profile B (Bot B) → DISCORD_ALLOW_BOTS=all → 收到，当普通用户消息处理
+Profile B (Bot B) → ALLOW_BOTS=all → 收到，当普通用户消息处理
 ```
 
-这需要两个独立配置配合：
-- `send_message` — 工具，主动发出消息（Bot A 侧）
-- `DISCORD_ALLOW_BOTS` — 环境变量，控制是否接收其他 bot 的消息（Bot B 侧）
+Discord 和 Slack 都支持 `allow_bots` 配置（三模式：none/mentions/all）：
 
 ```bash
-# Bot B 的 .env
+# Discord — Bot B 的 .env
 DISCORD_ALLOW_BOTS=none       # 默认：忽略所有 bot 消息
 DISCORD_ALLOW_BOTS=mentions   # 只接收 @提及自己的 bot 消息
 DISCORD_ALLOW_BOTS=all        # 接收所有 bot 消息
+
+# Slack — Bot B 的 .env
+SLACK_ALLOW_BOTS=none         # 同上
+SLACK_ALLOW_BOTS=mentions
+SLACK_ALLOW_BOTS=all
 ```
+
+Discord 还有**多 bot 过滤**：消息 @了其他 bot 但没 @自己时自动跳过，避免多 bot 频道互相干扰。
 
 **注意**：这不是 Hermes 设计的 agent 间通信功能，是两个独立 bot 通过平台消息碰巧交互。有延迟、无事务保证，且容易产生死循环（A 发 → B 回 → A 又回 → 无限循环），使用时需注意控制。
 

@@ -212,16 +212,16 @@ class MemoryProvider(ABC):
 
 ### 8 个可用插件
 
-| 插件 | 路径 |
-|------|------|
-| honcho | `plugins/memory/honcho/` — Honcho AI 辩证式用户建模 |
-| mem0 | `plugins/memory/mem0/` |
-| hindsight | `plugins/memory/hindsight/` |
-| holographic | `plugins/memory/holographic/` |
-| openviking | `plugins/memory/openviking/` |
-| retaindb | `plugins/memory/retaindb/` |
-| supermemory | `plugins/memory/supermemory/` |
-| byterover | `plugins/memory/byterover/` |
+| 插件          | 路径                                           |
+| ----------- | -------------------------------------------- |
+| honcho      | `plugins/memory/honcho/` — Honcho AI 辩证式用户建模 |
+| mem0        | `plugins/memory/mem0/`                       |
+| hindsight   | `plugins/memory/hindsight/`                  |
+| holographic | `plugins/memory/holographic/`                |
+| openviking  | `plugins/memory/openviking/`                 |
+| retaindb    | `plugins/memory/retaindb/`                   |
+| supermemory | `plugins/memory/supermemory/`                |
+| byterover   | `plugins/memory/byterover/`                  |
 
 插件发现机制：扫描 `plugins/memory/` 目录，找到含 `__init__.py` 的子目录，调用 `is_available()` 快速检查。
 
@@ -429,13 +429,13 @@ MEMORY_GUIDANCE:
 
 Session Search 不是 Memory 的一部分，但是 Memory 系统的**互补机制**。
 
-| | Memory 工具 | Session Search 工具 |
-|---|---|---|
-| **存什么** | 持久事实（偏好、环境、约定） | 所有历史对话原文 |
-| **容量** | 2200 + 1375 字符（有限） | 无限（SQLite，所有会话） |
-| **检索方式** | 无检索（直接注入系统提示） | FTS5 关键词检索 + LLM 摘要 |
-| **写入方** | LLM 主动调用 memory 工具 | 自动（每轮对话自动持久化到 SQLite） |
-| **读取成本** | 零（冻结快照在系统提示里） | FTS5 查询 + Gemini Flash 摘要（每个会话一次 LLM 调用） |
+|          | Memory 工具          | Session Search 工具                        |
+| -------- | ------------------ | ---------------------------------------- |
+| **存什么**  | 持久事实（偏好、环境、约定）     | 所有历史对话原文                                 |
+| **容量**   | 2200 + 1375 字符（有限） | 无限（SQLite，所有会话）                          |
+| **检索方式** | 无检索（直接注入系统提示）      | FTS5 关键词检索 + LLM 摘要                      |
+| **写入方**  | LLM 主动调用 memory 工具 | 自动（每轮对话自动持久化到 SQLite）                    |
+| **读取成本** | 零（冻结快照在系统提示里）      | FTS5 查询 + Gemini Flash 摘要（每个会话一次 LLM 调用） |
 
 ### Session Search 的工作流程
 

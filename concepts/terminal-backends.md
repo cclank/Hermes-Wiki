@@ -103,6 +103,32 @@ class ToolContext:
         )
 ```
 
+## 统一文件同步（file_sync.py，2026-04-10）
+
+SSH/Modal/Daytona 后端使用 `tools/environments/file_sync.py` 在本机和远程环境之间同步文件（凭证、技能、缓存等）。Docker/Singularity 用 bind mount 不需要。
+
+- **变更检测**：基于 mtime + 文件大小，只上传有变化的文件
+- **删除检测**：本地文件被删除后，远程对应文件也被清理
+- **事务回滚**：上传/删除任一步失败，回滚到上次状态，下次重试
+- **速率限制**：默认 5 秒同步一次（`HERMES_FORCE_FILE_SYNC=1` 强制每次同步）
+
+## 后台进程监控（watch_patterns，2026-04-10）
+
+`terminal` 工具新增 `watch_patterns` 参数，后台进程输出匹配指定字符串时实时通知 agent：
+
+```python
+terminal(command="pytest -v", background=True, watch_patterns=["ERROR", "FAIL", "listening on port"])
+```
+
+| 参数 | 值 |
+|------|-----|
+| 匹配方式 | 子串匹配（非正则） |
+| 速率限制 | 10 秒窗口最多 8 次通知 |
+| 过载保护 | 持续超载 45 秒自动禁用 |
+| 输出截断 | 最多 20 行、2000 字符 |
+
+通知通过 `ProcessRegistry.completion_queue` 传递给 CLI/Gateway 的主循环，触发 agent 自动响应。
+
 ## 优越性分析
 
 ### 与其他 Agent 框架对比

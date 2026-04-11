@@ -3,7 +3,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown" alt="Wiki" height="28">
   <img src="https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github" alt="Source" height="28">
-  <img src="https://img.shields.io/badge/Knowledge_Base-36_pages-orange?style=for-the-badge" alt="Knowledge Base" height="28">
+  <img src="https://img.shields.io/badge/Knowledge_Base-36_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
   <img src="https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge" alt="Verified" height="28">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" height="28">
 </p>
@@ -63,7 +63,7 @@
 
 - [cli-architecture](concepts/cli-architecture.md): CLI 架构、斜杠命令、hermes dump
 - [terminal-backends](concepts/terminal-backends.md): 6 种终端后端、统一 spawn-per-call 执行模型
-- [messaging-gateway-architecture](concepts/messaging-gateway-architecture.md): 15 平台统一网关（含 BlueBubbles/iMessage）
+- [messaging-gateway-architecture](concepts/messaging-gateway-architecture.md): 16 平台统一网关（含 BlueBubbles/iMessage + 微信/WeChat）
 - [gateway-session-management](concepts/gateway-session-management.md): 网关会话管理，多平台会话隔离+PII 脱敏+重置策略
 - [hook-system-architecture](concepts/hook-system-architecture.md): 双 Hook 系统（Gateway Hooks + Plugin System）
 - [mcp-and-plugins](concepts/mcp-and-plugins.md): MCP 集成、插件钩子系统、OAuth 支持
@@ -75,15 +75,16 @@
 ### 更新日志
 
 - [2026-04-09-update](changelog/2026-04-09-update.md): 59 commits，结构化错误分类、统一执行层、三层溢出防护、BlueBubbles 等
+- [2026-04-10-update](changelog/2026-04-10-update.md): 293 commits，Context Engine 插件化、watch_patterns、WeChat、xAI、Discord/Slack 增强
 
 ---
 
 ## 统计信息
 
 - **概念页面**: 36 个
-- **更新日志**: 1 个
+- **更新日志**: 2 个
 - **源码覆盖**: 关键模块逐行验证
-- **最后更新**: 2026-04-10
+- **最后更新**: 2026-04-11
 
 
 ## 使用方式
