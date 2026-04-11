@@ -1,7 +1,7 @@
 ---
 title: Session Search and SessionDB
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-11
 type: concept
 tags: [session-search, session-store, memory, architecture]
 sources: [hermes-agent 源码分析 2026-04-07]

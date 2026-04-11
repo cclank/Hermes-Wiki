@@ -1,7 +1,7 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-11
 type: concept
 tags: [gateway, architecture, module, telegram, discord, messaging]
 sources: [hermes-agent 源码分析 2026-04-07]

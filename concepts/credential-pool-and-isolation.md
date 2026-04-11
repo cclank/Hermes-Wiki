@@ -1,7 +1,7 @@
 ---
 title: 凭证池与环境隔离系统
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-11
 type: concept
 tags: [architecture, credentials, security, isolation]
 sources: [agent/credential_pool.py, hermes_cli/auth.py]

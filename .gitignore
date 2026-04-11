@@ -7,3 +7,4 @@ _topic_tracker.json
 # OS files
 .DS_Store
 Thumbs.db
+.obsidian/

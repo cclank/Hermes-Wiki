@@ -1,7 +1,7 @@
 ---
 title: CLI 架构与终端交互设计
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-11
 type: concept
 tags: [architecture, cli, terminal, ux]
 sources: [hermes-agent 源码分析 2026-04-07]

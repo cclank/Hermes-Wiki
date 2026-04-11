@@ -1,7 +1,7 @@
 ---
 title: 中断传播与容错机制
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-11
 type: concept
 tags: [architecture, reliability, fault-tolerance, interrupt]
 sources: [hermes-agent 源码分析 2026-04-07]

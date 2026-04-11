@@ -1,7 +1,7 @@
 ---
 title: 安全防御体系 — 多层注入检测
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-11
 type: concept
 tags: [architecture, security, injection-defense, skills-guard]
 sources: [hermes-agent 源码分析 2026-04-07]

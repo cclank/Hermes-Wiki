@@ -1,7 +1,7 @@
 ---
 title: 大型工具结果处理与上下文保护
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-11
 type: concept
 tags: [architecture, context-management, performance]
 sources: [tools/tool_result_storage.py, tools/budget_config.py, run_agent.py]
