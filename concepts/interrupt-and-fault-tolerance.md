@@ -1,10 +1,10 @@
 ---
 title: 中断传播与容错机制
 created: 2026-04-07
-updated: 2026-04-11
+updated: 2026-04-15
 type: concept
 tags: [architecture, reliability, fault-tolerance, interrupt]
-sources: [hermes-agent 源码分析 2026-04-07]
+sources: [run_agent.py, gateway/run.py, agent/error_classifier.py, tools/credential_pool.py]
 ---
 
 # 中断传播与容错机制
@@ -337,6 +337,61 @@ def get_status(self) -> dict:
         "budget_max": self.iteration_budget.max_total,
     }
 ```
+
+## Gateway 重启后自动续跑（2026-04-14）
+
+Gateway 进程在 agent 调用工具**之后、生成最终回复之前**被重启(SIGTERM、崩溃、`drain_timeout`),session transcript 会停在一条 `role: "tool"` 上——之前的做法是用户必须手动 `/retry`(从头回放,丢失所有进度)或说 "continue"。现在当下一条用户消息到达时,Gateway 检测到历史尾部是 tool result,自动注入一条 system note:
+
+```
+[System note: Your previous turn was interrupted before you could process the
+last tool result(s). The conversation history contains tool outputs you haven't
+responded to yet. Please finish processing those results and summarize what was
+accomplished, then address the user's new message below.]
+
+<用户的新消息原文>
+```
+
+### 实现(`gateway/run.py:8679-8692`)
+
+```python
+# Auto-continue: if the loaded history ends with a tool result,
+# the previous agent turn was interrupted mid-work
+if agent_history and agent_history[-1].get("role") == "tool":
+    message = SYSTEM_NOTE + "\n\n" + message
+```
+
+注入点在 `_run_agent()` 的 run_sync closure 里,**紧挨** `agent.run_conversation()` 之前。Agent 看到的是完整历史(含未处理的 tool results)加这条 system note,然后继续运行——所以它先总结之前的工作,再处理用户的新消息。
+
+### 设计关键点
+
+| 设计决策 | 说明 |
+|---|---|
+| **无 schema 变更** | 不新增 session flags 或持久化字段,纯粹检测尾部消息角色 |
+| **适用所有重启场景** | Clean shutdown / crash / SIGTERM / drain timeout 都覆盖 |
+| **保留用户消息** | 用户原始消息仍然在 system note 之后,不会丢 |
+| **suspended session 不触发** | 如果 session 是 suspended 状态(非正常关闭),历史被丢弃,用户从空白开始,避免误 auto-continue 过时内容 |
+| **关机通知改文案** | 关机时发出去的通知从 "Use /retry after restart to continue" 改成 "Send any message after restart to resume where it left off"——现在这才是准确的 |
+
+### 对比旧行为
+
+```text
+旧流程(手动 /retry):
+  用户: "deploy v2.3"
+  agent: [calls terminal "kubectl apply"] → [tool result: "deployment started"]
+  [Gateway 崩溃/重启]
+  用户: "did it work?"
+  → 用户必须手动输入 /retry 回放对话 → agent 从头跑 kubectl apply(可能重复部署!)
+
+新流程(auto-continue):
+  用户: "deploy v2.3"
+  agent: [calls terminal "kubectl apply"] → [tool result: "deployment started"]
+  [Gateway 崩溃/重启]
+  用户: "did it work?"
+  → Gateway 检测到尾部是 tool → 注入 system note → agent 看到 tool result + 用户新消息
+  → agent: "部署已启动(kubectl apply 成功).关于你的问题..."
+```
+
+**关键安全性**:旧流程的 `/retry` 会重放副作用(再跑一遍 kubectl apply);新流程只是让 agent 解读**已发生的** tool result,不会重复执行。
 
 ## 优越性分析
 

@@ -1,10 +1,10 @@
 ---
 title: Hook 系统架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-15
 type: concept
 tags: [architecture, module, extensibility, mcp, plugins]
-sources: [gateway/hooks.py, hermes_cli/plugins.py]
+sources: [gateway/hooks.py, hermes_cli/plugins.py, model_tools.py, run_agent.py]
 ---
 
 # Hook 系统架构
@@ -201,6 +201,33 @@ def handle_function_call(function_name, function_args, ...):
     
     return result
 ```
+
+#### pre_tool_call 阻止工具执行（2026-04-13）
+
+`pre_tool_call` 钩子现在可以**阻止工具执行**。插件返回:
+
+```python
+def my_pre_tool_call(tool_name, args):
+    if tool_name == "terminal" and "rm -rf" in args.get("command", ""):
+        return {"action": "block", "message": "Destructive commands disabled by policy"}
+```
+
+框架在 `get_pre_tool_call_block_message()`(`hermes_cli/plugins.py:658`)里收集所有插件的返回值,**第一个** `{"action": "block", "message": ...}` 就生效:
+- 工具跳过执行(不进 `registry.dispatch`)
+- `message` 作为 tool result 返回给模型,模型据此调整下一步
+- 跳过所有副作用:counter 重置、checkpoints、回调、read-loop tracker 都不触发
+
+**两条执行路径都覆盖**:
+- `handle_function_call()`(`model_tools.py:429`)
+- `run_agent.py _invoke_tool`(顺序/并发两路)
+
+为避免双重触发,`handle_function_call()` 支持 `skip_pre_tool_call_hook=True`:当 `run_agent.py` 已经在外层检查过,再调 `handle_function_call` 时传这个 flag 跳过二次检查。
+
+**典型用途**:
+- 安全 policy(阻止危险命令)
+- 配额/速率限制
+- 白名单模式(只允许某几个工具)
+- 审批流(人工确认后才允许)
 
 ## 设计优越性
 

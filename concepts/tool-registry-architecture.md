@@ -1,7 +1,7 @@
 ---
 title: Tool Registry 工具注册系统架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-15
 type: concept
 tags: [tool, toolset, tool-registry, architecture, component]
 sources: [tools/registry.py, model_tools.py]
@@ -49,6 +49,32 @@ class ToolRegistry:
 ```
 
 **设计亮点**：使用 `__slots__` 减少内存开销（每个 ToolEntry 约节省 40% 内存），这在注册 100+ 工具时效果显著。
+
+### 自动发现内置工具（2026-04-14）
+
+早期 `model_tools.py` 维护一个 hardcoded 的工具 import 列表,添加新工具需要同时改两个文件。现在 `tools/registry.py` 提供 `discover_builtin_tools()`,由 `model_tools.py` 在启动时调用:
+
+```python
+def discover_builtin_tools(tools_dir=None) -> List[str]:
+    """扫描 tools/*.py,导入所有自注册工具模块"""
+    tools_path = Path(tools_dir) or Path(__file__).resolve().parent
+    module_names = [
+        f"tools.{path.stem}"
+        for path in sorted(tools_path.glob("*.py"))
+        if path.name not in {"__init__.py", "registry.py", "mcp_tool.py"}
+        and _module_registers_tools(path)  # AST 检查
+    ]
+    # importlib.import_module() 每个,触发模块级 registry.register()
+```
+
+**AST 级过滤**:`_module_registers_tools()` 用 `ast.parse` 解析模块,只在**模块顶层**检测到 `registry.register(...)` 调用才会 import。这样:
+- 普通工具文件(`tools/terminal_tool.py` 等)会被识别并加载
+- 辅助模块(不在顶层注册工具)被跳过
+- 帮助函数内部的 `registry.register()` 调用不会被误判
+
+**豁免列表**:`__init__.py`、`registry.py` 本身、`mcp_tool.py`(MCP 工具按需动态加载,不走这个路径)。
+
+**添加新工具流程简化**:以前要改 3 处(工具文件 + `model_tools.py` import + toolsets 定义),现在只要两处(工具文件 + toolsets 定义),auto-discovery 自动拿起新文件。
 
 ## 核心操作
 
@@ -173,8 +199,9 @@ def deregister(self, name: str) -> None:
 
 1. 在 `tools/your_tool.py` 中实现工具函数
 2. 在文件末尾调用 `registry.register(...)`
-3. 在 `model_tools.py` 的 `_discover_tools()` 中添加 import
-4. 在 `hermes_cli/toolsets.py` 中添加工具集
+3. 在 `hermes_cli/toolsets.py` 中添加工具集
+
+> 注意:**不再需要**手改 `model_tools.py` 的 import 列表。`discover_builtin_tools()` 会在启动时扫描 `tools/*.py`,只要顶层有 `registry.register(...)` 调用,模块就会被自动 import。
 
 ### 查看已注册工具
 

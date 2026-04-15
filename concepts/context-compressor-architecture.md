@@ -1,7 +1,7 @@
 ---
 title: Context Compressor 上下文压缩架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-15
 type: concept
 tags: [architecture, module, component, agent, context-compression]
 sources: [agent/context_engine.py, agent/context_compressor.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
@@ -59,16 +59,22 @@ context:
   5. 后续压缩时迭代更新之前的摘要
 ```
 
-### 对比 v1 的改进
+### 演进历史
 
-| 改进 | v1 | v2 (当前) |
-|---|---|---|
-| 摘要模板 | 无结构 | Goal/Progress/Decisions/Files/Next Steps |
-| 摘要更新 | 每次从头生成 | 迭代更新（保留旧信息） |
-| 尾部保护 | 固定消息数 | Token 预算（按比例缩放） |
-| 工具输出修剪 | 无 | 廉价预处理替换旧结果为占位符 |
-| 摘要预算 | 固定 | 按压缩内容比例缩放 |
-| 工具调用完整性 | 可能丢失 | _sanitize_tool_pairs 修复孤儿对 |
+| 改进 | v1 | v2 | v3（2026-04-14+） |
+|---|---|---|---|
+| 摘要模板 | 无结构 | Goal/Progress/Decisions/Files/Next Steps | **编号的 Completed Actions + Active State**（action-log 风格） |
+| 摘要更新 | 每次从头生成 | 迭代更新 | 迭代更新（继续编号） |
+| 尾部保护 | 固定消息数 | Token 预算（按比例缩放） | 同 v2 |
+| 工具输出修剪 | 无 | 通用占位符 `_PRUNED_TOOL_PLACEHOLDER` | **Smart Collapse**：按工具类型生成信息化单行摘要 |
+| 去重 | 无 | 无 | **MD5 去重**：相同 tool result 只保留最新一份 |
+| tool_call 参数 | 原样保留 | 原样保留 | **>500 字符自动截断到 200 字符** |
+| 摘要预算 | 固定 | 按压缩内容比例缩放 | 同 v2，但 `max_tokens` 从 2× 降到 **1.3×**（防膨胀） |
+| 反颠簸 | 无 | 无 | **连续 2 次压缩<10%→跳过**，避免抖动循环 |
+| 多模态消息 | 可能崩溃 | 可能崩溃 | 在 dedup/prune 路径上跳过 list content |
+| 压缩 note 幂等 | 仅首次压缩追加 | 同 v1 | **检测已存在**则不重复追加 |
+| Failure cooldown | 10 分钟固定 | 10 分钟固定 | **无 provider 10 分钟，瞬态错误 60 秒** |
+| 工具调用完整性 | 可能丢失 | _sanitize_tool_pairs 修复孤儿对 | 同 v2 |
 
 ## 核心组件
 
@@ -85,18 +91,33 @@ class ContextCompressor:
 
 **缩放设计**：尾部预算和摘要上限都与模型上下文窗口成比例，大窗口模型获得更丰富的摘要。
 
-### 2. 工具输出修剪（廉价预处理）
+### 2. 工具输出修剪（三段式预处理）
 
-```python
-def _prune_old_tool_results(messages, protect_tail_count):
-    """
-    从后向前遍历，保护尾部 protect_tail_count 条消息
-    更早的工具结果（内容 > 200 chars）替换为占位符
-    返回 (pruned_messages, pruned_count)
-    """
+`_prune_old_tool_results()` 现在做三件事，全部不调 LLM：
+
+**Pass 1 — MD5 去重**：相同的 tool result（>200 chars，非 multimodal）按 MD5 hash 去重，只保留最新一份，旧副本替换为：
+```
+[Duplicate tool output — same content as a more recent call]
+```
+典型场景：反复 read 同一个文件,或反复 search 相同 pattern。
+
+**Pass 2 — Smart Collapse**（2026-04-14）：按 `tool_call_id` 查出工具名 + 参数,生成**信息化的 1 行摘要**替代原本的通用占位符。不同工具有不同模板:
+
+```text
+[terminal] ran `npm test` -> exit 0, 47 lines output
+[read_file] read config.py from line 1 (1,200 chars)
+[search_files] content search for 'compress' in agent/ -> 12 matches
+[patch] replace in config.py (1,500 chars result)
+[web_search] query='cache control' (5,200 chars result)
+[delegate_task] 'refactor auth module' (8,400 chars result)
+[memory] save on long-term
 ```
 
-**效果**：无需 LLM 调用即可减少大量 token。一个大型工具输出可能占数千 token，替换为 50 字符占位符立竿见影。
+相比旧的 `_PRUNED_TOOL_PLACEHOLDER`,摘要保留了**具体命令 / 文件路径 / 结果规模**,模型看历史时仍然知道"之前做过什么"。内置模板覆盖 terminal / read_file / write_file / search_files / patch / browser_* / web_search / web_extract / delegate_task / execute_code / skill_* / vision_analyze / memory / todo / clarify / text_to_speech / cronjob / process,其他工具走通用 fallback。
+
+**Pass 3 — tool_call 参数截断**:assistant 消息里如果有 `tool_calls.function.arguments` 长度 > 500,截断到前 200 字符 + `...[truncated]`。修复场景:`write_file(content=50KB)` 这种调用即使工具结果被修剪,参数本身仍然占上下文。
+
+**多模态保护**:所有三个 Pass 都检测 `isinstance(content, list)` 跳过多模态消息,避免破坏图像/音频内容。
 
 ### 3. 摘要预算计算
 
@@ -125,7 +146,7 @@ def _serialize_for_summary(turns):
 
 ### 5. 结构化摘要生成
 
-#### 首次压缩
+#### 首次压缩（v3 action-log 模板，2026-04-14）
 
 ```text
 ## Goal
@@ -134,26 +155,53 @@ def _serialize_for_summary(turns):
 ## Constraints & Preferences
 [用户偏好、编码风格、约束、重要决策]
 
-## Progress
-### Done
-[已完成工作 — 包含具体文件路径、命令、结果]
-### In Progress
-[正在进行的工作]
-### Blocked
-[遇到的障碍]
+## Completed Actions
+[编号动作列表,每条格式: N. ACTION target — outcome [tool: name]
+例:
+1. READ config.py:45 — found `==` should be `!=` [tool: read_file]
+2. PATCH config.py:45 — changed `==` to `!=` [tool: patch]
+3. TEST `pytest tests/` — 3/50 failed: test_parse, test_validate, test_edge [tool: terminal]
+要求具体:文件路径、命令、行号、结果都必须保留]
+
+## Active State
+[当前工作状态:
+- 工作目录和分支
+- 已修改/创建的文件及简要说明
+- 测试状态 (X/Y passing)
+- 运行中的进程或服务器
+- 关键环境信息]
+
+## In Progress
+[压缩触发时正在进行的工作]
+
+## Blocked
+[未解决的阻塞/错误,包含完整错误消息]
 
 ## Key Decisions
-[重要技术决策及原因]
+[重要技术决策及其 WHY]
+
+## Resolved Questions
+[用户问过且已回答的问题 — 包含答案,避免下一任 agent 重复回答]
+
+## Pending User Asks
+[用户问过但尚未回答的问题]
+
+## Remaining Work
+[未完成的任务]
 
 ## Relevant Files
 [读取/修改/创建的文件]
 
-## Next Steps
-[下一步需要做什么]
-
 ## Critical Context
 [具体值、错误消息、配置细节等不能丢失的信息]
 ```
+
+**v3 相比 v2 的关键差异**:
+- **Progress / Done / In Progress 合并** → `Completed Actions`(编号) + `Active State` + `In Progress`
+- **Next Steps** 改名 `Remaining Work`(避免被模型当成活动指令执行)
+- **新增 Resolved Questions / Pending User Asks**(防止模型重复回答)
+- 删掉了 v2 的 `Tools & Patterns` 节(信息已融入 Completed Actions)
+- 摘要预算从 `max_tokens = budget * 2` 改为 `budget * 1.3`,限制膨胀
 
 #### 迭代更新
 
@@ -163,27 +211,58 @@ def _serialize_for_summary(turns):
 PREVIOUS SUMMARY: [旧摘要]
 NEW TURNS TO INCORPORATE: [新轮次]
 
-更新摘要，保留所有仍有用的旧信息，添加新进展。
-将 "In Progress" 标记为 "Done"，仅在明显过时时才移除信息。
+更新摘要,保留所有仍有用的旧信息。
+ADD 新的 completed actions 到编号列表(继续编号)。
+把 "In Progress" 移到 "Completed Actions"(完成时)。
+把已答问题移到 "Resolved Questions"。
+更新 "Active State" 反映当前状态。
+仅在明显过时时才移除信息。
 ```
 
-### 6. 失败冷却机制
+### 6. 自适应失败冷却机制
 
 ```python
-_SUMMARY_FAILURE_COOLDOWN_SECONDS = 600  # 10 分钟
+_SUMMARY_FAILURE_COOLDOWN_SECONDS = 600   # 10 分钟,用于无 provider
+_TRANSIENT_COOLDOWN_SECONDS      = 60    # 1 分钟,用于瞬态错误
 
 def _generate_summary(self, turns):
     if time.monotonic() < self._summary_failure_cooldown_until:
         return None  # 冷却期内跳过
-    
+
     try:
         response = call_llm(task="compression", ...)
         self._summary_failure_cooldown_until = 0.0  # 成功则重置
+    except RuntimeError:
+        # 无 provider 配置 — 10 分钟内不会自己恢复
+        self._summary_failure_cooldown_until = time.monotonic() + 600
     except Exception:
-        self._summary_failure_cooldown_until = time.monotonic() + 600  # 失败则冷却
+        # 瞬态错误(超时/限流/网络) — 短冷却快速重试
+        self._summary_failure_cooldown_until = time.monotonic() + 60
 ```
 
-**设计考量**：如果辅助 LLM 不可用或调用失败，冷却 10 分钟再尝试，避免每轮都浪费资源。
+**设计考量**(2026-04-14 改进):区分两类失败,`RuntimeError` 表示配置问题走 10 分钟长冷却,其他异常默认是瞬态问题走 60 秒短冷却,让压缩能更快从短暂故障中恢复。
+
+### 6b. 反颠簸保护（Anti-Thrashing，2026-04-14）
+
+```python
+def should_compress(self, prompt_tokens=None) -> bool:
+    if tokens < self.threshold_tokens:
+        return False
+    # 连续 2 次压缩节省 <10%,跳过本次
+    if self._ineffective_compression_count >= 2:
+        logger.warning(
+            "Compression skipped — last %d compressions saved <10%% each. "
+            "Consider /new to start a fresh session, or /compress <topic> ..."
+        )
+        return False
+    return True
+```
+
+每次压缩后根据 `saved_estimate / display_tokens` 计算实际节省百分比:
+- `>= 10%` → 重置 `_ineffective_compression_count = 0`
+- `< 10%`  → `_ineffective_compression_count += 1`
+
+**解决的问题**:某些场景下(尾部 + 头部 + 摘要本身已经很大)压缩只能挤出 1-2 条消息,每轮都触发但几乎没用,形成压缩抖动循环。连续两次都无效就放弃,提示用户 `/new` 或 `/compress <topic>` 手动处理。
 
 ### 7. 工具调用对完整性保障
 

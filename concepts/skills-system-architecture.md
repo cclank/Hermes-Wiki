@@ -1,10 +1,10 @@
 ---
 title: Skills System Architecture
 created: 2026-04-07
-updated: 2026-04-10
+updated: 2026-04-15
 type: concept
 tags: [skill, architecture, module, prompt-builder]
-sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, run_agent.py, agent/prompt_builder.py]
+sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, run_agent.py, agent/prompt_builder.py, hermes_cli/plugins.py, agent/skill_utils.py]
 ---
 
 # 技能系统架构
@@ -113,6 +113,61 @@ _build_skills_index(available_tools, available_toolsets) → str
 - `macos` → `sys.platform == "darwin"`
 - `linux` → `sys.platform == "linux"`
 - `windows` → `sys.platform == "win32"`
+
+## 插件命名空间技能（2026-04-14）
+
+除了 `~/.hermes/skills/` 的扁平目录扫描,插件还可以注册**带命名空间的技能**,避免与内置技能重名冲突。
+
+### 注册方式
+
+```python
+# 插件的 __init__.py
+def register(ctx):
+    ctx.register_skill(
+        name="deploy",
+        path=Path(__file__).parent / "skills" / "deploy" / "SKILL.md",
+        description="Deploy a service to production",
+    )
+```
+
+`PluginContext.register_skill()` 内部把它存为 `{plugin_name}:{name}` 格式的 qualified name,例如插件 `myops` 注册的 `deploy` 技能实际名字是 `myops:deploy`。
+
+**校验规则**(`hermes_cli/plugins.py:267`):
+- `name` 不能含 `:`(命名空间由插件名自动派生)
+- `name` 必须匹配 `[a-zA-Z0-9_-]+`
+- `path` 指向的 SKILL.md 必须存在
+
+### 调度逻辑
+
+`skill_view(name)` 在 `tools/skills_tool.py:822` 检测 `:` 分隔符:
+- **带 `:` 的名字** → `parse_qualified_name(name)` → 路由到 `_serve_plugin_skill(namespace, bare)`
+- **裸名字** → 继续走原有的 `~/.hermes/skills/` 扁平树扫描
+
+插件技能加载时会跑完整防护:
+1. 插件被 disable → 返回错误(含 `hermes plugins enable` 提示)
+2. 平台不匹配(`skill_matches_platform`) → 返回 UNSUPPORTED
+3. 注入模式扫描(`_INJECTION_PATTERNS`) → 记日志但仍加载(与本地技能一致)
+4. 返回时附带 **bundle context banner**,列出同一插件的其他技能供 agent 参考
+
+### 不进系统提示索引
+
+**关键区别**:插件技能**不出现在** system prompt 的 `<available_skills>` 清单里,它们是**显式 opt-in**——agent 必须知道名字(通过文档或插件 README)才能调用 `skill_view("myops:deploy")`。
+
+这样设计的原因:
+- 避免插件污染主提示词(系统提示已经很大)
+- 避免 prefix cache 因为第三方插件数量波动而失效
+- 用户装了什么插件,agent 不应该自动全部感知
+
+### 相关 API
+
+| 符号 | 位置 | 用途 |
+|---|---|---|
+| `PluginContext.register_skill()` | `hermes_cli/plugins.py:267` | 插件注册入口 |
+| `PluginManager._plugin_skills` | `hermes_cli/plugins.py` | 注册表存储 |
+| `parse_qualified_name()` | `agent/skill_utils.py:451` | 分解 `ns:bare` |
+| `is_valid_namespace()` | `agent/skill_utils.py` | 命名空间合法性校验 |
+| `_serve_plugin_skill()` | `tools/skills_tool.py:718` | 加载 + 防护 + banner |
+| `_INJECTION_PATTERNS` | `tools/skills_tool.py`(模块级) | 与本地技能共享的注入检测
 
 ## 密钥管理
 

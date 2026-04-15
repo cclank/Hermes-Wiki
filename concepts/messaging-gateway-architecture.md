@@ -1,10 +1,10 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-11
+updated: 2026-04-15
 type: concept
-tags: [gateway, architecture, module, telegram, discord, messaging]
-sources: [hermes-agent 源码分析 2026-04-07]
+tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
+sources: [gateway/run.py, gateway/platforms/, hermes_cli/config.py]
 ---
 
 # 消息网关架构
@@ -69,6 +69,7 @@ gateway/
 | 企业微信 | Stream | 企业微信消息 |
 | BlueBubbles | REST + Webhook | iMessage（macOS），tapback、已读回执 |
 | 微信/WeChat | iLink Bot API | 长轮询收消息，AES-128-ECB 媒体加密，QR 登录 |
+| QQ Bot | Official API v2 | WebSocket 入站(C2C/群/频道/DM) + REST 出站,语音转录(腾讯 ASR),allowlist + DM 配对 |
 | Webhook | HTTP | 外部事件接收 |
 
 ## 平台适配器基类
@@ -288,6 +289,77 @@ hermes gateway status   # 状态
 | 语音转录 | Telegram/Discord | 支持 | N/A |
 | 群组支持 | 多平台 | 支持 | N/A |
 | 服务管理 | systemd/launchd | 支持 | N/A |
+
+## Gateway Proxy Mode（薄中继模式，2026-04-14）
+
+通常 Gateway 和 Agent 跑在同一进程:Gateway 接收消息 → 直接调用 `AIAgent.run_conversation()`。**Proxy mode** 把两者分开——Gateway 只做平台 I/O(加密、分片、媒体),所有 Agent 工作转发给远程 Hermes API server。
+
+### 典型用途
+
+```
+[Matrix/Discord/...]  ←→  [Gateway (Linux Docker, E2EE keys)]
+                                    │ POST /v1/chat/completions (SSE)
+                                    ↓
+                              [Hermes API server (macOS host)]
+                                    │
+                                    ↓
+                     本地文件、memory、skills、统一 session store
+```
+
+**解决的问题**:想用 Matrix E2EE,但 E2EE 需要持久化加密密钥,跑在 Docker 里比较稳定;而 agent 本身想跑在 macOS 主机上访问本地文件/技能/记忆。原来这俩得二选一,proxy mode 把它们串起来。
+
+### 启用方式
+
+```yaml
+# ~/.hermes/config.yaml — 配置优先
+gateway:
+  proxy_url: "http://host.docker.internal:8080"
+```
+
+或环境变量(Docker 友好,不用挂 config):
+
+```bash
+GATEWAY_PROXY_URL=http://host.docker.internal:8080
+GATEWAY_PROXY_KEY=<matches upstream API_SERVER_KEY>
+```
+
+### 实现位置
+
+`gateway/run.py:7709` 起:
+- `_get_proxy_url()` — 先查 env var 再查 config.yaml
+- `_run_agent_via_proxy()` — HTTP + SSE streaming 转发,解析流式响应
+- `_run_agent()` — 检测到 proxy_url 就走 proxy 路径,否则走本地 agent
+- `GatewayStreamConsumer` 照常工作,流式分片仍然在 Gateway 侧完成
+
+### 关键特性
+
+| 机制 | 说明 |
+|---|---|
+| `X-Hermes-Session-Id` header | 携带 session id 保证跨请求 session 连续 |
+| `GATEWAY_PROXY_KEY` | 和远端 `API_SERVER_KEY` 匹配,走 Bearer 鉴权 |
+| SSE streaming | 响应按 chunk 过来,Gateway 流式发送到平台 |
+| 错误兼容 | 返回的 result dict 结构与本地 agent 一致,session store 照常记录 |
+| 平台无关 | 不只是 Matrix,任何平台 adapter 都能走 proxy 模式 |
+
+### 调用链
+
+```
+用户在 Matrix 发消息
+    ↓ E2EE 解密 (Gateway 侧)
+gateway.process_event()
+    ↓
+_run_agent() → 检测到 proxy_url
+    ↓
+_run_agent_via_proxy():
+    POST {proxy_url}/v1/chat/completions
+      + X-Hermes-Session-Id: <sid>
+      + Authorization: Bearer <GATEWAY_PROXY_KEY>
+      + body: { messages: [...], stream: true }
+    ↓ SSE stream 到达
+    逐 chunk 通过 GatewayStreamConsumer 转发到平台
+    ↓ E2EE 加密 (Gateway 侧)
+发送回用户
+```
 
 ## 相关页面
 
