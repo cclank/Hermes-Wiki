@@ -4,6 +4,7 @@
   <img src="https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown" alt="Wiki" height="28">
   <img src="https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github" alt="Source" height="28">
   <img src="https://img.shields.io/badge/Knowledge_Base-36_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
+  <img src="https://img.shields.io/badge/Version-v0.10.0-purple?style=for-the-badge" alt="Version" height="28">
   <img src="https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge" alt="Verified" height="28">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" height="28">
 </p>
@@ -28,16 +29,16 @@
 
 - [memory-system-architecture](concepts/memory-system-architecture.md): 三层架构（MemoryStore/MemoryManager/MemoryProvider），冻结快照模式
 - [session-search-and-sessiondb](concepts/session-search-and-sessiondb.md): FTS5 搜索 + LLM 摘要的跨会话回忆，orphan 删除策略
-- [context-compressor-architecture](concepts/context-compressor-architecture.md): 自动上下文压缩，token-budget 尾部保护（min_tail=3），Session 分裂
+- [context-compressor-architecture](concepts/context-compressor-architecture.md): 自动上下文压缩 v3，三阶段预处理（MD5 去重/Smart Collapse/参数截断）+ 结构化摘要 + OpenClaw 对比
 - [skills-and-memory-interaction](concepts/skills-and-memory-interaction.md): Skills 与 Memory 的互补关系和决策树
-- [skills-system-architecture](concepts/skills-system-architecture.md): 渐进式披露架构，技能发现、条件激活、密钥管理
+- [skills-system-architecture](concepts/skills-system-architecture.md): 渐进式披露架构，技能发现、条件激活、密钥管理、插件命名空间技能
 
 ### 工具与能力
 
 - [browser-tool-architecture](concepts/browser-tool-architecture.md): 多后端浏览器自动化，accessibility tree+三层安全防护
 - [web-tools-architecture](concepts/web-tools-architecture.md): 多后端搜索/提取/爬取，LLM 智能内容压缩
 - [code-execution-sandbox](concepts/code-execution-sandbox.md): execute_code 沙箱，7 工具限制+UDS/File RPC 两种通信模式
-- [voice-mode-architecture](concepts/voice-mode-architecture.md): Push-to-talk 语音交互，STT（3 Provider）+ TTS（5 Provider）
+- [voice-mode-architecture](concepts/voice-mode-architecture.md): Push-to-talk 语音交互，STT（3 Provider）+ TTS（5 Provider，含 Gemini/xAI TTS）
 - [context-references](concepts/context-references.md): @file/@folder/@diff/@url/@git 引用系统，安全沙箱+注入量限制
 - [fuzzy-matching-engine](concepts/fuzzy-matching-engine.md): 8 策略链模糊匹配，从精确到相似度匹配
 - [large-tool-result-handling](concepts/large-tool-result-handling.md): 三层溢出防护（工具内截断/单结果持久化/轮次聚合预算）
@@ -46,7 +47,7 @@
 
 - [parallel-tool-execution](concepts/parallel-tool-execution.md): 智能并发安全检测，三层分类+路径冲突检测
 - [prompt-caching-optimization](concepts/prompt-caching-optimization.md): 冻结快照保护 prefix cache，75% 成本节省
-- [smart-model-routing](concepts/smart-model-routing.md): 智能模型路由，短消息走便宜模型
+- [smart-model-routing](concepts/smart-model-routing.md): 智能模型路由，短消息走便宜模型，AWS Bedrock/Gemini OAuth/Ollama Cloud/Tool Gateway
 
 ### 安全与可靠性
 
@@ -63,9 +64,9 @@
 
 - [cli-architecture](concepts/cli-architecture.md): CLI 架构、斜杠命令、hermes dump
 - [terminal-backends](concepts/terminal-backends.md): 6 种终端后端、统一 spawn-per-call 执行模型
-- [messaging-gateway-architecture](concepts/messaging-gateway-architecture.md): 16 平台统一网关（含 BlueBubbles/iMessage + 微信/WeChat）
+- [messaging-gateway-architecture](concepts/messaging-gateway-architecture.md): 16+ 平台统一网关（含 BlueBubbles/iMessage + 微信/WeChat + QQ Bot），代理模式、channel_prompts、角色权限
 - [gateway-session-management](concepts/gateway-session-management.md): 网关会话管理，多平台会话隔离+PII 脱敏+重置策略
-- [hook-system-architecture](concepts/hook-system-architecture.md): 双 Hook 系统（Gateway Hooks + Plugin System）
+- [hook-system-architecture](concepts/hook-system-architecture.md): 双 Hook 系统（Gateway Hooks + Plugin System），register_command/dispatch_tool，Dashboard 插件
 - [mcp-and-plugins](concepts/mcp-and-plugins.md): MCP 集成、插件钩子系统、OAuth 支持
 - [skin-engine](concepts/skin-engine.md): YAML 驱动的皮肤/主题系统
 - [worktree-isolation](concepts/worktree-isolation.md): Git Worktree 并行隔离模式
@@ -76,15 +77,17 @@
 
 - [2026-04-09-update](changelog/2026-04-09-update.md): 59 commits，结构化错误分类、统一执行层、三层溢出防护、BlueBubbles 等
 - [2026-04-10-update](changelog/2026-04-10-update.md): 293 commits，Context Engine 插件化、watch_patterns、WeChat、xAI、Discord/Slack 增强
+- [2026-04-17-update](changelog/2026-04-17-update.md): 641 commits (v0.10.0)，压缩 v3、Bedrock/Gemini/Ollama 新 Provider、Tool Gateway、插件命名空间技能、钉钉 QR 认证、Dashboard 插件
 
 ---
 
 ## 统计信息
 
 - **概念页面**: 36 个
-- **更新日志**: 2 个
+- **更新日志**: 3 个
 - **源码覆盖**: 关键模块逐行验证
-- **最后更新**: 2026-04-11
+- **跟踪版本**: v0.10.0 (2026.4.16)
+- **最后更新**: 2026-04-17
 
 
 ## 使用方式

@@ -199,7 +199,7 @@ DEVELOPER_ROLE_MODELS = ("gpt-5", "codex")
 
 ## 相关页面
 
-- [[aiagent-class]] — AIAgent 核心对话循环类
+- [[agent-loop-and-prompt-assembly]] — AIAgent 核心对话循环类（本页）
 - [[prompt-builder-architecture]] — 系统提示模块化构建架构
 - [[context-compressor-architecture]] — 上下文压缩与摘要机制
 

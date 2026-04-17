@@ -464,7 +464,7 @@ session_search(query="nginx 配置")
 
 ## 相关页面
 
-- [[memorystore-class]] — MemoryStore 核心类详细 API
+- [[memory-system-architecture]] — MemoryStore 核心类详细 API（本页）
 - [[security-defense-system]] — 记忆内容安全扫描
 - [[skills-and-memory-interaction]] — 技能与记忆的交互决策树
 - [[context-compressor-architecture]] — 压缩前 flush_memories 和 on_pre_compress

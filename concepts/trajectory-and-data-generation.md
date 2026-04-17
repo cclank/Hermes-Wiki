@@ -160,7 +160,7 @@ python batch_runner.py --dataset_file=your_tasks.jsonl --batch_size=10 --run_nam
 
 ## 相关页面
 
-- [[aiagent-class]] — `save_trajectories` 参数和 `_convert_to_trajectory_format()` 方法
+- [[agent-loop-and-prompt-assembly]] — `save_trajectories` 参数和 `_convert_to_trajectory_format()` 方法
 - [[multi-agent-architecture]] — Batch Runner 作为大规模批量处理引擎
 - [[context-compressor-architecture]] — 压缩后的轨迹数据更紧凑
 

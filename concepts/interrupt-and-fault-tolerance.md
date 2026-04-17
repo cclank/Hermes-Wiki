@@ -425,7 +425,7 @@ HERMES_API_TIMEOUT=1800.0             # API 总超时（秒）
 
 - [[credential-pool-and-isolation]] — 凭证池与轮换机制
 - [[multi-agent-architecture]] — 子代理中断传播与预算隔离
-- [[aiagent-class]] — AIAgent 中断标志与主循环
+- [[agent-loop-and-prompt-assembly]] — AIAgent 中断标志与主循环
 
 ### 相关文件
 
