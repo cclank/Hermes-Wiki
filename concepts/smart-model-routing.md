@@ -1,7 +1,7 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-17
 type: concept
 tags: [architecture, module, model-routing, performance, caching, anthropic]
 sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py]
@@ -397,6 +397,61 @@ def reset_session_state(self):
     # ... 重置所有计数器
     self._user_turn_count = 0
 ```
+
+## 新增 Provider（v0.10.0，2026-04-16）
+
+### AWS Bedrock（原生 Converse API）
+
+双路径架构（`agent/bedrock_adapter.py`，1098 行）：
+- **Claude 模型** → AnthropicBedrock SDK（保留 prompt caching、thinking budgets）
+- **非 Claude 模型** → Converse API via boto3（Nova、DeepSeek、Llama、Mistral）
+
+特性：
+- IAM credential chain + Bedrock API Key 两种认证模式
+- `ListFoundationModels` + `ListInferenceProfiles` 动态模型发现
+- Streaming + delta callbacks + guardrails
+- `/usage` 定价支持 7 个 Bedrock 模型
+- `hermes doctor` + `hermes auth` 集成
+
+### Google Gemini CLI OAuth
+
+通过 Cloud Code Assist 后端（`cloudcode-pa.googleapis.com`）接入 Gemini，与 Google 官方 `gemini-cli` 使用同一后端。
+
+两个新模块（`agent/` 下）：
+- `google_oauth.py`（1048 行）：PKCE Authorization Code flow，跨进程文件锁（fcntl POSIX / msvcrt Windows），refresh token 自动续期，并发刷新去重
+- `gemini_cloudcode_adapter.py`：provider 注册，模型发现，streaming
+
+支持免费层（个人账户每日配额）和付费层（Standard/Enterprise via GCP project）。
+
+### Ollama Cloud
+
+作为内置 provider 注册（与 gemini、xai 等平级）：
+- `OLLAMA_API_KEY` 环境变量认证
+- Provider 别名：`ollama` → custom（本地），`ollama_cloud` → ollama-cloud
+- models.dev 集成获取准确上下文长度
+- 动态模型发现 + 磁盘缓存（1 小时 TTL）
+- 保留 Ollama `model:tag` 格式（不做规范化）
+
+### Tool Gateway（Nous 订阅制工具网关）
+
+把 web 搜索、TTS、浏览器、图片生成等工具的 API 调用路由到 Nous 托管的统一网关，用户无需自备各家 API key：
+
+```yaml
+# config.yaml — 按工具类别 opt-in
+web:
+  use_gateway: true
+tts:
+  use_gateway: true
+image_gen:
+  use_gateway: true
+browser:
+  use_gateway: true
+```
+
+- `managed_nous_tools_enabled()` 检查 Nous 登录状态 + 订阅层级
+- `prefers_gateway(section)` 共享辅助函数，4 个工具运行时统一使用
+- `hermes model` 交互流程：Nous 登录后展示可用工具列表，用户选择启用全部 / 仅未配置的 / 跳过
+- 免费层用户看到升级提示
 
 ## 与其他系统的关系
 

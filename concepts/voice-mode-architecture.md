@@ -1,7 +1,7 @@
 ---
 title: 语音模式架构
 created: 2026-04-10
-updated: 2026-04-10
+updated: 2026-04-17
 type: concept
 tags: [voice, stt, tts, architecture]
 sources: [tools/voice_mode.py, tools/tts_tool.py, tools/transcription_tools.py, cli.py]
@@ -66,6 +66,17 @@ VOICE_TOOLS_OPENAI_KEY=...    # OpenAI Whisper
 ## TTS 配置
 
 TTS Provider 选择和语音设置通过 `tools/tts_tool.py` 管理，支持 ElevenLabs 的流式播报——LLM 生成一句就播一句，不用等完整回复。
+
+### 新增 TTS Provider（v0.10.0）
+
+| Provider | 来源 |
+|----------|------|
+| ElevenLabs | 原有 |
+| OpenAI | 原有 |
+| **Google Gemini TTS** | v0.10.0 新增，通过 Gemini API |
+| **xAI TTS** | v0.10.0 新增，随 xAI Responses API 升级一起引入 |
+
+这些 provider 也可通过 Nous Tool Gateway 统一访问（无需自备 API key）。
 
 ## 语音模式特殊行为
 

@@ -1,7 +1,7 @@
 ---
 title: Hook 系统架构
 created: 2026-04-08
-updated: 2026-04-15
+updated: 2026-04-17
 type: concept
 tags: [architecture, module, extensibility, mcp, plugins]
 sources: [gateway/hooks.py, hermes_cli/plugins.py, model_tools.py, run_agent.py]
@@ -295,6 +295,59 @@ export HERMES_ENABLE_PROJECT_PLUGINS=true
 
 pip install hermes-agent-my-plugin
 ```
+
+## PluginContext 新增 API（v0.10.0，2026-04-16）
+
+### `register_command()` — 插件斜杠命令
+
+之前 `cli.py` 和 `gateway/run.py` 的调度代码已经调用 `get_plugin_command_handler()`，但注册侧一直没实现。v0.10.0 补全了这条链路：
+
+```python
+def register(ctx):
+    ctx.register_command(
+        name="deploy",
+        description="Deploy the current project",
+        handler=my_deploy_handler,
+    )
+```
+
+- 名称规范化 + 与内置命令冲突检测
+- 注册的命令自动出现在 Telegram bot 菜单和 CLI 自动补全中
+- `/plugins` 显示每个插件注册的命令数量
+
+### `dispatch_tool()` — 插件调度工具
+
+插件的斜杠命令处理器可以通过注册表调度工具调用，自动注入 parent agent 上下文：
+
+```python
+async def my_handler(ctx, args):
+    result = ctx.dispatch_tool("delegate_task", {
+        "task": "refactor auth module",
+        "instructions": "..."
+    })
+```
+
+- CLI 模式：从 `_cli_ref` 懒解析 parent agent
+- Gateway 模式：无 `_cli_ref`，工具优雅降级
+- 使用场景：`/deliver` 和 `/fanout` 等插件命令通过 `delegate_task` 派生子 agent
+
+### Dashboard 插件系统
+
+插件可以向 Web Dashboard 添加自定义标签页：
+
+```
+~/.hermes/plugins/<name>/dashboard/
+  manifest.json     # name, label, icon, tab config, entry point
+  dist/index.js     # 预构建 JS bundle（IIFE，使用 SDK 全局变量）
+  plugin_api.py     # 可选 FastAPI 路由，挂载到 /api/plugins/<name>/
+```
+
+- `GET /api/dashboard/plugins` — 返回已发现的插件 manifest 列表
+- `GET /api/dashboard/plugins/rescan` — 强制重新扫描
+- `GET /dashboard-plugins/<name>/<path>` — 提供静态资源（含路径遍历防护）
+- 支持可选的后端 API 路由自动挂载
+
+同时新增 **Dashboard 主题系统**，支持实时切换。
 
 ## 与其他系统的关系
 

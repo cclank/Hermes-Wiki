@@ -1,7 +1,7 @@
 ---
 title: Context Compressor 上下文压缩架构
 created: 2026-04-08
-updated: 2026-04-15
+updated: 2026-04-17
 type: concept
 tags: [architecture, module, component, agent, context-compression]
 sources: [agent/context_engine.py, agent/context_compressor.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
@@ -51,13 +51,22 @@ context:
 ### 压缩算法
 
 ```text
-算法流程:
-  1. 修剪旧工具输出（廉价预处理，无需 LLM）
-  2. 保护头部消息（系统提示 + 首轮交互）
-  3. 按 token 预算保护尾部（最近 ~20K tokens）
-  4. 用结构化 LLM 提示摘要中间轮次
-  5. 后续压缩时迭代更新之前的摘要
+算法流程（v3）:
+  Phase 1: 廉价预处理（纯本地，不调 LLM，零 token 成本）
+    ├── Pass 1: MD5 去重 — 同一文件读 5 次只留最新一份
+    ├── Pass 2: Smart Collapse — 旧工具输出替换为信息化单行摘要
+    └── Pass 3: tool_call 参数截断 — >500 字符截到 200
+  Phase 2: 确定边界
+    保护头部（系统提示+首轮）+ 按 token 预算保护尾部
+  Phase 3: LLM 结构化摘要（只处理 Phase 1 瘦身后的中间部分）
+  Phase 4: 组装 + 清理孤立的 tool_call/tool_result 配对
 ```
+
+#### 旧版（v2）vs 新版（v3）执行方式对比
+
+**旧版只有一步**：token 达到阈值 → 把中间对话原样交给 LLM 总结 → 替换。问题是工具输出动辄几 KB（`npm test` 200 行、`read_file` 读整个文件），全部喂给 LLM 去总结，**总结本身就很费 token**；同一文件读了 5 次，5 份完整内容都在；压缩效果差时反复触发，每次都调 LLM 白白空转。
+
+**新版三阶段**：Phase 1 是零成本的本地操作（字符串哈希、正则替换、截断），往往就能砍掉 30-50% 的 token。Phase 3 的 LLM 调用处理的数据量因此小得多。加上防抖机制（连续 2 次低效就停止），整体 LLM 调用次数和每次调用的输入量都显著减少。
 
 ### 演进历史
 
@@ -196,12 +205,71 @@ def _serialize_for_summary(turns):
 [具体值、错误消息、配置细节等不能丢失的信息]
 ```
 
-**v3 相比 v2 的关键差异**:
-- **Progress / Done / In Progress 合并** → `Completed Actions`(编号) + `Active State` + `In Progress`
-- **Next Steps** 改名 `Remaining Work`(避免被模型当成活动指令执行)
-- **新增 Resolved Questions / Pending User Asks**(防止模型重复回答)
-- 删掉了 v2 的 `Tools & Patterns` 节(信息已融入 Completed Actions)
-- 摘要预算从 `max_tokens = budget * 2` 改为 `budget * 1.3`,限制膨胀
+#### v2 摘要模板（旧版，作为对比参考）
+
+```text
+## Goal
+[What the user is trying to accomplish]
+
+## Constraints & Preferences
+[User preferences, coding style, constraints, important decisions]
+
+## Progress
+### Done
+[Completed work — include specific file paths, commands run, results obtained]
+### In Progress
+[Work currently underway]
+### Blocked
+[Any blockers or issues encountered]
+
+## Key Decisions
+[Important technical decisions and why they were made]
+
+## Resolved Questions
+[Questions the user asked that were ALREADY answered — include the answer]
+
+## Pending User Asks
+[Questions or requests from the user that have NOT yet been answered]
+
+## Relevant Files
+[Files read, modified, or created — with brief note on each]
+
+## Remaining Work
+[What remains to be done — framed as context, not instructions]
+
+## Critical Context
+[Any specific values, error messages, configuration details]
+
+## Tools & Patterns
+[Which tools were used, how they were used effectively, and any tool-specific discoveries]
+```
+
+#### v2 → v3 提示词逐项差异
+
+| 段落 | v2 | v3 | 改动原因 |
+|------|----|----|----------|
+| 完成记录 | `## Progress > ### Done` 自由文本 | `## Completed Actions` 强制编号 + 固定格式 `N. ACTION target — outcome [tool: name]` | 自由文本容易产出模糊描述（"modified some files"），编号格式强制 LLM 给出具体路径、命令、行号 |
+| 格式示例 | 无 | 给了 3 条示例（READ/PATCH/TEST） | Few-shot 引导 LLM 遵守格式 |
+| 当前状态 | 无独立段落，信息散落在 Progress 里 | 新增 `## Active State`（工作目录、分支、修改文件、测试状态、运行中进程） | 续接 agent 最需要的是"现在在哪、状态如何"，旧版没有明确的地方承载 |
+| 工具模式 | `## Tools & Patterns` 独立段落 | **删除**，工具信息融入 Completed Actions 的 `[tool: name]` | 工具和操作本身绑定，单独列段冗余浪费 token |
+| 具体度要求 | "Be specific — include file paths, command outputs, error messages, and concrete values" | "Be CONCRETE — include file paths, command outputs, error messages, **line numbers**, and specific values. **Avoid vague descriptions like 'made some changes' — say exactly what changed.**" | 显式禁止模糊描述，新增 line numbers 要求 |
+| 迭代更新 | "ADD new progress. Move from 'In Progress' to 'Done'" | "ADD new completed actions to numbered list **(continue numbering)**. Update 'Active State' to reflect current state. **Remove information only if it is clearly obsolete.**" | "continue numbering" 防止每次压缩编号重置导致信息丢失；"only if clearly obsolete" 防止过度删除 |
+| 摘要预算 | `max_tokens = budget × 2` | `max_tokens = budget × 1.3` | 2× 太宽松导致摘要膨胀，1.3× 更紧凑 |
+
+**核心设计思路**：v2 的模板留给 LLM 太多自由度，产出质量不稳定；v3 通过强制编号、具体示例、显式禁令把"怎么写摘要"从开放式变成填空式，压缩产出更可预测、信息密度更高。
+
+#### Preamble（角色设定）— 两版一致
+
+```text
+You are a summarization agent creating a context checkpoint.
+Your output will be injected as reference material for a DIFFERENT
+assistant that continues the conversation.
+Do NOT respond to any questions or requests in the conversation —
+only output the structured summary.
+Do NOT include any preamble, greeting, or prefix.
+```
+
+灵感来源：OpenCode 的 "do not respond to any questions" + Codex 的 "another language model" 框架。两版未改动。
 
 #### 迭代更新
 
@@ -294,6 +362,8 @@ def _align_boundary_backward(messages, idx):
 ```
 
 **防止数据丢失**：避免拆分 assistant + tool_results 组，否则 `_sanitize_tool_pairs` 会移除尾部孤儿结果导致静默数据丢失。
+
+**v0.10.0 修复**：新增 `_ensure_last_user_message_in_tail()` 方法，在 `_find_tail_cut_by_tokens` 末尾调用，确保**最后一条用户消息永远留在尾部**。之前在某些场景下，压缩会把用户的活跃任务指令压进摘要区域，导致 agent 丢失当前任务上下文、停滞或重复已完成的工作（#10896）。
 
 ### 9. 尾部 token 预算保护
 
@@ -449,6 +519,75 @@ compressor.get_status()
 #   "compression_count": 2
 # }
 ```
+
+## 与 OpenClaw（Claude Code）压缩机制的对比
+
+OpenClaw 的压缩实现位于 `src/agents/compaction.ts`，采用**分块摘要**策略，与 Hermes 的**三阶段预处理 + 单次摘要**形成鲜明对比。
+
+### 整体架构差异
+
+| 维度 | Hermes v3 | OpenClaw |
+|------|-----------|----------|
+| 整体策略 | 本地预处理 → 边界划分 → 单次 LLM 摘要 | 分块 + 多次 LLM 摘要（两条路径，见下） |
+| LLM 调用次数 | **1 次**（只对瘦身后的中间部分） | **多次**（滚动式 N 次，或并行式 N+1 次） |
+| 预处理 | MD5 去重 + Smart Collapse + 参数截断（零 token） | `stripToolResultDetails()` 去掉工具详情（轻量） |
+| 分块 | 不分块，头-中-尾三段 | 两种分块策略（见下） |
+
+OpenClaw 实际有两条压缩路径（`src/agents/compaction.ts`）：
+
+- **`summarizeChunks`（滚动式）**：按 token 上限切块，串行处理——chunk1 摘要作为 chunk2 的 `previousSummary` 传入，逐步滚动。LLM 调用 N 次。
+- **`summarizeInStages`（并行+合并）**：`splitMessagesByTokenShare()` 切 N 块（默认 `DEFAULT_PARTS=2`），每块独立摘要，最后用 `MERGE_SUMMARIES_INSTRUCTIONS` 合并。LLM 调用 N+1 次。
+
+### 摘要模板对比
+
+**Hermes v3（11 段）：**
+
+```
+Goal / Constraints & Preferences / Completed Actions（编号+格式）/
+Active State / In Progress / Blocked / Key Decisions /
+Resolved Questions / Pending User Asks / Relevant Files /
+Remaining Work / Critical Context
+```
+
+**OpenClaw（5 段）：**
+
+```
+Decisions / Open TODOs / Constraints/Rules /
+Pending user asks / Exact identifiers
+```
+
+Hermes 模板更细致（Active State、Relevant Files、编号的 Completed Actions），OpenClaw 模板更精炼，但有 `Exact identifiers` 段显式要求保留 IDs/URLs/哈希/端口等字面值。
+
+### 逐项对比
+
+| 维度 | Hermes v3 | OpenClaw |
+|------|-----------|----------|
+| 操作记录 | `Completed Actions` 编号列表 `N. ACTION target — outcome [tool: name]` | 无专门段落，融入 Decisions |
+| 运行时状态 | `Active State`（分支、测试状态、运行进程） | 无 |
+| 精确值保留 | `Critical Context` 段 | `Exact identifiers` 段（IDs/URLs/哈希/端口） |
+| 未答问题追踪 | `Pending User Asks` + `Resolved Questions`（区分已答/未答） | `Pending user asks`（只跟踪未答） |
+| 文件追踪 | `Relevant Files` 独立段落 | 无，靠 Exact identifiers 保留路径 |
+| 质量校验 | 无（信任 LLM 输出） | `auditSummaryQuality()` 检查 5 个段落，不通过重试，兜底生成骨架 |
+| 迭代更新 | "continue numbering" 接续旧摘要编号 | `previousSummary` 传入下一块 |
+| 摘要上限 | 压缩内容 × 0.2，上限 12K tokens | 硬性 16,000 字符 |
+| 防抖 | 连续 2 次 <10% → 跳过 | 6 种 skip reason 分类（`already_compacted_recently` 等） |
+| 失败处理 | RuntimeError 600s / 瞬态 60s 冷却 | 15 分钟安全超时 + 3 次重试 + 结构化兜底 |
+| 工具对修复 | `_sanitize_tool_pairs()` 补孤儿对 | `repairToolUseResultPairing()` 删孤儿 |
+| 尾部保护 | token 预算动态 + 硬底线 3 条 | `DEFAULT_RECENT_TURNS_PRESERVE=3`（上限 12） |
+| 多语言 | 无特殊处理 | "Write summary in the primary language" |
+
+### 各有所长
+
+**Hermes 优势：**
+- 本地预处理（MD5 去重 + Smart Collapse）在 LLM 之前砍掉 30-50% token，OpenClaw 没有这层
+- 单次 LLM 调用，不管对话多长只调 1 次
+- 模板更细致（11 段 vs 5 段），续接 agent 拿到的上下文更丰富
+
+**OpenClaw 优势：**
+- 质量校验闭环（审查 → 重试 → 兜底骨架），Hermes 没有
+- 分块策略天然适应超长对话（单次 LLM 输入窗口有限，分块避免溢出）
+- `Exact identifiers` 段显式保留关键字面值
+- 跳过原因分类更细（6 种 reason），有助于调试
 
 ## 与 Prompt Caching 的交互
 

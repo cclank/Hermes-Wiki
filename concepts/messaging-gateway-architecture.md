@@ -1,7 +1,7 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-15
+updated: 2026-04-17
 type: concept
 tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
 sources: [gateway/run.py, gateway/platforms/, hermes_cli/config.py]
@@ -54,8 +54,8 @@ gateway/
 
 | 平台 | 类型 | 特性 |
 |------|------|------|
-| Telegram | Bot API | 群组/私聊、语音转录、贴纸 |
-| Discord | Bot API | 服务器/私聊、语音频道、Slash Commands |
+| Telegram | Bot API | 群组/私聊、语音转录、贴纸、代理支持、链接预览控制 |
+| Discord | Bot API | 服务器/私聊、语音频道、Slash Commands、角色权限控制、channel_prompts |
 | Slack | Bot API | Workspace 集成、Thread 支持 |
 | WhatsApp | Bridge (Node.js) | 群组/私聊、允许列表 |
 | Signal | Bot API | 加密消息 |
@@ -64,7 +64,7 @@ gateway/
 | Home Assistant | WebSocket | 智能家居事件 |
 | Matrix | E2E 加密 | 去中心化消息 |
 | Mattermost | Bot API | 自托管团队消息 |
-| 钉钉 | Stream | 企业消息 |
+| 钉钉 | Stream | 企业消息，QR 扫码认证，require_mention + allowed_users 权限控制 |
 | 飞书/Lark | Stream | 企业消息 |
 | 企业微信 | Stream | 企业微信消息 |
 | BlueBubbles | REST + Webhook | iMessage（macOS），tapback、已读回执 |
@@ -261,6 +261,8 @@ hermes gateway status   # 状态
 - 语音消息转录
 - 贴纸支持
 - 话题/线程支持
+- **代理支持**（v0.10.0）：`TELEGRAM_PROXY` 环境变量或 `config.yaml` 中 `proxy_url`
+- **链接预览控制**（v0.10.0）：`config.yaml` 中 `telegram.disable_link_preview` 关闭消息链接预览
 
 ### Discord
 - 支持服务器和私聊
@@ -268,6 +270,22 @@ hermes gateway status   # 状态
 - 语音频道支持
 - Opus 音频编码
 - Slash commands 集成
+- **角色权限控制**（v0.10.0）：`DISCORD_ALLOWED_ROLES` 环境变量，逗号分隔 Role ID。与 `DISCORD_ALLOWED_USERS` 是 OR 关系——用户 ID 或角色任一匹配即放行，两个都没配则所有人可用
+- **channel_prompts**（v0.10.0）：按频道/话题注入不同的系统提示，也扩展到 Telegram（群组/论坛话题）、Slack、Mattermost
+- **@everyone 和角色 ping 屏蔽**：`allowed_mentions` 默认阻止 bot 触发全体通知
+
+### 钉钉 DingTalk
+- Stream 协议连接
+- **QR 扫码认证**（v0.10.0）：`hermes_cli/dingtalk_auth.py`（292 行）实现 Device Flow——终端渲染 QR 码，用户用钉钉扫码，自动获取 AppKey/AppSecret，无需手动创建应用
+- **require_mention + allowed_users 权限控制**（v0.10.0）：与 Telegram/Discord 对齐
+- 支持 dingtalk-stream 0.24+ SDK 和 oapi webhooks
+
+### 微信 WeChat
+- SILK 编码语音回复（v0.10.0）
+- 媒体附件提取和发送
+- 原生 Markdown 渲染
+- CDN 白名单 SSRF 防护（安全修复）
+- macOS SSL 证书修复
 
 ### WhatsApp
 - 需要 WhatsApp Bridge (Node.js)
@@ -278,6 +296,11 @@ hermes gateway status   # 状态
 - 智能家居事件监控
 - 设备控制
 - 自动化触发
+
+### Gateway 运维增强（v0.10.0）
+- **Agent 缓存 LRU + 空闲 TTL 淘汰**：`_agent_cache` 加入上限和空闲超时，防止长期运行的 gateway 内存泄漏
+- **临时 agent 关闭**：一次性任务完成后自动关闭临时 agent
+- **WebSocket 重连等待**：发送前等待重连完成，避免丢消息
 
 ### 与其他 Agent 框架对比
 
