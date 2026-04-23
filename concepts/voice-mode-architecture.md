@@ -75,7 +75,7 @@ TTS Provider 选择和语音设置通过 `tools/tts_tool.py` 管理，支持 Ele
 | OpenAI | 原有 |
 | **Google Gemini TTS** | v0.10.0 新增，通过 Gemini API |
 | **xAI TTS** | v0.10.0 随 xAI Responses API 升级引入 |
-| **KittenTTS（本地）** | v2026.4.18+ 引入，本地 CPU 运行，无需 GPU 和 API key，模型 25-80MB，8 个内置声音 |
+| **KittenTTS（本地）** | v2026.4.18+ 引入，本地 CPU 运行，无需 GPU 和 API key，默认模型 `KittenML/kitten-tts-nano-0.8-int8`（25MB），默认声音 `Jasper`，其他声音由 KittenTTS 包提供（25-80MB 模型范围） |
 
 这些 provider 也可通过 Nous Tool Gateway 统一访问（无需自备 API key）。
 

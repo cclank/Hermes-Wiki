@@ -158,15 +158,18 @@ class SessionDB:
 
     def maybe_auto_prune_and_vacuum(
         self,
-        min_interval_hours: int = 168,   # 默认每周一次
-        older_than_days: int = 180,
-    ) -> None:
-        """幂等：通过 state_meta 表记录上次运行时间，跨进程同一 HERMES_HOME 只执行一次"""
+        retention_days: int = 90,        # 清理 90 天以上已结束 session
+        min_interval_hours: int = 24,    # 默认每天一次
+        vacuum: bool = True,
+    ) -> Dict[str, Any]:
+        """幂等：state_meta 表记录 last_auto_prune，跨进程同一 HERMES_HOME 共享锁
+        返回 {'skipped', 'pruned', 'vacuumed', 'error'?}"""
 ```
 
-- 新增 `state_meta` key/value 表存储上次运行时间戳
-- 同一 `HERMES_HOME` 下所有 Hermes 进程共享锁，`min_interval_hours` 内只执行一次
-- 永不抛异常——清理失败只记日志不影响启动
+- 新增 `state_meta` key/value 表存储上次运行时间戳（key: `last_auto_prune`）
+- 同一 `HERMES_HOME` 下所有 Hermes 进程共享，`min_interval_hours` 内 no-op
+- **智能 VACUUM**：只有 `pruned > 0` 才真正执行 VACUUM（`hermes_state.py:1567`），空清理不浪费 I/O
+- 永不抛异常——失败记 warning 不影响启动
 
 ## 更新 `/usage` 显示账户限制（v2026.4.18+）
 
