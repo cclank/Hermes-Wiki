@@ -1,7 +1,7 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-17
+updated: 2026-04-18
 type: concept
 tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
 sources: [gateway/run.py, gateway/platforms/, hermes_cli/config.py]
@@ -301,6 +301,19 @@ hermes gateway status   # 状态
 - **Agent 缓存 LRU + 空闲 TTL 淘汰**：`_agent_cache` 加入上限和空闲超时，防止长期运行的 gateway 内存泄漏
 - **临时 agent 关闭**：一次性任务完成后自动关闭临时 agent
 - **WebSocket 重连等待**：发送前等待重连完成，避免丢消息
+
+### v2026.4.18+ 增强
+
+- **企业微信（WeCom）QR 扫码认证**：`hermes wecom setup` 交互式向导，QR 扫码获取 bot 凭证，无需手动配置
+- **插件斜杠命令跨平台原生化**：`register_command()` 的插件命令自动暴露为 Discord native slash、Telegram BotCommand、Slack `/hermes` 子命令，无需针对每个平台重复实现
+- **决策型 command hook**：`command:<name>` 钩子可返回 `{"decision": "deny"|"handled"|"rewrite"|"allow"}` 在核心处理前拦截
+- **Slack 反应生命周期**：`SLACK_REACTIONS` 环境变量开关控制 bot 收发消息时的反应（emoji）
+- **Feishu @mention 上下文保留**：入站消息保留 @mention 上下文
+- **飞书流式编辑换行修复**：流式输出不再前置多余空行
+- **Session 状态维护**：`hermes_state.py` 新增 `maybe_auto_prune_and_vacuum()`，启动时幂等执行（跨进程通过 `state_meta` 表记录上次运行时间）。防止 session 和 FTS5 索引无限增长（一个重度用户报告 384MB/982 sessions 影响性能，prune + VACUUM 后降到 43MB）
+- **MEDIA: 标签扩展**：支持 PDF、document、archive 扩展名的自动提取
+- **全局隧道/代理场景 URL 开关**：`security.allow_private_urls` / `HERMES_ALLOW_PRIVATE_URLS` 允许解析私有 IP 范围（198.18.0.0/15、100.64.0.0/10），解决 OpenWrt / TUN 代理（Clash/Mihomo/Sing-box）/ 企业 VPN / Tailscale 场景。云元数据端点（169.254.169.254 等）始终阻断
+- **平台 hints**：`PLATFORM_HINTS` 覆盖 Matrix、Mattermost、Feishu 的系统提示
 
 ### 与其他 Agent 框架对比
 

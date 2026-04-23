@@ -1,7 +1,7 @@
 ---
 title: 语音模式架构
 created: 2026-04-10
-updated: 2026-04-17
+updated: 2026-04-18
 type: concept
 tags: [voice, stt, tts, architecture]
 sources: [tools/voice_mode.py, tools/tts_tool.py, tools/transcription_tools.py, cli.py]
@@ -74,9 +74,19 @@ TTS Provider 选择和语音设置通过 `tools/tts_tool.py` 管理，支持 Ele
 | ElevenLabs | 原有 |
 | OpenAI | 原有 |
 | **Google Gemini TTS** | v0.10.0 新增，通过 Gemini API |
-| **xAI TTS** | v0.10.0 新增，随 xAI Responses API 升级一起引入 |
+| **xAI TTS** | v0.10.0 随 xAI Responses API 升级引入 |
+| **KittenTTS（本地）** | v2026.4.18+ 引入，本地 CPU 运行，无需 GPU 和 API key，模型 25-80MB，8 个内置声音 |
 
 这些 provider 也可通过 Nous Tool Gateway 统一访问（无需自备 API key）。
+
+### STT Provider 扩展（v2026.4.18+）
+
+| Provider | 说明 |
+|----------|------|
+| Groq Whisper（免费） | 原有 |
+| OpenAI Whisper | 原有 |
+| Deepgram | 原有 |
+| **xAI Grok STT** | 新增，POST `/v1/stt`，支持 ITN（Inverse Text Normalization）+ 可选 diarization |
 
 ## 语音模式特殊行为
 

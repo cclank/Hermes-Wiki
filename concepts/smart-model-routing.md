@@ -1,7 +1,7 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-04-17
+updated: 2026-04-18
 type: concept
 tags: [architecture, module, model-routing, performance, caching, anthropic]
 sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py]
@@ -431,6 +431,25 @@ def reset_session_state(self):
 - models.dev 集成获取准确上下文长度
 - 动态模型发现 + 磁盘缓存（1 小时 TTL）
 - 保留 Ollama `model:tag` 格式（不做规范化）
+
+### Step Plan（v2026.4.18+）
+
+StepFun 首款 API-key provider（Step Plan），支持国际和中国区设置。从 `/step_plan/v1/models` 动态发现模型，离线有编码向 fallback 目录。
+
+### Vercel AI Gateway（v2026.4.18+）
+
+新增 `ai-gateway` provider，通过 Vercel AI Gateway 统一访问多家模型：
+- 定制模型列表（`AI_GATEWAY_MODELS`，OSS first，Kimi K2.5 推荐默认）
+- Live pricing 翻译（Vercel input/output → prompt/completion 格式）
+- 自动把免费 Moonshot 模型顶到 picker 首位
+- 提供商 picker 排序优先级提升
+- 使用 Vercel 的 deep-link 创建 API key
+
+### OpenRouter 工具支持过滤（v2026.4.18+）
+
+hermes-agent 是工具调用优先的 agent，只有支持 `tools` 的模型才能驱动 agent 循环。`fetch_openrouter_models()` 现在过滤掉 `supported_parameters` 明确不含 `tools` 的模型（如纯图像、completion-only）。
+
+宽容模式：`supported_parameters` 缺失时默认允许（Nous Portal、私有镜像、旧 snapshot 可能不填）。只隐藏明确声明了但不含 `tools` 的模型。
 
 ### Tool Gateway（Nous 订阅制工具网关）
 

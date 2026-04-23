@@ -1,7 +1,7 @@
 ---
 title: Session Search and SessionDB
 created: 2026-04-07
-updated: 2026-04-11
+updated: 2026-04-18
 type: concept
 tags: [session-search, session-store, memory, architecture]
 sources: [hermes-agent 源码分析 2026-04-07]
@@ -146,6 +146,35 @@ LLM 生成摘要
 - `prune_sessions(older_than_days=90)` 只清理已结束的 session，活跃 session 不受影响
 
 设计意图：保护历史数据完整性，避免清理操作误删有价值的对话记录。
+
+### 启动时自动修剪 + VACUUM（v2026.4.18+）
+
+`state.db` 之前无限增长——一个重度用户（gateway + cron）报告 384MB / 982 sessions / 68K 消息导致性能下降，手动 `hermes sessions prune --older-than 7` + `VACUUM` 后降到 43MB。v2026.4.18+ 在启动时自动执行：
+
+```python
+# hermes_state.py
+class SessionDB:
+    def vacuum(self): ...
+
+    def maybe_auto_prune_and_vacuum(
+        self,
+        min_interval_hours: int = 168,   # 默认每周一次
+        older_than_days: int = 180,
+    ) -> None:
+        """幂等：通过 state_meta 表记录上次运行时间，跨进程同一 HERMES_HOME 只执行一次"""
+```
+
+- 新增 `state_meta` key/value 表存储上次运行时间戳
+- 同一 `HERMES_HOME` 下所有 Hermes 进程共享锁，`min_interval_hours` 内只执行一次
+- 永不抛异常——清理失败只记日志不影响启动
+
+## 更新 `/usage` 显示账户限制（v2026.4.18+）
+
+`/usage` 命令在原有 token 表格下追加**账户级配额信息**（provider 侧返回的剩余额度、周期、限流）：
+
+- CLI：在 1-worker `ThreadPoolExecutor`（10s 超时）里 fetch，慢 provider 不会卡 prompt
+- Gateway：通过 `asyncio.to_thread` fetch；无 agent 驻留时从 `billing_provider` / `billing_base_url` 持久化字段解析 provider
+- 新模块 `agent/account_usage.py` 提供 per-provider 账户限制抽象
 
 ## 相关页面
 

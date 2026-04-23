@@ -1,7 +1,7 @@
 ---
 title: Hook 系统架构
 created: 2026-04-08
-updated: 2026-04-17
+updated: 2026-04-18
 type: concept
 tags: [architecture, module, extensibility, mcp, plugins]
 sources: [gateway/hooks.py, hermes_cli/plugins.py, model_tools.py, run_agent.py]
@@ -330,6 +330,51 @@ async def my_handler(ctx, args):
 - CLI 模式：从 `_cli_ref` 懒解析 parent agent
 - Gateway 模式：无 `_cli_ref`，工具优雅降级
 - 使用场景：`/deliver` 和 `/fanout` 等插件命令通过 `delegate_task` 派生子 agent
+
+### Shell Hooks（v2026.4.18+）
+
+Hook 回调不再局限于 Python。用户可以在 `config.yaml` 声明 shell 脚本作为钩子：
+
+```yaml
+hooks:
+  pre_tool_call:
+    - command: /path/to/my-hook.sh
+  subagent_stop:
+    - command: /path/to/audit.sh
+```
+
+脚本从 stdin 收 JSON 事件（tool_name/args 等），从 stdout 返回 JSON 决策（可阻止工具调用、注入 context）。
+
+**关键设计**：
+- 在 `PluginManager._hooks` 上注册 closure，零改动 `invoke_hook()` 调用点
+- `subprocess.run(shell=False)` + `shlex.split`——无 shell injection
+- 首次使用按 `(event, command)` 对询问用户同意，存到 allowlist JSON
+- 通过 `--accept-hooks` / `HERMES_ACCEPT_HOOKS=1` / `hooks_auto_accept` 绕过
+- `hermes hooks list/test/revoke/doctor` CLI 子命令
+- Claude Code 兼容响应格式（可复用 Claude Code 生态的 hook 脚本）
+- 新增 `subagent_stop` 事件（`delegate_task` 子 agent 退出时触发）
+
+### 插件斜杠命令跨平台原生化（v2026.4.18+）
+
+`register_command()` 注册的插件斜杠命令现在在每个 gateway 平台都原生展示：
+
+- Discord 原生 slash 命令选择器
+- Telegram BotCommand 菜单
+- Slack `/hermes` 子命令映射
+
+不需要每个平台单独写插件 API。`register_command()` 新增 `args_hint` 可选参数，插件可以声明参数结构，Discord 会自动生成参数选择器。
+
+#### 决策型 command 钩子
+
+`command:<name>` gateway hook 升级为**决策型**，通过 `HookRegistry.emit_collect()` 收集返回值：
+
+```python
+def my_command_hook(event_type, context):
+    if context["command"] == "deploy" and not user_has_permission(context["user"]):
+        return {"decision": "deny", "message": "Permission denied"}
+```
+
+决策类型：`deny` / `handled` / `rewrite` / `allow`，在核心处理前拦截。向后兼容——fire-and-forget 遥测钩子仍走 `emit()`。
 
 ### Dashboard 插件系统
 

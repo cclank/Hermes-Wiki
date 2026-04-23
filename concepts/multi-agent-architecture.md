@@ -1,7 +1,7 @@
 ---
 title: Hermes 多 Agent 架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-18
 type: concept
 tags: [architecture, module, agent, delegation, concurrency]
 sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, run_agent.py]
@@ -123,6 +123,32 @@ MAX_CONCURRENT_CHILDREN = 3  # 最多 3 个并行子代理
 DEFAULT_MAX_ITERATIONS = 50  # 每个子代理默认迭代上限
 DEFAULT_TOOLSETS = ["terminal", "file", "web"]
 ```
+
+### Orchestrator 角色 + 可配置深度（v2026.4.18+）
+
+`delegate_task` 新增 `role` 参数，支持 `leaf`（默认）和 `orchestrator`：
+
+```yaml
+# config.yaml
+delegation:
+  max_concurrent_children: 3   # 并发数下限，无上限
+  max_spawn_depth: 1           # 1=扁平（默认），2-3 解锁嵌套委派
+  orchestrator_enabled: true   # 全局开关
+```
+
+- **leaf**：和之前一样，子 agent 不能再 delegate
+- **orchestrator**：子 agent 保留 `delegation` toolset，可以继续派生自己的 worker
+
+**默认扁平姿态**：`max_spawn_depth=1` 时，orchestrator 角色静默降级为 leaf。用户主动把 `max_spawn_depth` 调到 2 或 3 才解锁嵌套委派。
+
+新增 `DelegateEvent` enum（带 legacy 字符串向后兼容），供 gateway/ACP/CLI 进度消费者使用。
+
+### 跨 Agent 文件状态协调（v2026.4.18+）
+
+多个并发子 agent 同时修改文件时，父 agent 现在能看到一致的文件状态：
+- 子 agent 写入的文件对其他子 agent 可见
+- 父 agent 收到汇总时能看到所有子 agent 的文件操作
+- 防止并发 patch 丢失
 
 ### 函数签名
 

@@ -3,7 +3,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown" alt="Wiki" height="28">
   <img src="https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github" alt="Source" height="28">
-  <img src="https://img.shields.io/badge/Knowledge_Base-36_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
+  <img src="https://img.shields.io/badge/Knowledge_Base-37_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
   <img src="https://img.shields.io/badge/Version-v0.10.0-purple?style=for-the-badge" alt="Version" height="28">
   <img src="https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge" alt="Verified" height="28">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" height="28">
@@ -24,6 +24,7 @@
 - [toolsets-system](concepts/toolsets-system.md): 工具分组系统、递归解析、14+ 平台工具集
 - [prompt-builder-architecture](concepts/prompt-builder-architecture.md): 系统提示模块化组装，注入防护+技能缓存+模型特定指导
 - [auxiliary-client-architecture](concepts/auxiliary-client-architecture.md): 辅助 LLM 客户端路由器，多 provider 解析链+自动降级
+- [provider-transport-architecture](concepts/provider-transport-architecture.md): Provider Transport ABC，统一抽象 Anthropic/Chat Completions/Responses API/Bedrock 的数据路径
 
 ### 记忆与会话
 
@@ -78,16 +79,17 @@
 - [2026-04-09-update](changelog/2026-04-09-update.md): 59 commits，结构化错误分类、统一执行层、三层溢出防护、BlueBubbles 等
 - [2026-04-10-update](changelog/2026-04-10-update.md): 293 commits，Context Engine 插件化、watch_patterns、WeChat、xAI、Discord/Slack 增强
 - [2026-04-17-update](changelog/2026-04-17-update.md): 641 commits (v0.10.0)，压缩 v3、Bedrock/Gemini/Ollama 新 Provider、Tool Gateway、插件命名空间技能、钉钉 QR 认证、Dashboard 插件
+- [2026-04-18-update](changelog/2026-04-18-update.md): 410 commits post-v0.10.0，Transport ABC 重构、Shell Hooks、Delegate Orchestrator、Step Plan/AI Gateway/xAI STT/KittenTTS、WeCom QR、Subagent 观测性
 
 ---
 
 ## 统计信息
 
-- **概念页面**: 36 个
-- **更新日志**: 3 个
+- **概念页面**: 37 个
+- **更新日志**: 4 个
 - **源码覆盖**: 关键模块逐行验证
-- **跟踪版本**: v0.10.0 (2026.4.16)
-- **最后更新**: 2026-04-17
+- **跟踪版本**: v0.10.0 (2026.4.16) + post-release（410 commits）
+- **最后更新**: 2026-04-18
 
 
 ## 使用方式
