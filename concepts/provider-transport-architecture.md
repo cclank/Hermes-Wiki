@@ -81,18 +81,20 @@ def register_transport(api_mode: str, transport_cls: type) -> None:
 
 ## 在 run_agent.py 中的接入点
 
-`AnthropicTransport` 替代了 `run_agent.py` 中 **10+ 个直接调用 `anthropic_adapter.py` 的位置**：
+`AnthropicTransport`、`ChatCompletionsTransport`、`BedrockTransport`、`ResponsesApiTransport` 替代了 `run_agent.py` 中 **20+ 个直接调用 provider 适配器函数的位置**：
 
-| 调用点 | 原方法 | 新方法 |
-|--------|--------|--------|
-| L6673 | `build_anthropic_kwargs(...)` | `transport.build_kwargs(...)` |
-| L7363 / L7395 | `build_anthropic_kwargs` / `normalize_anthropic_response` for memory flush | `transport.build_kwargs` / `transport.normalize_response` |
-| L8465 / L8498 | iteration-limit summary + retry | `transport.build_kwargs` |
-| L9366 | 响应验证 | `transport.validate_response` |
-| L9534 | finish reason 映射 | `transport.map_finish_reason` |
-| L9565 | 截断规范化 | `transport.normalize_response` |
-| L9827 | cache 统计提取 | `transport.extract_cache_stats` |
-| L10775 | 主 normalize loop | `transport.normalize_response` |
+| 场景 | 新方法 |
+|------|--------|
+| 主 kwargs 构建（按 api_mode 派发） | `transport.build_kwargs(...)` |
+| 记忆 flush（build_kwargs + normalize） | `_tflush.build_kwargs` / `_tfn.normalize_response` |
+| 迭代上限摘要 + 重试 | `_tsum.build_kwargs` / `_tsum.normalize_response` |
+| 响应结构校验 | `transport.validate_response` |
+| finish reason 映射（Anthropic stop_reason → OpenAI） | `transport.map_finish_reason` |
+| 截断响应的规范化 | `transport.normalize_response` |
+| cache 命中/创建统计提取 | `transport.extract_cache_stats` |
+| 主 normalize loop | `transport.normalize_response` |
+
+所有 transport 方法调用路径下的 adapter import 完全收敛到 transport 类内部，`run_agent.py` 本身不再直接 import `anthropic_adapter` 等函数。
 
 **零直接 adapter imports 残留**（指 transport 方法的调用路径）。
 

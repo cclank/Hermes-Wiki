@@ -333,7 +333,7 @@ async def my_handler(ctx, args):
 
 ### Shell Hooks（v2026.4.18+）
 
-Hook 回调不再局限于 Python。用户可以在 `config.yaml` 声明 shell 脚本作为钩子：
+实现位于 `agent/shell_hooks.py`（831 行）+ `hermes_cli/hooks.py`（385 行）。Hook 回调不再局限于 Python——用户可以在 `config.yaml` 声明 shell 脚本作为钩子：
 
 ```yaml
 hooks:

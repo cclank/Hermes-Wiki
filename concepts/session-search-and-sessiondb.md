@@ -172,9 +172,9 @@ class SessionDB:
 
 `/usage` 命令在原有 token 表格下追加**账户级配额信息**（provider 侧返回的剩余额度、周期、限流）：
 
-- CLI：在 1-worker `ThreadPoolExecutor`（10s 超时）里 fetch，慢 provider 不会卡 prompt
-- Gateway：通过 `asyncio.to_thread` fetch；无 agent 驻留时从 `billing_provider` / `billing_base_url` 持久化字段解析 provider
-- 新模块 `agent/account_usage.py` 提供 per-provider 账户限制抽象
+- CLI（`cli.py`）：`concurrent.futures.ThreadPoolExecutor(max_workers=1)` + 10s timeout 里 fetch，慢 provider 不会卡 prompt
+- Gateway（`gateway/run.py`）：通过 `asyncio.to_thread` fetch；无 agent 驻留时从 `billing_provider` / `billing_base_url` 持久化字段解析 provider
+- 新模块 `agent/account_usage.py`（326 行）提供 `fetch_account_usage(provider, base_url, api_key)` 和 `render_account_usage_lines(snapshot, markdown)` 两个入口
 
 ## 相关页面
 
