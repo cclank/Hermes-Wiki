@@ -1,7 +1,7 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-04-18
+updated: 2026-04-29
 type: concept
 tags: [architecture, module, model-routing, performance, caching, anthropic]
 sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py]
@@ -431,6 +431,16 @@ def reset_session_state(self):
 - models.dev 集成获取准确上下文长度
 - 动态模型发现 + 磁盘缓存（1 小时 TTL）
 - 保留 Ollama `model:tag` 格式（不做规范化）
+
+### MiniMax OAuth（v2026.4.23+）
+
+新增 `minimax-oauth` 一等公民 provider，使用 PKCE device-code flow（移植自 `openclaw/extensions/minimax/oauth.ts`）。`hermes_cli/auth.py` 新增：
+
+- 8 个 `MINIMAX_OAUTH_*` 常量（client ID、scope、grant type、global/CN base URLs、inference URLs、refresh skew）
+- `auth_type="oauth_minimax"` provider 类型，与 device-code/external OAuth 并列
+- 别名：`minimax-portal` / `minimax-global` / `minimax_oauth`
+- 标准 OAuth2 refresh_token grant 自动续期，`invalid_grant` / `refresh_token_reused` 触发 relogin
+- 与 MiniMax-M2.7 模型对接（`agent/minimax_oauth_provider.py`）
 
 ### Step Plan（v2026.4.18+）
 

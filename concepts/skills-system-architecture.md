@@ -1,7 +1,7 @@
 ---
 title: Skills System Architecture
 created: 2026-04-07
-updated: 2026-04-15
+updated: 2026-04-29
 type: concept
 tags: [skill, architecture, module, prompt-builder]
 sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, run_agent.py, agent/prompt_builder.py, hermes_cli/plugins.py, agent/skill_utils.py]
@@ -232,6 +232,71 @@ skills:
 | 内容来源 | 用户指定 | 后台 agent 从对话中提炼 |
 | 质量 | 用户控制 | agent 自主判断，可能创建也可能跳过 |
 | LLM 消耗 | 主对话的一部分 | 额外消耗（后台 agent 最多 8 轮迭代） |
+
+## Curator — 后台技能维护（v2026.4.23+）
+
+新增**辅助模型驱动的后台维护机制**（`agent/curator.py`，869 行 + `hermes_cli/curator.py`，235 行 + `tools/skill_usage.py`）。定期审查**agent 创建的**技能，跟踪使用情况，并把闲置 skill 经过状态机转换归档。
+
+### 不变量（load-bearing invariants）
+
+- **永不触碰** bundled 或 hub-installed 技能（`.bundled_manifest` + `.hub/lock.json` 双过滤）
+- **永不自动删除** —— 只归档，可通过 `hermes curator restore <skill>` 恢复
+- **Pinned skills 跳过所有自动转换**：`tools/skill_manager_tool.py:_pinned_guard()` 在 `skill_manage` 写入路径上拦截 pinned skill 修改
+- 使用 aux client，**永不污染主 session 的 prompt cache**
+
+### 触发逻辑
+
+默认开启，**inactivity-triggered**（无 cron 守护进程）：CLI 启动 + gateway 启动时检查，满足两条件才跑：
+1. 上次运行 > `interval_hours`（默认 `24 * 7 = 168`，即 7 天，`agent/curator.py:39`）
+2. agent 已闲置 > `min_idle_hours`（默认 `2`，`agent/curator.py:40`）
+
+Gateway 模式下也 hook 进 cron-ticker 线程定期检查。
+
+### 状态机
+
+```
+active ──不用 N 天──> stale ──继续不用──> archived
+   ↑                                         │
+   └──────── 重新使用 ────────────────────────┘
+```
+
+纯函数式（`agent/curator.py` 内的 state-machine 转换），无 LLM 调用。Forked AIAgent 仅在需要**整合重叠 + 修补漂移**时才介入。
+
+### sidecar telemetry
+
+`tools/skill_usage.py` 给每个 skill 维护 `.usage.json` sidecar 文件：
+- 原子写入 + provenance filter
+- 记录使用次数和最近使用时间，是状态机的输入信号
+
+### CLI
+
+```bash
+hermes curator status        # 当前状态、待处理 skill
+hermes curator run           # 立即跑一轮
+hermes curator pause/resume  # 暂停/恢复
+hermes curator pin <skill>   # 钉住某个 skill（跳过自动转换）
+hermes curator unpin <skill>
+hermes curator restore <skill>  # 从归档恢复
+```
+
+`/curator` 斜杠命令暴露相同子命令。
+
+## /reload-skills 和 /reload-mcp（v2026.4.23+）
+
+**`/reload-skills`**：重新扫描 `~/.hermes/skills/` 发现新装/卸载的 skill，无需重启进程。同时新增 `skills_reload` agent 工具，agent 自己也能触发。
+
+**`/reload-mcp` 加确认提示**：MCP 重载会失效 prompt cache，gateway 现在弹出确认对话框（包含"未来不再询问"的 opt-out 选项），避免误操作清掉昂贵的缓存。
+
+## 拒绝写 pinned skills（v2026.4.23+）
+
+`tools/skill_manager_tool.py:134` 新增 `_pinned_guard(name)`，在 `skill_manage` 的 create/update/archive/delete 路径上拦截 pinned skill 修改：
+
+```python
+if rec.get("pinned"):
+    return f"Skill '{name}' is pinned and cannot be modified by skill_manage..."
+```
+
+这是 Curator 不变量的延伸——pinned 状态对 agent 也是禁区，只能通过 `hermes curator unpin` 显式解锁。
 
 ## 相关页面
 

@@ -1,7 +1,7 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-18
+updated: 2026-04-29
 type: concept
 tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
 sources: [gateway/run.py, gateway/platforms/, hermes_cli/config.py]
@@ -58,7 +58,7 @@ gateway/
 | Discord | Bot API | 服务器/私聊、语音频道、Slash Commands、角色权限控制、channel_prompts |
 | Slack | Bot API | Workspace 集成、Thread 支持 |
 | WhatsApp | Bridge (Node.js) | 群组/私聊、允许列表 |
-| Signal | Bot API | 加密消息 |
+| Signal | Bot API | 加密消息，原生格式化、reply 引用、reactions（v2026.4.23+） |
 | Email | IMAP/SMTP | 邮件交互 |
 | SMS | Twilio | 短信，字符限制 |
 | Home Assistant | WebSocket | 智能家居事件 |
@@ -71,6 +71,51 @@ gateway/
 | 微信/WeChat | iLink Bot API | 长轮询收消息，AES-128-ECB 媒体加密，QR 登录 |
 | QQ Bot | Official API v2 | WebSocket 入站(C2C/群/频道/DM) + REST 出站,语音转录(腾讯 ASR),allowlist + DM 配对 |
 | Webhook | HTTP | 外部事件接收 |
+| **腾讯元宝 Yuanbao** | API | 原生文本+媒体投递，sticker 支持（v2026.4.23+） |
+| **IRC**（插件） | TLS asyncio | 零外部依赖，TLS、PING/PONG、nick collision、NickServ、频道寻址（v2026.4.23+，参考实现） |
+
+## 平台适配器插件化（v2026.4.23+）
+
+`gateway/platform_registry.py` 引入 `PlatformRegistry` 单例 + `PlatformEntry` dataclass，让任何人都可以把新平台（IRC、Viber、Line 等）以**纯插件**形式接入，无需改 gateway 核心代码。
+
+```python
+# 插件注册入口
+def register(ctx):
+    ctx.register_platform(
+        name="irc",
+        label="IRC",
+        adapter_factory=create_irc_adapter,
+        check_fn=check_irc_available,
+        validate_config=validate_irc_config,
+        required_env=["IRC_NICK", "IRC_PASS"],
+        install_hint="pip install ...",
+    )
+```
+
+### 关键改造点
+
+| 模块 | 改造 |
+|------|------|
+| `Platform` enum | `_missing_()` 接受未知字符串，创建缓存的 pseudo-member（`Platform('irc') is Platform('irc')` 永真） |
+| `GatewayConfig.from_dict` | 解析 config.yaml 里的插件平台名，不再拒绝未知平台 |
+| `_create_adapter()` in `gateway/run.py` | 先查 registry，未命中再 fall through 到内置 if/elif 链 |
+| `get_connected_platforms()` | 把未知平台委托给 registry |
+| `PluginContext.register_platform()` | 镜像 `register_tool()` / `register_hook()` 模式 |
+
+### IRC 参考实现
+
+`plugins/platforms/irc/` 是首个插件平台：
+- 全 async（`asyncio` stdlib，零外部依赖）
+- TLS 连接、PING/PONG 心跳、nick 冲突重命名、NickServ 自动鉴权
+- 频道消息要求 `nick: msg` 寻址，DM 全部派发
+- 输出 Markdown 自动剥离（IRC 不支持），消息分片（IRC 长度限制）
+- 交互式 `setup` 向导（v2026.4.23+）
+
+### 平台插件 12 个集成点全覆盖
+
+`feat: complete plugin platform parity` (2e20f6ae2) + `feat: final platform plugin parity` (e464cde58) 让插件平台和内置平台行为一致：
+- webhook 投递、PLATFORM_HINTS、`get_connected_platforms`、cron 投递、动态 toolset 生成、setup wizard 等
+- bundled 插件平台（如 IRC）启动时自动加载（`feat(plugins): bundled platform plugins auto-load by default`）
 
 ## 平台适配器基类
 

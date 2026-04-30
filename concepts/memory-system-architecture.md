@@ -1,7 +1,7 @@
 ---
 title: Memory System Architecture
 created: 2026-04-07
-updated: 2026-04-08
+updated: 2026-04-29
 type: concept
 tags: [memory, architecture, module]
 sources: [tools/memory_tool.py, agent/memory_manager.py, agent/memory_provider.py, agent/builtin_memory_provider.py, run_agent.py, agent/prompt_builder.py, plugins/memory/__init__.py]
@@ -202,7 +202,14 @@ class MemoryProvider(ABC):
     def on_pre_compress(self, messages) -> str: ...
     def on_memory_write(self, action, target, content): ...
     def on_delegation(self, task, result): ...
+    def on_session_switch(self, new_session_id, parent_session_id, reset, **kw): ...  # v2026.4.23+
 ```
+
+### `on_session_switch` — Session ID 中途切换通知（v2026.4.23+）
+
+之前 provider 只在初始化时收到一次 `session_id`。但 `session_id` 会在 `/resume`、`/branch`、`/reset`、`/new`、上下文压缩等场景被**重新分配**——provider 不知道，后续写入会落到错误的 session 记录里。
+
+`agent/memory_manager.py:425-438` 现在会在 session_id 改变时调用所有 provider 的 `on_session_switch(new_session_id, parent_session_id, reset, **kwargs)`，让 provider 刷新缓存的 per-session 状态。Provider 不需要 tear down 重建，只需要更新内部句柄。错误会被 swallow（log debug 不阻塞主流程）。
 
 ### initialize() 的 kwargs
 
