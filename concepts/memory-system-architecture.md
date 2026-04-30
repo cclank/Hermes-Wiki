@@ -209,7 +209,7 @@ class MemoryProvider(ABC):
 
 之前 provider 只在初始化时收到一次 `session_id`。但 `session_id` 会在 `/resume`、`/branch`、`/reset`、`/new`、上下文压缩等场景被**重新分配**——provider 不知道，后续写入会落到错误的 session 记录里。
 
-`agent/memory_manager.py:425-438` 现在会在 session_id 改变时调用所有 provider 的 `on_session_switch(new_session_id, parent_session_id, reset, **kwargs)`，让 provider 刷新缓存的 per-session 状态。Provider 不需要 tear down 重建，只需要更新内部句柄。错误会被 swallow（log debug 不阻塞主流程）。
+`agent/memory_manager.py:on_session_switch()` 现在会在 session_id 改变时调用所有 provider 的 `on_session_switch(new_session_id, parent_session_id, reset, **kwargs)`，让 provider 刷新缓存的 per-session 状态。Provider 不需要 tear down 重建，只需要更新内部句柄。错误会被 swallow（log debug 不阻塞主流程）。
 
 ### initialize() 的 kwargs
 
