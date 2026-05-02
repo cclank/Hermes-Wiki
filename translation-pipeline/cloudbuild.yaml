@@ -1,16 +1,26 @@
 steps:
-  # Example: Run the translation script
-  - name: 'python:3.10' # Or the relevant environment (Node, Go, etc.)
-    dir: 'translation-pipeline'
-    entrypoint: 'bash'
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/hermes-wiki-translator', '.']
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/hermes-wiki-translator']
+  # Deploy container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
     args:
-      - '-c'
-      - |
-        pip install -r requirements.txt
-        python translate.py --args... 
+      - 'run'
+      - 'deploy'
+      - 'hermes-wiki-translator'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/hermes-wiki-translator'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'LOCAL_MODE=false'
 
-# Optional: Store the results in an Artifact Registry or GCS bucket
-artifacts:
-  objects:
-    location: 'gs://your-translation-results-bucket/'
-    paths: ['translation-pipeline/output/*']
+images:
+  - 'gcr.io/$PROJECT_ID/hermes-wiki-translator'
