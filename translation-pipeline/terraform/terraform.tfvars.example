@@ -1,0 +1,9 @@
+project_id       = "your-gcp-project-id"
+claude_api_key   = "sk-your-anthropic-api-key"
+region           = "us-central1"
+service_name     = "hermes-wiki-translator"
+memory           = 1024
+cpu              = "1"
+max_instances    = 10
+min_instances    = 1
+timeout          = 3600
