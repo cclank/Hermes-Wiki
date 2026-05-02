@@ -1,10 +1,10 @@
 ---
 title: Hook 系统架构
 created: 2026-04-08
-updated: 2026-04-18
+updated: 2026-05-02
 type: concept
-tags: [architecture, module, extensibility, mcp, plugins]
-sources: [gateway/hooks.py, hermes_cli/plugins.py, model_tools.py, run_agent.py]
+tags: [architecture, module, extensibility, mcp, plugins, gateway-dispatch, approval-lifecycle]
+sources: [gateway/hooks.py, hermes_cli/plugins.py, model_tools.py, run_agent.py, gateway/run.py, tools/approval.py]
 ---
 
 # Hook 系统架构
@@ -154,18 +154,28 @@ class PluginManager:
                        #     ctx.register_hook(...)
 ```
 
-#### 生命周期钩子
+#### 生命周期钩子（截至 v2026.4.30）
+
+`hermes_cli/plugins.py:78-114 VALID_HOOKS`：
 
 ```python
-VALID_HOOKS = {
-    "pre_tool_call",      # 工具调用前
-    "post_tool_call",     # 工具调用后
-    "pre_llm_call",       # LLM 调用前
-    "post_llm_call",      # LLM 调用后
-    "pre_api_request",    # API 请求前
-    "post_api_request",   # API 请求后
-    "on_session_start",   # 会话开始
-    "on_session_end",     # 会话结束
+VALID_HOOKS: Set[str] = {
+    "pre_tool_call",            # 工具调用前（可 veto，见下文）
+    "post_tool_call",           # 工具调用后（带 duration_ms）
+    "transform_terminal_output",# terminal 工具输出改写
+    "transform_tool_result",    # 通用工具结果改写（v0.11.0+）
+    "pre_llm_call",             # LLM 调用前
+    "post_llm_call",            # LLM 调用后
+    "pre_api_request",          # API 请求前
+    "post_api_request",         # API 请求后
+    "on_session_start",         # 会话开始
+    "on_session_end",           # 会话结束
+    "on_session_finalize",      # 会话最终落盘（v2026.4.30+）
+    "on_session_reset",         # 会话重置
+    "subagent_stop",            # delegate_task 子 agent 退出
+    "pre_gateway_dispatch",     # Gateway 收消息后、auth 前（v2026.4.30+，可 skip/rewrite）
+    "pre_approval_request",     # 审批弹出前（v2026.4.30+，纯遥测）
+    "post_approval_response",   # 审批响应后（v2026.4.30+，带 choice）
 }
 ```
 
@@ -375,6 +385,67 @@ def my_command_hook(event_type, context):
 ```
 
 决策类型：`deny` / `handled` / `rewrite` / `allow`，在核心处理前拦截。向后兼容——fire-and-forget 遥测钩子仍走 `emit()`。
+
+### `pre_gateway_dispatch` Hook（v2026.4.30+）
+
+Gateway 收到 `MessageEvent` → 内部事件守卫 → **`pre_gateway_dispatch` plugin hook** → auth/pairing → agent dispatch。`gateway/run.py:4461-4490` 实现：
+
+```python
+# Fire pre_gateway_dispatch plugin hook for user-originated messages.
+result = invoke_plugin_hooks(
+    "pre_gateway_dispatch",
+    event=event,
+    gateway=self,
+    session_store=session_store,
+)
+```
+
+返回值约定：
+
+| 返回值 | 行为 |
+|------|------|
+| `{"action": "skip", "reason": "..."}` | drop 消息，不回复（典型用例：rate-limit、垃圾邮件过滤） |
+| `{"action": "rewrite", "text": "..."}` | 替换 `event.text`，继续正常 dispatch |
+| `{"action": "allow"}` 或 `None` | 正常 dispatch |
+
+钩子异常不阻塞主流程（`logger.warning("pre_gateway_dispatch invocation failed: %s", _hook_exc)`）。
+
+### `pre_approval_request` / `post_approval_response`（v2026.4.30+）
+
+由 `tools/approval.py` 在审批生命周期触发，**CLI 交互弹窗 + Gateway/ACP 远程审批**全覆盖（Telegram、Discord、Slack、TUI 都触发）。
+
+**纯观察者** —— 返回值忽略，不能 veto / 不能预答审批。要拦截工具，仍然用 `pre_tool_call`（可返回 `{"action": "block"}`）。
+
+```python
+# Kwargs for pre_approval_request:
+#   command: str, description: str, pattern_key: str, pattern_keys: list[str],
+#   session_key: str, surface: "cli" | "gateway"
+
+# Kwargs for post_approval_response: same as above plus
+#   choice: "once" | "session" | "always" | "deny" | "timeout"
+```
+
+典型用途：审批审计、合规上报、metrics、向 Slack 发"管理员审批了 X 命令"通知。
+
+### `transform_tool_result` & `transform_terminal_output`（v0.11.0+）
+
+| Hook | 适用范围 | 用途 |
+|------|------|------|
+| `transform_terminal_output` | 仅 `terminal` 工具 | 在结果回到 LLM 前**改写终端输出**（如脱敏 IP、截断噪音 log） |
+| `transform_tool_result` | 任何工具 | 通用结果改写（如统一 JSON 格式、过滤敏感字段） |
+
+### Plugin Kind 枚举（v2026.4.30+）
+
+`hermes_cli/plugins.py:176`：
+
+```python
+_VALID_PLUGIN_KINDS: Set[str] = {"standalone", "backend", "exclusive", "platform"}
+```
+
+- **`standalone`** — 默认；hooks/tools 自带，opt-in via `plugins.enabled`
+- **`backend`** — 现有 core 工具的可插拔后端（如 `image_gen`）；bundled 自动加载，user-installed 仍受 `plugins.enabled` 门控
+- **`exclusive`** — 独占某个 surface（防止冲突注册）
+- **`platform`** — gateway messaging 平台插件（IRC、Microsoft Teams 等）—— 见 [[messaging-gateway-architecture]]
 
 ### Dashboard 插件系统
 

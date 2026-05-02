@@ -1,10 +1,10 @@
 ---
 title: Prompt Caching 优化架构
 created: 2026-04-07
-updated: 2026-04-08
+updated: 2026-05-02
 type: concept
 tags: [architecture, module, performance, cost-optimization, anthropic]
-sources: [agent/prompt_caching.py, run_agent.py]
+sources: [agent/prompt_caching.py, run_agent.py, hermes_cli/config.py]
 ---
 
 # Prompt Caching — Anthropic 缓存优化架构
@@ -98,6 +98,20 @@ marker = {"type": "ephemeral", "ttl": "1h"}  # 1 小时 TTL
 **使用场景**：
 - **5m（默认）**：适合快速连续对话，缓存命中率高
 - **1h**：适合长时间对话间隔，容忍更高的缓存未命中
+
+### `prompt_caching.cache_ttl` 配置（v2026.4.30+）
+
+`hermes_cli/config.py:642-644` 暴露用户可配置：
+
+```yaml
+# config.yaml
+prompt_caching:
+  cache_ttl: "5m"   # 默认；唯一另一选项是 "1h"
+```
+
+**取值约束**：仅 Anthropic 支持的 tier `"5m"` / `"1h"`，其他值被忽略（在 `agent/prompt_caching.py:58` 显式比较 `if cache_ttl == "1h"`，不匹配则保留默认 `{"type": "ephemeral"}`）。
+
+**何时改 1h**：突发会话需要长时间保温（用户间断回复但希望缓存不过期），定价上 1h tier 的写入成本更高，但跨长间隔的复用可以摊平成本。
 
 ## 成本效益
 

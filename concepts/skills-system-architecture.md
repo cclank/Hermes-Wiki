@@ -1,10 +1,10 @@
 ---
 title: Skills System Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-02
 type: concept
 tags: [skill, architecture, module, prompt-builder]
-sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, run_agent.py, agent/prompt_builder.py, hermes_cli/plugins.py, agent/skill_utils.py]
+sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, tools/skill_usage.py, run_agent.py, agent/prompt_builder.py, agent/curator.py, hermes_cli/curator.py, hermes_cli/plugins.py, agent/skill_utils.py]
 ---
 
 # 技能系统架构
@@ -233,24 +233,32 @@ skills:
 | 质量 | 用户控制 | agent 自主判断，可能创建也可能跳过 |
 | LLM 消耗 | 主对话的一部分 | 额外消耗（后台 agent 最多 8 轮迭代） |
 
-## Curator — 后台技能维护（v2026.4.23+）
+## Curator — 后台技能维护（v2026.4.23+，v2026.4.30 自治化）
 
-新增**辅助模型驱动的后台维护机制**（`agent/curator.py`，869 行 + `hermes_cli/curator.py`，235 行 + `tools/skill_usage.py`）。定期审查**agent 创建的**技能，跟踪使用情况，并把闲置 skill 经过状态机转换归档。
+**辅助模型驱动的后台维护机制**（`agent/curator.py`，**1599 行** + `hermes_cli/curator.py`，**430 行** + `tools/skill_usage.py`）。定期审查**agent 创建的**技能，跟踪使用情况，按状态机转换归档闲置 skill；v2026.4.30 升级为**自治后台 agent**。
 
 ### 不变量（load-bearing invariants）
 
 - **永不触碰** bundled 或 hub-installed 技能（`.bundled_manifest` + `.hub/lock.json` 双过滤）
 - **永不自动删除** —— 只归档，可通过 `hermes curator restore <skill>` 恢复
 - **Pinned skills 跳过所有自动转换**：`tools/skill_manager_tool.py:_pinned_guard()` 在 `skill_manage` 写入路径上拦截 pinned skill 修改
-- 使用 aux client，**永不污染主 session 的 prompt cache**
+- 使用 aux client（统一在 `auxiliary.curator` 配置），**永不污染主 session 的 prompt cache**
 
 ### 触发逻辑
 
 默认开启，**inactivity-triggered**（无 cron 守护进程）：CLI 启动 + gateway 启动时检查，满足两条件才跑：
-1. 上次运行 > `interval_hours`（默认 `24 * 7 = 168`，即 7 天，`agent/curator.py:39`）
+1. 上次运行 > `interval_hours`（默认 `24 * 7 = 168`，即 7 天，`agent/curator.py:39 DEFAULT_INTERVAL_HOURS`）
 2. agent 已闲置 > `min_idle_hours`（默认 `2`，`agent/curator.py:40`）
 
 Gateway 模式下也 hook 进 cron-ticker 线程定期检查。
+
+### v2026.4.30 自治化升级
+
+- **每轮报告**：`logs/curator/run.json` + `REPORT.md` 落盘（`agent/curator.py:431-562`）
+- **consolidated vs pruned 分类**：`_classify_removed_skills()` 用 model + 启发式区分"整合归档"（吸收到 umbrella skill）vs"真正归档"（不再使用）；用 `_extract_absorbed_into_declarations()` 提取 `absorbed_into` 字段权威记录吸收去向
+- **rollback 恢复 cron skill 链接**：`hermes curator rollback` 不仅恢复文件，还修复 cron 引用
+- **`bump_use()` 接入 `skill_view` / preload / 调用路径** —— 真实使用频次计数，不只看创建/编辑时间
+- **跳过 `.archive/` 子目录的 skill 索引扫描**
 
 ### 状态机
 
@@ -264,22 +272,36 @@ active ──不用 N 天──> stale ──继续不用──> archived
 
 ### sidecar telemetry
 
-`tools/skill_usage.py` 给每个 skill 维护 `.usage.json` sidecar 文件：
+`tools/skill_usage.py`（506 行）给每个 skill 维护 `.usage.json` sidecar 文件：
 - 原子写入 + provenance filter
-- 记录使用次数和最近使用时间，是状态机的输入信号
+- 记录使用次数（`bump_use()` 在 `skill_view`、preload、显式调用路径都触发）和最近使用时间
+- 是状态机的输入信号，也是 `hermes curator status` 排名依据
 
-### CLI
+### CLI（v2026.4.30 全套）
 
 ```bash
-hermes curator status        # 当前状态、待处理 skill
-hermes curator run           # 立即跑一轮
-hermes curator pause/resume  # 暂停/恢复
-hermes curator pin <skill>   # 钉住某个 skill（跳过自动转换）
+hermes curator status         # 按使用频次排序：most-used vs least-used
+hermes curator run            # 立即跑一轮
+hermes curator pause/resume   # 暂停/恢复
+hermes curator pin <skill>    # 钉住某个 skill（跳过自动转换）
 hermes curator unpin <skill>
-hermes curator restore <skill>  # 从归档恢复
+hermes curator restore <skill>  # 从归档恢复（处理嵌套 archive 子目录）
+hermes curator backup         # 手动备份
+hermes curator rollback       # 回滚到上次备份（修复 cron 链接）
 ```
 
 `/curator` 斜杠命令暴露相同子命令。
+
+### 自我改进闭环（Background Review Fork，v2026.4.30 重做）
+
+后台审查 fork（每轮决定保存/更新哪些 memory/skill）做了全栈升级：
+
+- **rubric-based 评分**（class-first）替换以往的"should this update" 自由问答
+- **active-update bias** —— 优先更新刚被 agent 加载的 skill；理解 `references/` + `templates/` 子文件
+- **fork 继承父 runtime**（provider/model/credentials 真正传递）—— 之前 fork 会回落到默认配置
+- **toolsets 限定到 memory + skills** —— fork 不能调 web/shell（防止越权）
+- 后台 memory provider clean shutdown
+- review summary **排除上一轮 tool messages** —— fork 看到干净的对话上下文
 
 ## /reload-skills 和 /reload-mcp（v2026.4.23+）
 

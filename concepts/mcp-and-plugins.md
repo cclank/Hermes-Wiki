@@ -1,10 +1,10 @@
 ---
 title: MCP 集成与插件系统
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-05-02
 type: concept
-tags: [architecture, mcp, plugins, extensibility]
-sources: [hermes-agent 源码分析 2026-04-07]
+tags: [architecture, mcp, plugins, extensibility, spotify, google-meet, langfuse]
+sources: [tools/mcp_tool.py, tools/mcp_oauth.py, hermes_cli/plugins.py, plugins/]
 ---
 
 # MCP 集成与插件系统
@@ -193,15 +193,65 @@ plugins:
 | 自定义工具 | ✅ 注册表 | ❌ | ❌ |
 | 插件 CLI | ✅ | N/A | N/A |
 
+## Bundled Plugins（v2026.4.30 现状）
+
+`plugins/` 目录下打包了下列 plugin（按 `plugins.enabled` 显式开启）：
+
+| 插件目录 | 类型 | 简介 |
+|------|------|------|
+| `plugins/spotify/` | standalone | **7 工具**：`spotify_playback / devices / queue / search / playlists / albums / library`，PKCE OAuth + 交互式 wizard（v2026.4.30+） |
+| `plugins/google_meet/` | standalone | 加入 Google Meet 会议、转录、语音回应；OpenAI Realtime + Node bot server（v2026.4.30+） |
+| `plugins/observability/langfuse/` | standalone | 全链路 tracing（salvage #16845，v2026.4.30+） |
+| `plugins/hermes-achievements/` | standalone | 扫描 session 历史，颁发 "成就"（v2026.4.30+） |
+| `plugins/disk-cleanup/` | standalone | 磁盘清理 reference 实现（opt-in by default，v0.11.0+） |
+| `plugins/kanban/` | standalone | Kanban 协作板（v0.11.0；多 profile 协作版本 #16081 已 revert） |
+| `plugins/memory/` | backend | Honcho memory provider 集成 |
+| `plugins/image_gen/` | backend | 可插拔 image_gen 后端（OpenAI、`openai-codex` gpt-image-2 over Codex OAuth） |
+| `plugins/context_engine/` | backend | Context engine 可插拔实现 |
+| `plugins/example-dashboard/` | standalone | Dashboard plugin 参考实现 |
+| `plugins/strike-freedom-cockpit/` | standalone | 第三方 dashboard 参考 |
+| `plugins/platforms/irc/` | platform | IRC 平台适配器（参考实现，v2026.4.23+） |
+| `plugins/platforms/teams/` | platform | Microsoft Teams 平台适配器（v2026.4.30+，第 19 个平台） |
+
+### Spotify 插件（v2026.4.30+）
+
+`plugins/spotify/__init__.py:46-52` 静态注册 7 个工具：
+
+```python
+_TOOLS = [
+    ("spotify_playback",  SPOTIFY_PLAYBACK_SCHEMA,  _handle_spotify_playback,  "🎵"),
+    ("spotify_devices",   SPOTIFY_DEVICES_SCHEMA,   _handle_spotify_devices,   "🔈"),
+    ("spotify_queue",     SPOTIFY_QUEUE_SCHEMA,     _handle_spotify_queue,     "📻"),
+    ("spotify_search",    SPOTIFY_SEARCH_SCHEMA,    _handle_spotify_search,    "🔎"),
+    ("spotify_playlists", SPOTIFY_PLAYLISTS_SCHEMA, _handle_spotify_playlists, "📚"),
+    ("spotify_albums",    SPOTIFY_ALBUMS_SCHEMA,    _handle_spotify_albums,    "💿"),
+    ("spotify_library",   SPOTIFY_LIBRARY_SCHEMA,   _handle_spotify_library,   "❤️"),
+]
+```
+
+`hermes auth spotify` 完成 PKCE 后所有工具自动可用，`_check_spotify_available()` 在没有有效 token 时让工具优雅失败。
+
+### Google Meet 插件（v2026.4.30+）
+
+`plugins/google_meet/` 包含：
+- `meet_bot.py` —— 控制浏览器加入 Meet
+- `realtime/` —— OpenAI Realtime API 桥接（语音输入 / 语音回应）
+- `node/` —— Node.js bot server（处理 Meet 协议）
+- `audio_bridge.py` + `process_manager.py` —— 进程管理
+- `cli.py` —— `hermes google-meet preflight / install / start` 命令
+
+完整流水线作为 plugin 打包，按需 opt-in。
+
 ## 相关页面
 
 - [[tool-registry-architecture]] — 插件通过 registry.register() 注册工具
-- [[hook-system-architecture]] — 插件钩子系统与网关事件钩子互补
+- [[hook-system-architecture]] — 插件钩子系统与网关事件钩子互补，包含 v2026.4.30+ 新 hook（`pre_gateway_dispatch`、`pre_approval_request` / `post_approval_response`、`transform_tool_result` / `transform_terminal_output`）
 - [[model-tools-dispatch]] — MCP 工具通过 discover 机制集成到编排层
+- [[messaging-gateway-architecture]] — `platform` kind plugin（IRC、Teams）
 
 ## 相关文件
 
 - `tools/mcp_tool.py` — MCP 服务器任务
 - `tools/mcp_oauth.py` — MCP OAuth
-- `hermes_cli/plugins.py` — 插件系统
+- `hermes_cli/plugins.py` — 插件系统（VALID_HOOKS / `_VALID_PLUGIN_KINDS`）
 - `plugins/` — 插件目录

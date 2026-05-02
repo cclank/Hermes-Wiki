@@ -286,8 +286,9 @@ elif function_name == "memory":
 
 上下文压缩前
     │
-    ├── flush_memories(messages) → 让模型把重要信息写入 memory
     └── on_pre_compress(messages) → 通知外部 provider 抢救信息
+        # ⚠️ flush_memories 在 v2026.4.30 (refactor #15696) 完全移除——
+        # 同等职责由 background-review fork（每 N 轮自动触发）承担。
 
 会话结束
     │
@@ -474,7 +475,7 @@ session_search(query="nginx 配置")
 - [[memory-system-architecture]] — MemoryStore 核心类详细 API（本页）
 - [[security-defense-system]] — 记忆内容安全扫描
 - [[skills-and-memory-interaction]] — 技能与记忆的交互决策树
-- [[context-compressor-architecture]] — 压缩前 flush_memories 和 on_pre_compress
+- [[context-compressor-architecture]] — 压缩前 `on_pre_compress`（`flush_memories` 已在 v2026.4.30 移除，由 background-review fork 替代）
 - [[prompt-caching-optimization]] — 冻结快照如何保护 prefix cache
 - [[session-search-and-sessiondb]] — Session Search 工具（FTS5 + LLM 摘要）
 
@@ -485,6 +486,6 @@ session_search(query="nginx 配置")
 - `agent/memory_provider.py` — MemoryProvider ABC 接口（232 行）
 - `agent/builtin_memory_provider.py` — 内置 Provider（114 行）
 - `plugins/memory/` — 8 个外部 Provider 插件
-- `run_agent.py` — Agent 集成（工具拦截、prefetch、sync、flush）
+- `run_agent.py` — Agent 集成（工具拦截、prefetch、sync；`flush_memories` 工具已删除）
 - `agent/prompt_builder.py` — MEMORY_GUIDANCE 系统提示
 - `tools/session_search_tool.py` — Session Search 工具（FTS5 + LLM 摘要，505 行）

@@ -1,10 +1,10 @@
 ---
 title: 安全防御体系 — 多层注入检测
 created: 2026-04-07
-updated: 2026-04-11
+updated: 2026-05-02
 type: concept
-tags: [architecture, security, injection-defense, skills-guard]
-sources: [hermes-agent 源码分析 2026-04-07]
+tags: [architecture, security, injection-defense, skills-guard, redaction, hardline]
+sources: [tools/skills_guard.py, tools/memory_tool.py, tools/approval.py, agent/redact.py, agent/prompt_builder.py, run_agent.py, tools/url_safety.py]
 ---
 
 # 安全防御体系 — 多层注入检测
@@ -378,6 +378,57 @@ approvals:
 - `tools/tirith_security.py` — Tirith 安全策略引擎（homograph URL、pipe-to-shell、terminal 注入）
 - `tools/url_safety.py` — URL 安全检查（SSRF 防护：拦截私有网络、云元数据地址、验证重定向）
 - `tools/osv_check.py` — 依赖恶意软件扫描（OSV 数据库）
+
+## Hardline 命令黑名单（v2026.4.30+）
+
+`tools/approval.py:146-196` 新增 `HARDLINE_PATTERNS`（12 条 unconditional block 模式 + 47 条 DANGEROUS）。Hardline 命令**完全无法批准**，直接 fail-closed —— 即使用户选 "always allow" 也不通过：
+
+```python
+HARDLINE_PATTERNS = [...]  # 12 patterns
+HARDLINE_PATTERNS_COMPILED = [(re.compile(p), desc) for p, desc in HARDLINE_PATTERNS]
+
+def detect_hardline_command(command: str) -> tuple:
+    """Check if a command matches the unconditional hardline blocklist.
+    Returns: (is_hardline, description) or (False, None)"""
+    for pattern_re, description in HARDLINE_PATTERNS_COMPILED:
+        if pattern_re.search(command):
+            return (True, description)
+```
+
+`HARDLINE_PATTERNS_COMPILED` 与 `DANGEROUS_PATTERNS_COMPILED` 在模块加载时预编译（PR #17206），减少冷启动开销。
+
+## Secret 脱敏默认关闭（v2026.4.30+ 行为变更）
+
+`agent/redact.py:60-64` 默认翻转 —— **redaction 不再默认开启**：
+
+```python
+# OFF by default — user must opt in via
+# `security.redact_secrets: true` in config.yaml (bridged to this env var
+# in hermes_cli/main.py and gateway/run.py) or `HERMES_REDACT_SECRETS=true`
+_REDACT_ENABLED = os.getenv("HERMES_REDACT_SECRETS", "").lower() in ("1", "true", "yes", "on")
+```
+
+bridge 在 `hermes_cli/main.py:176-191`：早于 logging 初始化读取 `security.redact_secrets`，写入 `HERMES_REDACT_SECRETS` 环境变量。
+
+**为什么翻转默认值**：长期 incident —— `redact_sensitive_text()` 把**看起来像 key** 的子串（如代码里的 hex 字符串、commit hash）也替换为 `***`。结果是工具输出畸形、`patch` 应用失败、API payload 损坏。
+
+**仍然 force-redact 的入口**：调用 `redact_sensitive_text(text, force=True)` 的安全边界（如 fatal log 写入、上传到第三方）—— 这些不受全局开关影响。
+
+```python
+def redact_sensitive_text(text: str, *, force: bool = False) -> str:
+    """Disabled by default — enable via security.redact_secrets: true in config.yaml.
+    Set force=True for safety boundaries that must never return raw secrets..."""
+```
+
+新增 canonical `mask_secret()` helper —— 显示时永远 mask 而非完全 redact，保留前几位 + 最后几位以便识别。
+
+## `[SYSTEM:` → `[IMPORTANT:` 标记重命名（v2026.4.30+）
+
+所有用户注入的标记从 `[SYSTEM: ...]` 改名 `[IMPORTANT: ...]`，绕开 Azure content filter（之前 Azure 把 "SYSTEM" 误判为提示注入）。
+
+涉及 `gateway/run.py:909-922`（watch pattern / background process / MCP reload）、`agent/skill_commands.py:440,487`（skill invocation marker）、`tools/process_registry.py:779`（背景进程完成通知）。
+
+`grep '\[SYSTEM:'` 在源码里**已全部清零** —— 不存在向后兼容残留。
 
 ## 相关页面
 

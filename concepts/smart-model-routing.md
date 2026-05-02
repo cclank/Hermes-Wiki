@@ -1,10 +1,10 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-04-29
+updated: 2026-05-02
 type: concept
-tags: [architecture, module, model-routing, performance, caching, anthropic]
-sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py]
+tags: [architecture, module, model-routing, performance, caching, anthropic, lmstudio, gmi, azure-foundry, tencent]
+sources: [agent/model_metadata.py, agent/models_dev.py, agent/lmstudio_reasoning.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py, hermes_cli/auth.py, hermes_cli/azure_detect.py, hermes_cli/fallback_cmd.py]
 ---
 
 # Smart Model Routing — 智能模型路由
@@ -481,6 +481,51 @@ browser:
 - `prefers_gateway(section)` 共享辅助函数，4 个工具运行时统一使用
 - `hermes model` 交互流程：Nous 登录后展示可用工具列表，用户选择启用全部 / 仅未配置的 / 跳过
 - 免费层用户看到升级提示
+
+## 新 Provider（v2026.4.30+）
+
+| Provider | 类型 | 验证位置 |
+|---|---|---|
+| **GMI Cloud** | first-class API-key（同 Arcee/Kilocode/Xiaomi） | `hermes_cli/auth.py:250` (`api.gmi-serving.com/v1`)，`agent/model_metadata.py:54,316` |
+| **Azure AI Foundry** | auto-detection 自动接入 | `hermes_cli/azure_detect.py` |
+| **Tencent Tokenhub** | 国内 MaaS | `agent/model_metadata.py:55,317`（`tokenhub.tencentmaas.com`） |
+| **MiniMax OAuth** | PKCE 浏览器授权 | `agent/credential_sources.py:255 _remove_minimax_oauth`；auth.json `providers.minimax-oauth` |
+| **LM Studio** | 从 custom-endpoint 别名升级为 first-class | `agent/lmstudio_reasoning.py`（独立 reasoning-effort 解析）；`/api/v1/models` 直查（`agent/model_metadata.py:412`） |
+
+### LM Studio first-class 化细节（`agent/lmstudio_reasoning.py`）
+
+LM Studio 在每个模型上声明 `capabilities.reasoning.allowed_options`（如 `low/medium/high`、graduated）。原本走 OpenAI-compat 时 reasoning effort 会被丢弃，新模块把用户的 `reasoning_config` 映射到 LM Studio 接受的 effort 字符串：
+
+```python
+def resolve_lmstudio_effort(...) -> Optional[str]:
+    """Return the reasoning_effort string to send to LM Studio, or None
+    if no value is honored (let LM Studio fall back to the model's default)."""
+```
+
+## 模型目录与配置（v2026.4.30+）
+
+- **远端 model catalog manifest**（PR #16033）—— OpenRouter / Nous Portal 目录从远端 manifest 拉取，新模型不需要 release 即可使用
+- **GPT-5.5 / gpt-5.5-pro** 入 OpenRouter + Nous Portal（PR #15343）
+- **DeepSeek v4-pro / v4-flash** 加入（PR #14934）
+- **qwen3.6-plus** 加入 Alibaba 目录
+- **Gemini free-tier keys** 在 setup 阶段直接拒绝（429 提示导引）
+- **`/fast` 白名单**扩大到所有 OpenAI + Anthropic 模型
+- **Native multimodal image routing**（PR #16506）—— 入站图像现在按 `model.vision` 能力路由，不再按 provider 默认
+- **`auxiliary.extra_body.reasoning`** 翻译到 Codex Responses API
+
+### `hermes fallback` —— 显式 fallback chain 管理
+
+`hermes_cli/fallback_cmd.py`（430+ 行）：
+
+```bash
+hermes fallback              # 等价 list
+hermes fallback list         # 显示当前 chain
+hermes fallback add          # 同 `hermes model` 选 provider/model 加入 chain
+hermes fallback remove       # 选条目删除
+hermes fallback clear        # 全清
+```
+
+主模型连续报错时 `try_fallback_models()` 按 chain 顺序逐个试。**v2026.4.30+ 优化**：init 时主 credential pool 耗尽就**立即试 fallback provider**（`13f344c5 fix(agent): try fallback providers at init`），不再等到第一次请求才发现。
 
 ## 与其他系统的关系
 

@@ -1,17 +1,17 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-02
 type: concept
-tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
-sources: [gateway/run.py, gateway/platforms/, hermes_cli/config.py]
+tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy, teams]
+sources: [gateway/run.py, gateway/platforms/, gateway/platform_registry.py, hermes_cli/config.py, plugins/platforms/]
 ---
 
 # 消息网关架构
 
 ## 概述
 
-Gateway 是 Hermes Agent 的**统一消息网关**，支持 14+ 消息平台，从单一进程管理所有平台的连接和消息分发。
+Gateway 是 Hermes Agent 的**统一消息网关**，支持 **19 个**消息平台（17 内置 + 2 plugin-shipped），从单一进程管理所有平台的连接和消息分发。
 
 ## 架构
 
@@ -71,8 +71,9 @@ gateway/
 | 微信/WeChat | iLink Bot API | 长轮询收消息，AES-128-ECB 媒体加密，QR 登录 |
 | QQ Bot | Official API v2 | WebSocket 入站(C2C/群/频道/DM) + REST 出站,语音转录(腾讯 ASR),allowlist + DM 配对 |
 | Webhook | HTTP | 外部事件接收 |
-| **腾讯元宝 Yuanbao** | API | 原生文本+媒体投递，sticker 支持（v2026.4.23+） |
+| **腾讯元宝 Yuanbao** | API | 原生文本+媒体投递，sticker 支持（v2026.4.23+，gateway/platforms/yuanbao.py） |
 | **IRC**（插件） | TLS asyncio | 零外部依赖，TLS、PING/PONG、nick collision、NickServ、频道寻址（v2026.4.23+，参考实现） |
+| **Microsoft Teams**（插件） | Bot Framework | `plugins/platforms/teams/adapter.py`，TeamsAdapter(BasePlatformAdapter)，`microsoft-teams` SDK + Adaptive Cards（v2026.4.30+，第 19 个平台） |
 
 ## 平台适配器插件化（v2026.4.23+）
 
@@ -111,17 +112,37 @@ def register(ctx):
 - 输出 Markdown 自动剥离（IRC 不支持），消息分片（IRC 长度限制）
 - 交互式 `setup` 向导（v2026.4.23+）
 
+### Microsoft Teams 插件实现（v2026.4.30+）
+
+`plugins/platforms/teams/adapter.py` 是第二个插件平台，`TeamsAdapter(BasePlatformAdapter)` 通过 `microsoft-teams` SDK 接入 Bot Framework：
+- Adaptive Cards 渲染（`AdaptiveCardInvokeActivity` / `InvokeResponse`）
+- typing indicator + delivery receipts
+- xdist collision guard（pytest 并行执行避免 worker 冲突）
+
+注册路径与 IRC 完全一致：
+
+```python
+ctx.register_platform(
+    name="teams",
+    label="Microsoft Teams",
+    adapter_factory=lambda cfg: TeamsAdapter(cfg),
+    ...
+)
+```
+
+证明 PlatformRegistry 抽象成立 —— 插件平台与内置平台拥有 12 个集成点的对等支持。
+
 ### 平台插件 12 个集成点全覆盖
 
 `feat: complete plugin platform parity` (2e20f6ae2) + `feat: final platform plugin parity` (e464cde58) 让插件平台和内置平台行为一致：
 - webhook 投递、PLATFORM_HINTS、`get_connected_platforms`、cron 投递、动态 toolset 生成、setup wizard 等
-- bundled 插件平台（如 IRC）启动时自动加载（`feat(plugins): bundled platform plugins auto-load by default`）
+- bundled 插件平台（如 IRC、Teams）启动时自动加载（`feat(plugins): bundled platform plugins auto-load by default`）
 
 ## 平台适配器基类
 
 ```python
 # gateway/platforms/base.py
-class BasePlatform:
+class BasePlatformAdapter(ABC):
     """平台适配器基类"""
     
     def __init__(self, config: dict, gateway):
@@ -346,6 +367,22 @@ hermes gateway status   # 状态
 - **Agent 缓存 LRU + 空闲 TTL 淘汰**：`_agent_cache` 加入上限和空闲超时，防止长期运行的 gateway 内存泄漏
 - **临时 agent 关闭**：一次性任务完成后自动关闭临时 agent
 - **WebSocket 重连等待**：发送前等待重连完成，避免丢消息
+
+### Gateway 媒体与消息能力（v2026.4.30+）
+
+- **Native multi-image sending**：Telegram / Discord / Slack / Mattermost / Email / Signal 都接入统一的多图发送通道（PR #17909）
+- **集中音频路由 + FLAC 支持 + Telegram document fallback**（PR #17833）—— TTS 输出走统一管道，平台不支持的格式自动 fallback 为 attachment
+- **Native multimodal image routing**（PR #16506）—— 入站图像按 model.vision 能力路由，不再按 provider 默认
+- **`pre_gateway_dispatch` plugin hook**（`gateway/run.py:4461-4490`）—— 消息收到 → 内部事件守卫 → **plugin hook（可 skip / rewrite / allow）** → auth/pairing → agent dispatch
+- **`pre_approval_request` / `post_approval_response` 审批生命周期 hook**（CLI + Gateway + ACP 全覆盖，纯遥测）
+- **Opt-in 运行时元信息 footer**（PR #17026）—— 最终回复可附带 model / token / cost
+- **Make hygiene hard message limit configurable**
+- **Auto-restart on source-file changes**（PR #18409）
+- **Gateway shutdown hygiene** —— drain timeout、false-fatal 抑制、success log
+
+### `[SYSTEM:` → `[IMPORTANT:` 标记重命名（v2026.4.30+ 行为变更）
+
+所有用户注入的标记从 `[SYSTEM: ...]` 改名 `[IMPORTANT: ...]`，绕开 Azure content filter（之前 Azure 把 "SYSTEM" 误判为提示注入）。涉及 `gateway/run.py:909-922`、`agent/skill_commands.py:440,487`、`tools/process_registry.py` 等多处。
 
 ### v2026.4.18+ 增强
 

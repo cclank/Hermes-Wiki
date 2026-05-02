@@ -1,10 +1,10 @@
 ---
 title: Session Search and SessionDB
 created: 2026-04-07
-updated: 2026-04-18
+updated: 2026-05-02
 type: concept
-tags: [session-search, session-store, memory, architecture]
-sources: [hermes-agent 源码分析 2026-04-07]
+tags: [session-search, session-store, memory, architecture, fts5, trigram, cjk]
+sources: [hermes_state.py, tools/session_search_tool.py, agent/trajectory.py]
 ---
 
 # 会话搜索与 SessionDB
@@ -33,18 +33,22 @@ class SessionDB:
 
 ## FTS5 搜索
 
-使用 SQLite 的 FTS5 扩展实现高效全文搜索：
+使用 SQLite 的 FTS5 扩展实现高效全文搜索。Hermes 维护**两张** FTS5 虚拟表（`hermes_state.py`）：
 
 ```sql
--- FTS5 虚拟表（索引 messages 表）
-CREATE VIRTUAL TABLE messages_fts USING fts5(
-    content,
-    content=messages,
-    content_rowid=id
-);
+-- 主表（unicode61 tokenizer，覆盖 content + tool_name + tool_calls）
+CREATE VIRTUAL TABLE messages_fts USING fts5(...);
 
--- 搜索查询
-SELECT * FROM messages_fts WHERE messages_fts MATCH 'elevenlabs OR baseten OR funding';
+-- 触发器索引内容：
+-- COALESCE(content, '') || ' ' || COALESCE(tool_name, '') || ' ' || COALESCE(tool_calls, '')
+```
+
+```sql
+-- Trigram 表（v2026.4.30+，CJK / 泰语等 substring 查询）
+CREATE VIRTUAL TABLE messages_fts_trigram USING fts5(
+    content,
+    tokenize='trigram'
+);
 ```
 
 搜索语法支持：
@@ -52,6 +56,33 @@ SELECT * FROM messages_fts WHERE messages_fts MATCH 'elevenlabs OR baseten OR fu
 - **短语匹配** — `"docker networking"`
 - **布尔逻辑** — `python NOT java`
 - **前缀匹配** — `deploy*`
+
+### 双 FTS5 表设计动机（v2026.4.30+）
+
+**问题**：默认的 unicode61 tokenizer 把每个 CJK 字符切成独立 token —— 短语 `"模型路由"` 在索引里是 `[模][型][路][由]` 四个独立 token，FTS5 短语查询会破裂。
+
+**解决**：trigram tokenizer 创建 3-byte 滑动窗口，CJK / 泰语 / 任何脚本的子串查询都原生工作。每条消息同时写入两张表，查询时按语种特征选择路由。
+
+### `tool_name` + `tool_calls` 入索引（v2026.4.30+）
+
+PR #16914（schema v11）—— FTS5 索引不再只覆盖 `content`，还包含工具名和参数 JSON，可以搜索 "调用过 web_search 但没找到结果" 这类语义。
+
+`hermes_state.py:440-481` 实现自动迁移：
+
+```python
+# v11: re-index FTS5 tables to cover tool_name + tool_calls
+INSERT INTO messages_fts(rowid, content) SELECT id,
+    COALESCE(content, '') || ' ' || 
+    COALESCE(tool_name, '') || ' ' || 
+    COALESCE(tool_calls, '') 
+FROM messages;
+```
+
+`hermes_state.py:111,123,141,153` 的 INSERT/UPDATE/DELETE 触发器同步维护两张表。
+
+### Underscore 词查询修复
+
+PR #16915 —— FTS5 query sanitization 现在引用带下划线的 token（如 `tool_name` 不被切成 `tool` + `name`）。
 
 ## Session Search 工具
 

@@ -607,6 +607,14 @@ while api_call_count < max_iterations and iteration_budget.remaining > 0:
         messages = [system_prompt] + [compressed] + recent_messages
 ```
 
+## v2026.4.30+ 韧性增强
+
+- **未知错误先 retry on main model 再放弃**（PR #16774）—— aux compression 报未知错误时不立即 fail，先用主模型重试一次 summary 再决定是否给用户失败提示
+- **Aux model 失败时主动通知用户**（PR #16775）—— 即使 main fallback 救回，用户也会收到 aux 失败的 surface（之前是静默吞错，导致用户看不到 aux 配置出问题）
+- **多模态 token 估算改用 text-char 总和**（PR #16369）—— `_find_tail_cut_by_tokens` 不再尝试解码图像 base64 来估 token，避免 PIL 内存爆炸；图像按其 placeholder 文字字符数估
+- **Aux 头预算保留 system + tools headroom**（PR #15631）—— aux 模型 binding threshold 时给 system + tools 留空间，防止压缩 prompt 太长触发 aux 自身 ctx 限制
+- **`/compress` 包在 `_busy_command`**（PR #15388）—— 压缩期间阻止用户继续输入，避免 race condition
+
 ## 与其他系统的关系
 
 - [[auxiliary-client-architecture]] — 压缩通过 `call_llm(task="compression")` 调用
@@ -615,4 +623,4 @@ while api_call_count < max_iterations and iteration_budget.remaining > 0:
 - [[prompt-caching-optimization]] — 压缩策略与 prompt caching 协调
 - [[large-tool-result-handling]] — 工具输出修剪与大型结果处理理念相通
 - [[session-search-and-sessiondb]] — Session 分裂后原始消息保留在 DB 中供检索
-- [[memory-system-architecture]] — 压缩前 flush_memories 和 on_pre_compress 通知
+- [[memory-system-architecture]] — 压缩前 `on_pre_compress` 通知（`flush_memories` 工具已在 v2026.4.30 移除）
