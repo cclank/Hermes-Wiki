@@ -1,0 +1,22 @@
+# Example Terraform configuration
+# Copy this file to terraform.tfvars and fill in your values
+
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+
+# Claude API key from https://console.anthropic.com
+claude_api_key = "sk-ant-your-api-key-here"
+
+# Optional: GitHub token for private repos
+# github_token = "ghp_your-github-token-here"
+
+# Optional: Customize bucket name
+# bucket_name = "hermes-wiki-translations"
+
+# Optional: Translation settings
+# max_workers = "5"
+# translation_model = "claude-3-5-sonnet-20241022"
+# max_instances = "10"
+
+# Optional: Require authentication
+# allow_unauthenticated = false
