@@ -2,7 +2,7 @@
 
 > 内容目录。每个 wiki 页面按类型列出，附一行摘要。
 > 查询前先读此文件找到相关页面。
-> Last updated: 2026-04-08 | Total pages: 33
+> Last updated: 2026-05-02 | Total pages: 40 | Tracking: v0.12.0 (v2026.4.30)
 
 ## Entities
 
@@ -33,8 +33,11 @@
 ### 安全与可靠性
 - [[security-defense-system]] — 5 层防御体系，100+ 威胁模式检测
 - [[interrupt-and-fault-tolerance]] — 中断传播、凭证池轮换、Fallback 模型链
+- [[tool-loop-guardrails]] — 工具调用循环守护（v0.12.0），exact/same-tool/idempotent 三维检测，warn/block/halt 决策
 - [[credential-pool-and-isolation]] — 多密钥自动轮换、Profile 隔离
 - [[multi-agent-architecture]] — 多 Agent 体系，子代理委派+批量处理+跨平台通信
+- [[kanban-multi-profile-board]] — Kanban 跨 profile 协作板（v0.12.0），SQLite WAL+CAS、worker tools、dashboard 插件
+- [[persistent-goals-ralph-loop]] — `/goal` Ralph 循环（v0.12.0），辅助模型 judge + SessionDB 持久化 + 不动系统提示
 
 ### 平台与扩展
 - [[cli-architecture]] — CLI 架构、斜杠命令补全、Skin 引擎

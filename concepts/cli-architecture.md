@@ -1,11 +1,18 @@
 ---
 title: CLI 架构与终端交互设计
 created: 2026-04-07
-updated: 2026-04-11
+updated: 2026-05-02
 type: concept
 tags: [architecture, cli, terminal, ux]
-sources: [hermes-agent 源码分析 2026-04-07]
+sources: [cli.py, hermes_cli/commands.py, hermes_cli/main.py]
 ---
+
+> **v0.12.0 新增斜杠命令**：`/goal`（[[persistent-goals-ralph-loop]]）、`/kanban`（[[kanban-multi-profile-board]]）、`/reload-skills`、`/busy`、`/btw`(`/background` 别名)、`/steer`、`/queue`、`/curator`、`/mouse`。
+>
+> **v0.12.0 新增 CLI 子命令**：`hermes -z <prompt>`（一次性 non-interactive 模式，支持 `--model`/`--provider`/`HERMES_INFERENCE_MODEL`）、`hermes update --check`/`--yes`、`hermes fallback`、`hermes kanban …`（15 verbs）、`hermes curator {status,run,pause,resume,pin,unpin,restore,backup,rollback}` —— `run --dry-run` / `--sync`。
+>
+> **TUI**：cold start 降幅 ~57%（lazy agent init + lazy import + mtime-cache config），`?` mini help、model picker 内联 provider setup（`d` 断开、绝对编号、show-all-providers）、self-improvement summary 在 transcript 渲染、respect max turns、mouse mode self-heal、SGR mouse 片段恢复。
+
 
 # CLI 架构与终端交互设计
 
@@ -144,6 +151,8 @@ display:
 - [[context-references]] — @file/@diff/@url 引用系统
 - [[worktree-isolation]] — Git Worktree 并行隔离
 - [[code-execution-sandbox]] — 代码执行沙箱
+- [[persistent-goals-ralph-loop]] — `/goal` 持久目标 Ralph 循环
+- [[kanban-multi-profile-board]] — `/kanban` 跨 profile 协作板
 
 ## 相关文件
 

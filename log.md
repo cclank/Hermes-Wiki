@@ -122,3 +122,36 @@
   - 源码: gateway/hooks.py (170行), hermes_cli/plugins.py (609行)
   - 核心内容: Gateway Hooks 事件驱动(8种事件+通配符)，Plugin System 三级来源(用户/项目/pip)，PluginContext API(工具注册/消息注入/CLI命令/钩子)，缓存友好上下文注入
 - index.md 更新为 37 页
+
+## [2026-05-02] update | v0.12.0 (v2026.4.30) The Curator Release ingest
+基于 191 commits since 2026-04-29（hermes-agent v2026.4.23..f98b5d0）。所有结论经源码逐行验证。
+
+**新增 changelog (1):**
+- changelog/2026-05-02-update.md — v0.12.0 The Curator Release，191 commits
+
+**新增概念页 (3):**
+- concepts/persistent-goals-ralph-loop.md — `/goal` Ralph 循环
+  - 源码: hermes_cli/goals.py (535行), cli.py:7046-7140, gateway/run.py:7648-7790
+  - 核心: 辅助模型 judge + 不动系统提示 + SessionDB.state_meta 持久化 + fail-open + turn budget backstop
+- concepts/tool-loop-guardrails.md — 工具调用循环守护
+  - 源码: agent/tool_guardrails.py (456行), run_agent.py:165-167/1160/1653-1657/9152-9188
+  - 核心: 三维检测 (exact failure / same-tool failure / idempotent no-progress) × 四态决策 (allow/warn/block/halt)，warnings 默认开 + hard stop 默认关
+- concepts/kanban-multi-profile-board.md — 跨 profile 协作板
+  - 源码: hermes_cli/kanban_db.py (2,765行), kanban.py (1,393行), tools/kanban_tools.py (727行), plugins/kanban/dashboard/plugin_api.py
+  - 核心: SQLite WAL+CAS（无分布式锁），15+ verbs CLI，7 worker tools (HERMES_KANBAN_TASK 守门)，dispatcher 嵌入 gateway，dashboard 插件
+- index.md 更新为 40 页（37 → 40）；version → v0.12.0 (2026.4.30)
+
+**更新页 (4):**
+- README.md — 版本徽章 v0.12.0、页面计数 40、新章节链接
+- index.md — 添加新页面链接
+- concepts/multi-agent-architecture.md — 新增 Persistent Goals 第 4 种机制 + 跨 profile/session 表（Kanban + Profile + Send Message）
+- concepts/messaging-gateway-architecture.md — 平台数 14+ → 19，注 Microsoft Teams 第 19 平台 (plugin)
+- concepts/cli-architecture.md — v0.12.0 新增斜杠命令、子命令清单、TUI cold start ~57% 降幅
+- concepts/interrupt-and-fault-tolerance.md — 新增容错层次表，guardrails 列首层
+
+**关键源码验证:**
+- /goal: GoalState 状态机 (active/paused/done/cleared) + judge fail-open + SessionDB key `goal:<sid>`
+- 工具守护: ToolCallGuardrailConfig 默认 warnings_enabled=True / hard_stop_enabled=False；IDEMPOTENT_TOOL_NAMES vs MUTATING_TOOL_NAMES 互斥；SHA256 args 签名
+- Kanban: VALID_STATUSES (7 态)、VALID_WORKSPACE_KINDS (3 类)、DEFAULT_CLAIM_TTL=15min、worker context caps (8KB body / 30 comments / 10 prior runs)
+- Lazy session: `_ensure_db_session()` 在 run_conversation 入口被调用（run_agent.py:2155）；ghost 清理 hermes_state.py:691
+- Self-improvement loop: class-first rubric + active-update bias + parent runtime 真实传播 + memory+skills toolset 限制

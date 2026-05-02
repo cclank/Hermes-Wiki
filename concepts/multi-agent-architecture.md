@@ -1,23 +1,36 @@
 ---
 title: Hermes 多 Agent 架构
 created: 2026-04-08
-updated: 2026-04-18
+updated: 2026-05-02
 type: concept
 tags: [architecture, module, agent, delegation, concurrency]
-sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, run_agent.py]
+sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, run_agent.py, hermes_cli/goals.py, hermes_cli/kanban_db.py]
 ---
 
 # Hermes 多 Agent 架构
 
 ## 概述
 
-Hermes 的多 Agent 能力分为**三种运行时机制**，全部在 Agent 对话过程中触发，不涉及外部脚本或离线工具：
+Hermes 的多 Agent 能力涵盖**对话内机制 + 跨会话/跨 profile 机制**：
+
+### 单会话内（agent 进程内）
 
 | 机制                    | 触发方式                  | 用途                   |
 | --------------------- | --------------------- | -------------------- |
 | **Delegate Task**     | LLM tool call（模型自主决定） | 并行子任务，最多 3 路         |
 | **Mixture of Agents** | LLM tool call（模型自主决定） | 多模型协同推理              |
 | **Background Review** | 系统计数器自动触发             | 后台提炼经验 → 创建/改进 skill |
+| **Persistent Goals (`/goal`)** | 用户 `/goal <text>` + 后置 judge | 跨 turn 持久目标，Ralph 循环（v0.12.0） |
+
+> v0.12.0 升级（参见 [[2026-05-02-update]]）：Background Review fork 升级为 **class-first rubric 评分**、**active-update bias**、parent runtime 真实传播、限制在 memory + skills toolset。Self-improvement summary 现在在 TUI transcript 渲染。
+
+### 跨会话 / 跨 profile
+
+| 机制                    | 触发                  | 用途                   |
+| --------------------- | --------------------- | -------------------- |
+| **Profile 隔离**         | CLI `--profile` / env  | 完全隔离的 agent 实例（见 [[configuration-and-profiles]]） |
+| **Kanban (v0.12.0)**  | 任意 profile / hook / cron | SQLite 共享面板，原子领取（见 [[kanban-multi-profile-board]]） |
+| **Send Message Tool** | LLM tool call          | 跨平台消息投递 |
 
 ## 触发机制
 

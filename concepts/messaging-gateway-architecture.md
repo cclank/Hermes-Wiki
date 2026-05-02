@@ -1,17 +1,19 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-02
 type: concept
-tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
-sources: [gateway/run.py, gateway/platforms/, hermes_cli/config.py]
+tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy, plugin-platform]
+sources: [gateway/run.py, gateway/platforms/, gateway/platform_registry.py, plugins/platforms/, hermes_cli/config.py]
 ---
 
 # 消息网关架构
 
 ## 概述
 
-Gateway 是 Hermes Agent 的**统一消息网关**，支持 14+ 消息平台，从单一进程管理所有平台的连接和消息分发。
+Gateway 是 Hermes Agent 的**统一消息网关**，支持 19 个消息平台（v0.12.0 起，含两个**插件交付**平台 — IRC + Microsoft Teams），从单一进程管理所有平台的连接和消息分发。
+
+> **v0.12.0 (2026-04-30)**：Microsoft Teams 第 19 个平台，作为**插件**交付，依赖 v2026.4.23 引入的 `gateway/platform_registry.py:PlatformRegistry`。Slack 大量加固（ephemeral ack + per-user 隔离 + 保留 slash 屏蔽）；gateway 自动重启在源文件变更（`f99676e`）；systemd 无限重试 + backoff（`f98b5d0`）；lazy session creation（`c5b4c48`）—— 不发消息时不再产生幽灵 session。详见 [[2026-05-02-update]]。
 
 ## 架构
 

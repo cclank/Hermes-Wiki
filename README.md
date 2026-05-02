@@ -3,8 +3,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown" alt="Wiki" height="28">
   <img src="https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github" alt="Source" height="28">
-  <img src="https://img.shields.io/badge/Knowledge_Base-37_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
-  <img src="https://img.shields.io/badge/Version-v2026.4.23-purple?style=for-the-badge" alt="Version" height="28">
+  <img src="https://img.shields.io/badge/Knowledge_Base-40_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
+  <img src="https://img.shields.io/badge/Version-v0.12.0_(2026.4.30)-purple?style=for-the-badge" alt="Version" height="28">
   <img src="https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge" alt="Verified" height="28">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" height="28">
 </p>
@@ -54,12 +54,15 @@
 
 - [security-defense-system](concepts/security-defense-system.md): 多层防御体系 + 危险命令审批系统（manual/smart/off 三模式）
 - [interrupt-and-fault-tolerance](concepts/interrupt-and-fault-tolerance.md): 中断传播、结构化错误分类（error_classifier）、Fallback 模型链
+- [tool-loop-guardrails](concepts/tool-loop-guardrails.md): 工具调用循环守护（v0.12.0），exact failure / same-tool failure / idempotent no-progress 三维检测
 - [credential-pool-and-isolation](concepts/credential-pool-and-isolation.md): 多密钥自动轮换、4 种选池策略、Profile 隔离
 
 ### 多 Agent
 
 - [multi-agent-architecture](concepts/multi-agent-architecture.md): 4 种运行时机制（delegate_task/MoA/Background Review/send_message）
 - [configuration-and-profiles](concepts/configuration-and-profiles.md): 多 Profile 架构，完全隔离的 agent 实例（第二种多 Agent 方案）
+- [kanban-multi-profile-board](concepts/kanban-multi-profile-board.md): SQLite-backed 跨 profile 协作板（v0.12.0），WAL+CAS、15 verbs CLI、worker tools、dashboard 插件
+- [persistent-goals-ralph-loop](concepts/persistent-goals-ralph-loop.md): `/goal` Ralph 循环（v0.12.0），辅助模型 judge + 不动系统提示 + SessionDB 持久化
 
 ### 平台与扩展
 
@@ -81,16 +84,17 @@
 - [2026-04-17-update](changelog/2026-04-17-update.md): 641 commits (v0.10.0)，压缩 v3、Bedrock/Gemini/Ollama 新 Provider、Tool Gateway、插件命名空间技能、钉钉 QR 认证、Dashboard 插件
 - [2026-04-18-update](changelog/2026-04-18-update.md): 410 commits post-v0.10.0，Transport ABC 重构、Shell Hooks、Delegate Orchestrator、Step Plan/AI Gateway/xAI STT/KittenTTS、WeCom QR、Subagent 观测性
 - [2026-04-29-update](changelog/2026-04-29-update.md): 182 commits (v2026.4.23)，平台适配器插件化（PlatformRegistry + IRC 参考实现）、Curator 后台技能维护、MiniMax OAuth、Vercel Sandbox、腾讯元宝、`on_session_switch`、`/reload-skills`
+- [2026-05-02-update](changelog/2026-05-02-update.md): 191 commits **v0.12.0 (v2026.4.30) The Curator Release**，Persistent Goals (`/goal` Ralph)、Tool-call Loop Guardrails、Kanban 跨 profile 协作板、Microsoft Teams (19th 平台 plugin)、Spotify/Google Meet/Langfuse/achievements 插件、LM Studio first-class、GMI Cloud/Azure Foundry/Tokenhub、Piper 本地 TTS、TUI cold start ~57% 降幅、lazy session、self-improvement loop 大幅升级
 
 ---
 
 ## 统计信息
 
-- **概念页面**: 37 个
-- **更新日志**: 5 个
+- **概念页面**: 40 个
+- **更新日志**: 6 个
 - **源码覆盖**: 关键模块逐行验证
-- **跟踪版本**: v2026.4.23
-- **最后更新**: 2026-04-29
+- **跟踪版本**: v0.12.0 (v2026.4.30) — The Curator Release
+- **最后更新**: 2026-05-02
 
 
 ## 使用方式
