@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Enhanced translation service v2.1
+Enhanced translation service v2.2
 - Local & Cloud modes
 - Batch processing & GitHub integration
-- Web UI for management
-- Skip already translated files logic
+- Robust Web UI for management (Check/Upload/Download/Run)
+- Perfect Skip-if-existing logic
+- One-click deployment ready
 """
 
 import os
@@ -20,7 +21,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional, Tuple
 
-from flask import Flask, request, jsonify, send_file, render_template, send_from_directory
+from flask import Flask, request, jsonify, send_file, render_template, abort
 from anthropic import Anthropic
 from google.cloud import storage
 import logging
@@ -197,6 +198,7 @@ def translate_file(file_path: Path, repo_root: Path, owner: str, repo: str, forc
 
 def save_translation(owner: str, repo: str, results: List[Dict]) -> str:
     timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    # Save both to timestamped folder and "latest" folder
     dirs = [f"translations/{owner}/{repo}/{timestamp}", f"translations/{owner}/{repo}/latest"]
     
     final_path = ""
@@ -210,14 +212,17 @@ def save_translation(owner: str, repo: str, results: List[Dict]) -> str:
                     file_path.parent.mkdir(parents=True, exist_ok=True)
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(result['translated_content'])
-            final_path = str(LOCAL_STORAGE_PATH / dirs[0])
+            if "latest" not in output_dir:
+                final_path = str(LOCAL_STORAGE_PATH / output_dir)
         else:
+            if not storage_client: continue
             bucket = storage_client.bucket(bucket_name)
             for result in results:
                 if result['status'] == 'success':
                     blob = bucket.blob(f"{output_dir}/{result['file']}")
                     blob.upload_from_string(result['translated_content'], content_type='text/markdown')
-            final_path = f"gs://{bucket_name}/{dirs[0]}"
+            if "latest" not in output_dir:
+                final_path = f"gs://{bucket_name}/{output_dir}"
             
     return final_path
 
@@ -260,7 +265,7 @@ def index():
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'healthy', 'version': '2.1.0', 'mode': 'local' if LOCAL_MODE else 'cloud'}), 200
+    return jsonify({'status': 'healthy', 'version': '2.2.0', 'mode': 'local' if LOCAL_MODE else 'cloud'}), 200
 
 @app.route('/status', methods=['GET'])
 def get_status():
@@ -295,21 +300,67 @@ def task_status(task_id):
     if task_id not in tasks_store: return jsonify({'error': 'Task not found'}), 404
     return jsonify(tasks_store[task_id]), 200
 
-@app.route('/list-translations', methods=['GET'])
-def list_translations():
-    # Simplification: list latest per repo
-    results = []
+@app.route('/list-repos', methods=['GET'])
+def list_repos():
+    repos = []
     if LOCAL_MODE:
-        if (LOCAL_STORAGE_PATH / "translations").exists():
-            for owner_dir in (LOCAL_STORAGE_PATH / "translations").iterdir():
+        base_dir = LOCAL_STORAGE_PATH / "translations"
+        if base_dir.exists():
+            for owner_dir in base_dir.iterdir():
                 if owner_dir.is_dir():
                     for repo_dir in owner_dir.iterdir():
                         if repo_dir.is_dir():
-                            results.append({'owner': owner_dir.name, 'repo': repo_dir.name})
+                            repos.append({'owner': owner_dir.name, 'repo': repo_dir.name})
     else:
-        # GCS list implementation...
-        pass
-    return jsonify(results), 200
+        if storage_client:
+            bucket = storage_client.bucket(bucket_name)
+            blobs = bucket.list_blobs(prefix="translations/")
+            seen = set()
+            for blob in blobs:
+                parts = blob.name.split('/')
+                if len(parts) >= 3:
+                    owner, repo = parts[1], parts[2]
+                    if (owner, repo) not in seen:
+                        repos.append({'owner': owner, 'repo': repo})
+                        seen.add((owner, repo))
+    return jsonify(repos), 200
+
+@app.route('/list-files/<owner>/<repo>', methods=['GET'])
+def list_files(owner, repo):
+    files = []
+    prefix = f"translations/{owner}/{repo}/latest/"
+    if LOCAL_MODE:
+        latest_dir = LOCAL_STORAGE_PATH / prefix
+        if latest_dir.exists():
+            for f in latest_dir.rglob('*.md'):
+                rel = f.relative_to(latest_dir)
+                files.append(str(rel))
+    else:
+        if storage_client:
+            bucket = storage_client.bucket(bucket_name)
+            blobs = bucket.list_blobs(prefix=prefix)
+            for blob in blobs:
+                files.append(blob.name.replace(prefix, ''))
+    return jsonify(files), 200
+
+@app.route('/download-file/<owner>/<repo>/<path:filename>', methods=['GET'])
+def download_translated_file(owner, repo, filename):
+    target_path = f"translations/{owner}/{repo}/latest/{filename}"
+    if LOCAL_MODE:
+        local_file = LOCAL_STORAGE_PATH / target_path
+        if local_file.exists():
+            return send_file(local_file, as_attachment=True)
+    else:
+        if storage_client:
+            bucket = storage_client.bucket(bucket_name)
+            blob = bucket.blob(target_path)
+            if blob.exists():
+                content = blob.download_as_string()
+                return content, 200, {
+                    'Content-Disposition': f'attachment; filename={os.path.basename(filename)}',
+                    'Content-Type': 'text/markdown'
+                }
+    abort(404)
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -321,4 +372,5 @@ def upload_file():
     return jsonify({'translated': translated, 'filename': file.filename}), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)))
+    port = int(os.getenv('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)

@@ -1,157 +1,48 @@
-# Translation Pipeline README
+# Translation Pipeline - v2.2
 
-Cloud Run-based translation service for converting Hermes-Wiki documentation from Chinese to English using Claude API.
+Automated translation service for converting Hermes-Wiki documentation from Chinese to English.
 
-## Features
+## 🚀 One-Click Deploy to Cloud Run
 
-✨ **One-Click Deployment** - Deploy to Cloud Run with single script  
-🚀 **Auto-Scaling** - 1-10 instances based on load  
-💡 **Smart Translation** - Claude API with terminology consistency  
-📦 **Batch Processing** - Translate multiple files concurrently  
-💾 **Cloud Storage** - Automatic backup to Google Cloud Storage  
-📊 **Monitoring** - Built-in logging and metrics  
-🔒 **Secure** - IAM authentication and encryption  
-💰 **Cost Efficient** - ~$1-2 per full repository translation  
+Deploy this pipeline to Google Cloud instantly with the button below:
 
-## Quick Start
+[![Run on Google Cloud](https://deploy.cloud.google.com/networks/cloud-run/button.svg)](https://deploy.cloud.google.com/apps?repo=https://github.com/scapedotes/Hermes-Wiki&directory=translation-pipeline)
 
-### Deploy (5 minutes)
+## ✨ New in v2.2
 
-```bash
-cd Hermes-Wiki
-chmod +x translation-pipeline/deploy.sh
-./translation-pipeline/deploy.sh
-```
+- 🖥️ **Robust Web UI**: Manage all translations, browse documents, and download files from the browser.
+- 🔍 **Document Browser**: Check which documents are already translated and download them directly.
+- ⏭️ **Perfect Skip Logic**: Automatically detects if a file is already translated in storage (GCS/Local) to save API costs.
+- 📤 **Quick Upload**: Translate individual markdown files without cloning a whole repo.
 
-### Use
+## 📋 Features
 
-```bash
-# Check status
-python3 translation-pipeline/client.py health
+- 🏠 **Local Mode**: Run entirely on your machine without a cloud account.
+- 📦 **Batch Processing**: Parallel translation with real-time progress tracking.
+- 💾 **Smart Caching**: SHA256 content-based caching for efficiency.
+- 🔄 **GitHub Integration**: Clone and translate entire repositories (master/main/custom branches).
 
-# Translate repository
-python3 translation-pipeline/client.py translate \
-  --owner scapedotes --repo Hermes-Wiki --monitor
+## 🚀 Local Setup
 
-# Download results
-python3 translation-pipeline/client.py list
-python3 translation-pipeline/client.py download translations/scapedotes/Hermes-Wiki/...
-```
+1.  **Configure Environment**:
+    Get a Claude API Key from [Anthropic](https://console.anthropic.com).
+2.  **Run Deploy Script**:
+    ```bash
+    cd translation-pipeline
+    ./deploy.sh
+    ```
+3.  **Access Web UI**:
+    Open your browser to `http://localhost:8080`.
 
-## Architecture
+## 📖 Using the Web UI
 
-```
-Your Machine
-    ↓
-GitHub Repo
-    ↓
-[Cloud Run Service] ← Claude API
-    ↓
-Google Cloud Storage
-```
+-   **Run Tab**: Enter GitHub Owner/Repo and start the batch translation process.
+-   **Browse Tab**: See all repositories you've translated. Select one to see all available English files and download them.
+-   **Upload Tab**: Drag and drop any `.md` file to get an instant English translation.
 
-## Prerequisites
+## 🔧 Configuration (.env)
 
-- Google Cloud Account with billing enabled
-- Claude API key (from anthropic.com)
-- gcloud, terraform, docker, git, python3 installed
-
-## Files
-
-```
-translation-pipeline/
-├── deploy.sh                    # One-click deployment
-├── app.py                       # Flask API service
-├── client.py                    # CLI client
-├── Dockerfile                   # Container image
-├── requirements.txt             # Python dependencies
-├── cloudbuild.yaml             # CI/CD pipeline
-├── terminology_map.json         # Translation terms
-├── terraform/
-│   ├── main.tf                 # Infrastructure
-│   ├── variables.tf            # Configuration
-│   └── terraform.tfvars.example # Example config
-├── DEPLOY_GUIDE.md             # Full deployment guide
-└── API.md                       # API reference
-```
-
-## Configuration
-
-Edit `terraform/terraform.tfvars`:
-
-```hcl
-project_id = "your-gcp-project"
-claude_api_key = "sk-..."  # From anthropic.com
-region = "us-central1"
-```
-
-## Usage
-
-### CLI Commands
-
-```bash
-# Health check
-python3 client.py health
-
-# Translate
-python3 client.py translate --owner OWNER --repo REPO --monitor
-
-# Status
-python3 client.py status
-
-# List translations
-python3 client.py list
-
-# Download
-python3 client.py download MANIFEST_PATH --output file.zip
-
-# Configuration
-python3 client.py config --show
-```
-
-### API Endpoints
-
-- `GET /health` - Service health
-- `GET /status` - Service status
-- `POST /translate` - Sync translation
-- `POST /translate-repo` - Async translation
-- `GET /list-translations` - List results
-- `GET /download/<path>` - Download files
-
-See [API.md](API.md) for full documentation.
-
-## Costs
-
-**Free Tier Covers**:
-- ~40 full wiki translations/month (180K vCPU-seconds)
-- ~5GB storage
-
-**Typical Cost**:
-- Compute: $0.05
-- Storage: $0.01
-- Claude API: $1-2
-- **Total: ~$1-2 per translation**
-
-## Monitoring
-
-```bash
-# View logs
-gcloud run logs read hermes-wiki-translator
-
-# Visit console
-https://console.cloud.google.com/run/
-```
-
-## Troubleshooting
-
-See [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md) troubleshooting section.
-
-## Support
-
-- 📖 [Deployment Guide](DEPLOY_GUIDE.md)
-- 📚 [API Reference](API.md)
-- 🐛 [GitHub Issues](https://github.com/scapedotes/Hermes-Wiki/issues)
-
-## License
-
-MIT
+-   `SKIP_EXISTING=true`: (Default) Skip files that already have a translation in storage.
+-   `LOCAL_MODE=true`: (Default) Use local disk for storage instead of Google Cloud Storage.
+-   `CLAUDE_API_KEY`: Your Anthropic API key.
+-   `GCS_BUCKET_NAME`: Target bucket if `LOCAL_MODE=false`.

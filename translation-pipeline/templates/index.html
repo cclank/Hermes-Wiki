@@ -1,61 +1,128 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Hermes Translation Pipeline</title>
+    <title>Hermes Translation Pipeline v2.2</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <style>
-        body { background-color: #f8f9fa; padding: 20px; }
-        .card { margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        #log { height: 200px; overflow-y: scroll; background: #212529; color: #0f0; padding: 10px; font-family: monospace; }
+        body { background-color: #f1f3f5; padding: 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .card { margin-bottom: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: none; }
+        .card-header { border-top-left-radius: 12px !important; border-top-right-radius: 12px !important; font-weight: bold; }
+        #log { height: 180px; overflow-y: scroll; background: #1e1e1e; color: #a9dc76; padding: 12px; font-family: 'Consolas', monospace; font-size: 0.85rem; border-radius: 0 0 12px 12px; }
+        .btn { border-radius: 8px; font-weight: 500; }
+        .nav-tabs .nav-link { border: none; color: #495057; font-weight: 500; }
+        .nav-tabs .nav-link.active { border-bottom: 3px solid #0d6efd; color: #0d6efd; background: transparent; }
+        .status-pill { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1 class="mb-4">Hermes Translation Pipeline UI</h1>
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header bg-primary text-white">Translate Repository</div>
-                    <div class="card-body">
-                        <div class="mb-3">
-                            <label class="form-label">Owner</label>
-                            <input type="text" id="owner" class="form-control" placeholder="scapedotes">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Repository</label>
-                            <input type="text" id="repo" class="form-control" placeholder="Hermes-Wiki">
-                        </div>
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="force">
-                            <label class="form-check-label">Force re-translate (ignore cache/existing)</label>
-                        </div>
-                        <button class="btn btn-success" onclick="startTranslation()">Start Translation</button>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header bg-info text-white">Upload & Translate Single File</div>
-                    <div class="card-body">
-                        <input type="file" id="fileInput" class="form-control mb-3">
-                        <button class="btn btn-primary" onclick="uploadFile()">Upload & Translate</button>
-                        <div id="downloadLink" class="mt-3"></div>
-                    </div>
-                </div>
-            </div>
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="mb-0">Hermes Translation Pipeline <span class="badge bg-secondary fs-6">v2.2</span></h2>
+            <div id="service-status">Checking...</div>
         </div>
+        
+        <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link active" id="run-tab" data-bs-toggle="tab" data-bs-target="#run" type="button">Run Translation</button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="check-tab" data-bs-toggle="tab" data-bs-target="#check" type="button" onclick="loadRepos()">Browse Documents</button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload" type="button">Quick Upload</button>
+            </li>
+        </ul>
 
-        <div class="card">
-            <div class="card-header bg-dark text-white">Active Tasks & Progress</div>
-            <div class="card-body">
-                <div id="tasksList"></div>
-                <div id="log" class="mt-3"></div>
+        <div class="tab-content" id="mainTabsContent">
+            <!-- TAB: RUN -->
+            <div class="tab-pane fade show active" id="run" role="tabpanel">
+                <div class="row">
+                    <div class="col-md-7">
+                        <div class="card">
+                            <div class="card-header bg-primary text-white">Translate GitHub Repository</div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Owner</label>
+                                        <input type="text" id="owner" class="form-control" placeholder="scapedotes" value="scapedotes">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Repository</label>
+                                        <input type="text" id="repo" class="form-control" placeholder="Hermes-Wiki" value="Hermes-Wiki">
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Branch</label>
+                                    <input type="text" id="branch" class="form-control" placeholder="master" value="master">
+                                </div>
+                                <div class="form-check form-switch mb-4">
+                                    <input class="form-check-input" type="checkbox" id="force">
+                                    <label class="form-check-label">Force re-translate (ignore existing translations)</label>
+                                </div>
+                                <button class="btn btn-success px-4 py-2" onclick="startTranslation()">
+                                    🚀 Start Pipeline
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-5">
+                        <div class="card">
+                            <div class="card-header bg-dark text-white">Active Progress</div>
+                            <div class="card-body p-0">
+                                <div id="tasksList" class="p-3">
+                                    <div class="text-muted text-center py-4 italic">No active tasks</div>
+                                </div>
+                                <div id="log"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: CHECK / DOWNLOAD -->
+            <div class="tab-pane fade" id="check" role="tabpanel">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header bg-info text-white">Repositories</div>
+                            <div class="list-group list-group-flush" id="reposList">
+                                <!-- Repos will load here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-header bg-secondary text-white d-flex justify-content-between">
+                                <span id="currentRepoTitle">Files</span>
+                                <span class="badge bg-light text-dark" id="fileCount">0 files</span>
+                            </div>
+                            <div class="list-group list-group-flush" id="filesList" style="max-height: 500px; overflow-y: auto;">
+                                <div class="p-4 text-center text-muted">Select a repository to view files</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: UPLOAD -->
+            <div class="tab-pane fade" id="upload" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-warning text-dark">Quick Document Translator</div>
+                    <div class="card-body py-5 text-center">
+                        <div class="mx-auto" style="max-width: 400px;">
+                            <input type="file" id="fileInput" class="form-control mb-4">
+                            <button class="btn btn-primary btn-lg w-100 mb-3" onclick="uploadFile()">
+                                ✨ Translate & Download
+                            </button>
+                            <div id="uploadStatus"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         function log(msg) {
             const l = document.getElementById('log');
@@ -63,20 +130,36 @@
             l.scrollTop = l.scrollHeight;
         }
 
+        async function updateStatus() {
+            try {
+                const res = await fetch('/status');
+                const data = await res.json();
+                document.getElementById('service-status').innerHTML = 
+                    `<span class="badge bg-success">Online (${data.mode})</span>`;
+            } catch (e) {
+                document.getElementById('service-status').innerHTML = `<span class="badge bg-danger">Offline</span>`;
+            }
+        }
+        updateStatus();
+        setInterval(updateStatus, 10000);
+
         async function startTranslation() {
             const owner = document.getElementById('owner').value;
             const repo = document.getElementById('repo').value;
+            const branch = document.getElementById('branch').value;
             const force = document.getElementById('force').checked;
             
-            log(`Starting translation for ${owner}/${repo}...`);
+            if(!owner || !repo) return alert("Owner and Repo required");
+
+            log(`Initiating pipeline for ${owner}/${repo}...`);
             const res = await fetch('/translate-repo', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ owner, repo, force })
+                body: JSON.stringify({ owner, repo, branch, force })
             });
             const data = await res.json();
             if (data.task_id) {
-                log(`Task created: ${data.task_id}`);
+                log(`Task accepted: ${data.task_id}`);
                 monitorTask(data.task_id);
             } else {
                 log(`Error: ${data.error}`);
@@ -89,39 +172,84 @@
                 const task = await res.json();
                 
                 const taskDiv = document.getElementById('tasksList');
+                let progressPercent = 0;
+                if(task.progress.total > 0) {
+                    progressPercent = Math.round((task.progress.completed / task.progress.total) * 100);
+                }
+
                 taskDiv.innerHTML = `
-                    <div class="alert alert-secondary">
-                        <strong>Task:</strong> ${taskId} <br>
-                        <strong>Status:</strong> ${task.status} <br>
-                        <strong>Progress:</strong> ${task.progress.completed} / ${task.progress.total}
+                    <div class="alert alert-light border m-2">
+                        <div class="d-flex justify-content-between mb-2">
+                            <strong>${task.owner}/${task.repo}</strong>
+                            <span class="status-pill bg-primary text-white">${task.status}</span>
+                        </div>
+                        <div class="progress mb-2" style="height: 10px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: ${progressPercent}%"></div>
+                        </div>
+                        <small class="text-muted">${task.progress.completed} of ${task.progress.total} files processed</small>
                     </div>
                 `;
 
                 if (task.status === 'completed' || task.status === 'failed') {
                     clearInterval(interval);
-                    log(`Task ${taskId} ${task.status}!`);
+                    log(`Finished: ${task.owner}/${task.repo} - ${task.status.toUpperCase()}`);
+                    if(task.status === 'completed') loadRepos();
                 }
             }, 2000);
         }
 
+        async function loadRepos() {
+            const res = await fetch('/list-repos');
+            const repos = await res.json();
+            const list = document.getElementById('reposList');
+            list.innerHTML = repos.map(r => 
+                `<button class="list-group-item list-group-item-action" onclick="loadFiles('${r.owner}', '${r.repo}')">
+                    <strong>${r.owner}</strong> / ${r.repo}
+                </button>`
+            ).join('') || '<div class="p-3 text-muted">No repositories found</div>';
+        }
+
+        async function loadFiles(owner, repo) {
+            document.getElementById('currentRepoTitle').innerText = `${owner}/${repo}`;
+            const res = await fetch(`/list-files/${owner}/${repo}`);
+            const files = await res.json();
+            document.getElementById('fileCount').innerText = `${files.length} files`;
+            const list = document.getElementById('filesList');
+            list.innerHTML = files.map(f => 
+                `<div class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>${f}</span>
+                    <a href="/download-file/${owner}/${repo}/${f}" class="btn btn-sm btn-outline-success">Download</a>
+                </div>`
+            ).join('') || '<div class="p-3 text-muted">No files found</div>';
+        }
+
         async function uploadFile() {
             const input = document.getElementById('fileInput');
-            if (input.files.length === 0) return;
+            if (input.files.length === 0) return alert("Select a file first");
+            
+            const statusDiv = document.getElementById('uploadStatus');
+            statusDiv.innerHTML = '<div class="spinner-border spinner-border-sm text-primary"></div> Translating...';
             
             const formData = new FormData();
             formData.append('file', input.files[0]);
             
-            log(`Uploading ${input.files[0].name}...`);
-            const res = await fetch('/upload', { method: 'POST', body: formData });
-            const data = await res.json();
-            
-            if (data.translated) {
-                log(`Translation success!`);
-                const blob = new Blob([data.translated], {type: 'text/markdown'});
-                const url = URL.createObjectURL(blob);
-                document.getElementById('downloadLink').innerHTML = `<a href="${url}" download="${data.filename.replace('.md', '-en.md')}" class="btn btn-outline-primary">Download Result</a>`;
-            } else {
-                log(`Error: ${data.error}`);
+            try {
+                const res = await fetch('/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if (data.translated) {
+                    const blob = new Blob([data.translated], {type: 'text/markdown'});
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = data.filename.replace('.md', '-en.md');
+                    link.click();
+                    statusDiv.innerHTML = '<span class="text-success">✓ Success! File downloaded.</span>';
+                } else {
+                    statusDiv.innerHTML = `<span class="text-danger">Error: ${data.error}</span>`;
+                }
+            } catch (e) {
+                statusDiv.innerHTML = `<span class="text-danger">Network Error</span>`;
             }
         }
     </script>
