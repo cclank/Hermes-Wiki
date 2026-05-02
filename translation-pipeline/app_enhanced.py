@@ -277,6 +277,25 @@ def get_status():
         'storage': str(LOCAL_STORAGE_PATH) if LOCAL_MODE else f'gs://{bucket_name}'
     }), 200
 
+@app.route('/translate', methods=['POST'])
+def translate():
+    data = request.get_json() or {}
+    content = data.get('content')
+    filename = data.get('filename', 'document.md')
+    if not content: return jsonify({'error': 'Content required'}), 400
+    
+    try:
+        translated, cached = translate_content(content, filename)
+        return jsonify({
+            'translated': translated,
+            'filename': filename,
+            'original_length': len(content),
+            'translated_length': len(translated),
+            'from_cache': cached
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/translate-repo', methods=['POST'])
 def translate_repo():
     data = request.get_json() or {}

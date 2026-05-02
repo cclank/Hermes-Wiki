@@ -135,11 +135,11 @@ class TranslationClient:
         except Exception as e:
             return {'error': str(e)}
     
-    def download(self, path: str, output_file: Optional[str] = None) -> bool:
+    def download(self, owner: str, repo: str, filename: str, output_file: Optional[str] = None) -> bool:
         """Download a translated file"""
         try:
             response = requests.get(
-                f"{self.service_url}/download/{path}",
+                f"{self.service_url}/download-file/{owner}/{repo}/{filename}",
                 headers=self._get_headers(),
                 timeout=60
             )
@@ -442,9 +442,18 @@ Examples:
     
     elif args.command == 'download':
         print_header()
-        print(f"Downloading {args.path}...")
         
-        success = client.download(args.path, args.output)
+        # Parse owner/repo/filename from path if provided as a single string
+        # or require explicit flags. For simplicity in CLI, let's use flags.
+        parser_dl = argparse.ArgumentParser(add_help=False)
+        parser_dl.add_argument('--owner', required=True)
+        parser_dl.add_argument('--repo', required=True)
+        parser_dl.add_argument('--filename', required=True)
+        dl_args, _ = parser_dl.parse_known_args(sys.argv[3:])
+
+        print(f"Downloading {dl_args.filename} from {dl_args.owner}/{dl_args.repo}...")
+        
+        success = client.download(dl_args.owner, dl_args.repo, dl_args.filename, args.output)
         
         if not success:
             sys.exit(1)
