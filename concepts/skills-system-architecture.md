@@ -1,7 +1,7 @@
 ---
 title: Skills System Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-04
 type: concept
 tags: [skill, architecture, module, prompt-builder]
 sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, run_agent.py, agent/prompt_builder.py, hermes_cli/plugins.py, agent/skill_utils.py]
@@ -299,6 +299,54 @@ if rec.get("pinned"):
 ```
 
 这是 Curator 不变量的延伸——pinned 状态对 agent 也是禁区，只能通过 `hermes curator unpin` 显式解锁。
+
+## v2026.4.30+ Skill 系统增强
+
+### bump_use 命中计数（commit ae8930a + 4178ab3 #17782）
+
+`fix(skills): wire bump_use() into skill invocation and preload paths` + `fix(skills): also bump_use on skill_view tool invocation`：每次 skill 被调用、preload 或 `skill_view` 查看，`tools/skill_usage.py:bump_use()` 会原子更新 sidecar 的 `last_used_at` 和 `call_count`。Curator 用此信号决定 stale/archive 转换。
+
+### .archive 目录排除（commit a845177 + eda1d51）
+
+`fix(skills): exclude .archive from skill index walk` + `fix(skills): also exclude .archive in skills_tool`：归档过的 skill 放在 `~/.hermes/skills/.archive/`，索引扫描和 `skills_tool` 都跳过该目录，避免归档版本干扰当前可用 skill。
+
+### Curator 后续修复（v2026.4.30+）
+
+| commit | 修复 |
+|--------|------|
+| `e8e5985` | seed defaults on update + create `logs/curator/` dir + defer fire import |
+| `564a649` | scan nested archive subdirs in restore_skill |
+| `f4b76fa` | use actual skill activity in curator status |
+| `8b290a5` | split archived into **consolidated vs pruned**，model + heuristic 分类（#17941） |
+| `7c07422`/`d60a991` | `hermes curator status` 展示 most-used / least-used skill 排名 |
+| `0da968e` | unify under `auxiliary.curator`（hermes model + dashboard 选模型） |
+| `77c0bc6` | defer first run + add `--dry-run` preview（#18373/#18389） |
+| `e2eb561` | rewrite cron job skill refs after consolidation |
+| `97acd66` | authoritative `absorbed_into` on delete + restore cron skill links on rollback |
+| `75483b6` | preserve `last_report_path` in state |
+
+### 内置和可选新 skill（v2026.4.30+）
+
+- **here.now**（`f7dfd4a`/`7cbe943`）：built-in + optional 双形态，本地时间/位置/天气查询的最小 skill
+- **Shopify**（`180a703` #18116）：Admin GraphQL + Storefront GraphQL，optional skill
+- **kanban-orchestrator** + **kanban-worker**（随 kanban feature 引入）：devops 类 skill
+- **kanban-video-orchestrator**（`0dd8e3f` 改名自 video-orchestrator）：creative optional skill，结合 kanban + 视频管线
+- **video-orchestrator → kanban-video-orchestrator** 重命名，避免 namespace 冲突
+
+### 平台 scope rescan（fix）
+
+`fix(skills): rescan skill_commands cache when platform scope changes`（c73594f #18739）：当 skill 的 `applies_to` 平台范围变化时，`skill_commands` 缓存被强制重扫，否则 Discord/Telegram slash 自动补全会展示已不可用的 skill。
+
+`fix(gateway): match disabled/optional skills by frontmatter slug, not dir name`（6ec74ae #18753）：禁用/可选 skill 现在按 frontmatter `slug` 匹配，不再按目录名——目录名可能被人为重命名，slug 是稳定 ID。
+
+### Discord `/skill` 自动补全（fix）
+
+- `8825e90` #18745 完成 #18741 工作并放弃旧的 25×25 上限
+- `5d5b891` 名字 clamp 到 32 字符后保留 `cmd_key`
+- `c4c0e5a` _clamp_command_names 截断后冲突警告
+- `5eac608` 32-char clamp 冲突日志（#18759）
+- `e2cea6e` Telegram/Discord slash 命令包含 `external_dirs` 来源的 skill（#18741）
+- `10297fa` Discord `/reload-skills` 实时刷新自动补全（#18754）
 
 ## 相关页面
 

@@ -1,10 +1,10 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-04
 type: concept
-tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
-sources: [gateway/run.py, gateway/platforms/, hermes_cli/config.py]
+tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy, teams]
+sources: [gateway/run.py, gateway/platforms/, gateway/platform_registry.py, plugins/platforms/, hermes_cli/config.py]
 ---
 
 # 消息网关架构
@@ -71,8 +71,9 @@ gateway/
 | 微信/WeChat | iLink Bot API | 长轮询收消息，AES-128-ECB 媒体加密，QR 登录 |
 | QQ Bot | Official API v2 | WebSocket 入站(C2C/群/频道/DM) + REST 出站,语音转录(腾讯 ASR),allowlist + DM 配对 |
 | Webhook | HTTP | 外部事件接收 |
-| **腾讯元宝 Yuanbao** | API | 原生文本+媒体投递，sticker 支持（v2026.4.23+） |
+| **腾讯元宝 Yuanbao** | API | 原生文本+媒体投递，sticker 支持（v2026.4.23+），群聊 owner identity check |
 | **IRC**（插件） | TLS asyncio | 零外部依赖，TLS、PING/PONG、nick collision、NickServ、频道寻址（v2026.4.23+，参考实现） |
+| **Microsoft Teams**（插件） | microsoft-teams-apps SDK | 第二个插件平台（v2026.4.30+）。aiohttp webhook server 接消息，SDK `App.send()` proactive 投递。需要 `TEAMS_CLIENT_ID/SECRET/TENANT_ID`，默认端口 3978。Adaptive Card 审批按钮、@mention 强制（群聊）、本地图片附件投递、`hermes teams app get --install-link` 部署助手 |
 
 ## 平台适配器插件化（v2026.4.23+）
 
@@ -115,7 +116,40 @@ def register(ctx):
 
 `feat: complete plugin platform parity` (2e20f6ae2) + `feat: final platform plugin parity` (e464cde58) 让插件平台和内置平台行为一致：
 - webhook 投递、PLATFORM_HINTS、`get_connected_platforms`、cron 投递、动态 toolset 生成、setup wizard 等
-- bundled 插件平台（如 IRC）启动时自动加载（`feat(plugins): bundled platform plugins auto-load by default`）
+- bundled 插件平台（如 IRC、Teams）启动时自动加载（`feat(plugins): bundled platform plugins auto-load by default` 4d36349）
+
+## 原生多图发送（v2026.4.30+）
+
+`feat(gateway): native send_multiple_images for Telegram, Discord, Slack, Mattermost, Email`（commit 3de8e21）+ `feat(gateway/signal): add support for multiple images sending`（04ea895）让 6 个平台支持原生 `send_multiple_images`，避免单图循环投递的 rate limit / 顺序错乱问题。
+
+```
+Telegram → media group (sendMediaGroup)
+Discord → multipart 多 attachment
+Slack → files.upload v2
+Mattermost → /files multi-upload
+Email → multipart MIME 多 image part
+Signal → 多 attachment 单消息
+```
+
+## 集中音频路由（v2026.4.30+）
+
+`feat(gateway): centralize audio routing + FLAC support + Telegram doc fallback`（aa7bf32）：
+- 音频投递路径统一在 gateway 层，不再每个 platform 各自实现
+- 新增 FLAC 编码支持
+- Telegram 在媒体大小或格式不被语音消息接受时，自动 fallback 到文档发送
+
+## 其他增强
+
+- `busy_ack_enabled` 配置选项（2b512cb）：suppress busy session 的 ack 提示消息
+- 自动重启：源码 in-place 改变时 gateway 自动 restart（f99676e #18409）
+- `auto-delete slash-command system notices after TTL`（4caad28 #18266）：斜杠命令系统通知到期自动撤回
+- 异常恢复：crash/restart 后**resume** sessions（f1e0292），不再 blanket suspend
+- Discord：reload-skills 实时刷新 `/skill` 自动补全（10297fa #18754）
+- Slack：preserve 大小写敏感的 chat ID（5cdc39e）；slash command 走 ephemeral ack（7cda0e5）；按用户隔离 session（a147164）
+- Telegram：group user allowlist（1f71217）；reconnect 后探测 polling liveness（2470434）
+- Yuanbao：群聊斜杠命令强制 owner identity 检查（b7ad3f4）
+- Feishu：operator-configurable bot admission and mention policy（b94cb8e）
+- WhatsApp：pin protobufjs >=7.5.5 修复 3 个 critical 漏洞（55647a5 #19204）
 
 ## 平台适配器基类
 

@@ -1,7 +1,7 @@
 ---
 title: 语音模式架构
 created: 2026-04-10
-updated: 2026-04-18
+updated: 2026-05-04
 type: concept
 tags: [voice, stt, tts, architecture]
 sources: [tools/voice_mode.py, tools/tts_tool.py, tools/transcription_tools.py, cli.py]
@@ -40,12 +40,18 @@ STT 转文字（3 个 Provider 可选）:
     ↓
 LLM 回复（自动注入简洁指令："respond concisely, 2-3 sentences max"）
     ↓
-TTS 语音播报（5 个 Provider 可选）:
+TTS 语音播报（10+ Provider，可选）:
+  - Edge TTS（默认，免费，无 API key，Microsoft 神经语音）
   - ElevenLabs（流式，边生成边播放）
   - OpenAI TTS
-  - Google TTS
-  - macOS say 命令
-  - NeuTTS（自托管）
+  - MiniMax TTS（语音克隆）
+  - Mistral Voxtral TTS（多语言、原生 Opus）
+  - Google Gemini TTS（30 预置音色）
+  - xAI TTS（Grok 音色）
+  - NeuTTS（本地，自托管）
+  - KittenTTS（本地，25MB 模型）
+  - Piper（本地，44 语种 VITS，v2026.4.30+）
+  - Custom command（自定义命令型 provider，v2026.4.30+）
 ```
 
 ## STT 配置
@@ -67,17 +73,34 @@ VOICE_TOOLS_OPENAI_KEY=...    # OpenAI Whisper
 
 TTS Provider 选择和语音设置通过 `tools/tts_tool.py` 管理，支持 ElevenLabs 的流式播报——LLM 生成一句就播一句，不用等完整回复。
 
-### 新增 TTS Provider（v0.10.0）
+### 新增 TTS Provider
 
 | Provider | 来源 |
 |----------|------|
 | ElevenLabs | 原有 |
 | OpenAI | 原有 |
-| **Google Gemini TTS** | v0.10.0 新增，通过 Gemini API |
-| **xAI TTS** | v0.10.0 随 xAI Responses API 升级引入 |
-| **KittenTTS（本地）** | v2026.4.18+ 引入，本地 CPU 运行，无需 GPU 和 API key，默认模型 `KittenML/kitten-tts-nano-0.8-int8`（25MB），默认声音 `Jasper`，其他声音由 KittenTTS 包提供（25-80MB 模型范围） |
+| **Google Gemini TTS** | v0.10.0，通过 Gemini API |
+| **xAI TTS** | v0.10.0，xAI Responses API 升级引入 |
+| **KittenTTS（本地）** | v2026.4.18+，CPU 运行，无 GPU/API key，默认模型 `KittenML/kitten-tts-nano-0.8-int8`（25MB），默认声音 `Jasper` |
+| **Piper（本地）** | v2026.4.30+（commit `8d302e3` #17885），OHF-Voice/piper1-gpl 神经 VITS，44 语种。`pip install piper-tts` 跨平台 CPU 运行；`pip install piper-tts[gpu]` 启用 GPU。Voice 缓存：`_piper_voice_cache: Dict[str, Any]` 按 voice id 模块级缓存（`tts_tool.py:1319`）。可参考 #8508 |
 
 这些 provider 也可通过 Nous Tool Gateway 统一访问（无需自备 API key）。
+
+### Custom Command Provider Registry（v2026.4.30+）
+
+`commit 2facea7 feat(tts): add command-type provider registry under tts.providers.<name>`：
+
+```yaml
+tts:
+  provider: piper-en   # 选用自定义 provider 名
+  providers:
+    piper-en:
+      type: command
+      command: "piper -m ~/model.onnx -f {output_path} < {input_path}"
+      # Hermes 把文本写到 {input_path}，命令必须把音频生成到 {output_path}
+```
+
+可以接 VoxCPM、Kokoro CLI、本地 Piper 自己编译的版本等任何外部 TTS 工具。代码：`tools/tts_tool.py:290-326`。
 
 ### STT Provider 扩展（v2026.4.18+）
 
