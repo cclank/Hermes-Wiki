@@ -1,10 +1,10 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-04-29
+updated: 2026-05-05
 type: concept
 tags: [architecture, module, model-routing, performance, caching, anthropic]
-sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py]
+sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py, providers/__init__.py, providers/base.py]
 ---
 
 # Smart Model Routing — 智能模型路由
@@ -15,12 +15,14 @@ sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.
 
 Smart Model Routing 是 Hermes Agent 的**模型元数据解析与上下文长度自动检测**系统，由四个核心模块组成：
 
-| 模块 | 源码 | 职责 |
+| 模块 | 源码（v0.12.0 实测） | 职责 |
 |---|---|---|
-| **model_metadata.py** | 36KB/941行 | 上下文长度检测、端点探测、token 估算 |
-| **models_dev.py** | 25KB/781行 | models.dev 4000+ 模型数据库集成 |
-| **model_switch.py** | 32KB/927行 | 模型切换管道（别名解析 → 凭证 → 元数据） |
+| **model_metadata.py** | 60KB / 1483 行 | 上下文长度检测、端点探测、token 估算、URL→provider 反向映射 |
+| **models_dev.py** | 21KB / 631 行 | models.dev 4000+ 模型数据库集成 |
+| **model_switch.py** | 70KB / 1741 行 | 模型切换管道（别名解析 → 凭证 → 元数据 → picker） |
 | **model_normalize.py** | 外部模块 | 各提供商模型名称规范化 |
+
+> **v0.12.0（2026-05-05）变更**：新 `providers/` 包成为 provider 元数据**单一来源**。`agent/model_metadata.py::_URL_TO_PROVIDER` 反向映射、`hermes_cli/models.py::CANONICAL_PROVIDERS`、`hermes_cli/auth.PROVIDER_REGISTRY`、`hermes_cli/doctor.py /models 健康检查`、`hermes_cli/runtime_provider.py` URL fallback 全部改从 `providers.list_providers()` / `get_provider_profile().get_hostname()` 喂养。29 个 bundled `plugins/model-providers/<name>/` 目录共注册 33 个 `ProviderProfile`（gemini/kimi-coding/opencode-zen 各 2 个，minimax 3 个，含 minimax_oauth）。`model_switch.py` 的 picker 也通过新 `list_picker_providers()`（`60235db`）按已配凭证过滤。详见 [[provider-transport-architecture]] 与 changelog `2026-05-05-update`。
 
 核心理念：**10 级上下文长度解析链 + models.dev 4000+ 模型数据库 + 本地服务器自动探测。**
 

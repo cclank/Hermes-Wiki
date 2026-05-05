@@ -1,19 +1,21 @@
 ---
 title: Auxiliary Client 辅助客户端架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-05-05
 type: concept
 tags: [architecture, module, component, agent, tool]
-sources: [agent/auxiliary_client.py]
+sources: [agent/auxiliary_client.py, providers/__init__.py, providers/base.py]
 ---
 
 # Auxiliary Client — 辅助客户端架构
 
 ## 概述
 
-Auxiliary Client 位于 `agent/auxiliary_client.py`（85KB/2127行），是 Hermes Agent 的**辅助 LLM 客户端路由器**。它为所有非主对话的 LLM 任务（上下文压缩、会话搜索摘要、视觉分析、Web 提取、技能快照生成等）提供统一的提供商解析和调用接口。
+Auxiliary Client 位于 `agent/auxiliary_client.py`（v0.12.0 实测 175KB / 4025 行，自 v2026.4.23 起持续扩张），是 Hermes Agent 的**辅助 LLM 客户端路由器**。它为所有非主对话的 LLM 任务（上下文压缩、会话搜索摘要、视觉分析、Web 提取、技能快照生成等）提供统一的提供商解析和调用接口。
 
 核心理念：**所有辅助任务共享同一个提供商解析链，避免每个消费者重复实现 fallback 逻辑。**
+
+> **v0.12.0（2026-05-05）变更**：辅助模型 lookup 现在**优先读 `ProviderProfile.default_aux_model`**（`agent/auxiliary_client.py:228`），仅在 profile 缺失或字段为空时才退回到 legacy 硬编码字典 `_API_KEY_PROVIDER_AUX_MODELS_FALLBACK`。新 provider 一律应通过 `plugins/model-providers/<name>/__init__.py` 设 profile.default_aux_model，不要再加进 fallback 字典。详见 [[provider-transport-architecture]] 与 changelog `2026-05-05-update`。
 
 ## 架构原理
 

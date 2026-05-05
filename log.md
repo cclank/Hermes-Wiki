@@ -122,3 +122,24 @@
   - 源码: gateway/hooks.py (170行), hermes_cli/plugins.py (609行)
   - 核心内容: Gateway Hooks 事件驱动(8种事件+通配符)，Plugin System 三级来源(用户/项目/pip)，PluginContext API(工具注册/消息注入/CLI命令/钩子)，缓存友好上下文注入
 - index.md 更新为 37 页
+
+## [2026-05-05] update | sync wiki with hermes-agent 0.12.0（2026-04-30 ~ 2026-05-05）
+- 99 commits（其中 28 个 AUTHOR_MAP/chore），源码版本 pyproject.toml 标记 0.12.0
+- 文件: changelog/2026-05-05-update.md（新建）
+- 核心架构变更: **Provider Profiles ABC + 33 个 provider 插件化**
+  - 新模块 providers/（base.py 171 行 + __init__.py ~200 行），ProviderProfile dataclass + 4 个钩子（prepare_messages / build_extra_body / build_api_kwargs_extras / fetch_models）
+  - bundled 插件目录 plugins/model-providers/（29 个目录，33 个注册的 profile）
+  - 用户覆盖: $HERMES_HOME/plugins/model-providers/<name>/（last-writer-wins）
+  - 12 个集成点 auto-wire（auth/models/doctor/config/runtime_provider/model_metadata/auxiliary_client/transports/run_agent/PluginManager）
+  - 测试: tests/providers/ 79 个新测试
+- 新模块: hermes_cli/kanban_diagnostics.py（649 行）—— 通用诊断引擎，5 distress kind 规则（hallucinated_cards / prose_phantom_refs / repeated_failures / repeated_crashes / stuck_in_blocked）
+- 新特性: 幻觉门（kanban_complete.created_cards 字段 + HallucinatedCardsError + completion_blocked_hallucination 事件 + reclaim_task API）
+- 新特性: i18n agent/i18n.py（display.language 配置，5 语言 en/zh/ja/de/es，5 个 locales/*.yaml 文件）
+- 反转: gateway/run.py 的 _detect_stale_code 自检机制（删除 412 行测试 + boot-snapshot 块），SIGKILL-survivor sweep 已能处理
+- 修复: aux client 429 fallback、xiaomi 视为 reasoning-capable、whatsapp mp3/wav→ogg/opus、telegram DM topic typing scope、feishu markdown table text mode、acp reasoning metadata 持久化、kanban 失败计数器统一（spawn/timeout/crash 共用 consecutive_failures 列）
+- TUI: /provider 别名移除（/model 是 canonical）、slash parity 对齐 CLI、overlay 订阅细化
+- 更新页面:
+  - concepts/auxiliary-client-architecture.md —— 实际行数修正（85KB/2127→175KB/4025），加 ProviderProfile.default_aux_model 优先路径
+  - concepts/smart-model-routing.md —— 三个核心模块的实际行数修正，加 providers/ 包接入说明
+  - concepts/provider-transport-architecture.md —— transport 行数更新，加 ProviderProfile ABC 行
+  - README.md —— 版本徽章 v2026.4.23 → 0.12.0；changelog 列表新增 2026-05-05-update

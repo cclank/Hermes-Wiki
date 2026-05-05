@@ -1,19 +1,21 @@
 ---
 title: Provider Transport 架构
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-05-05
 type: concept
 tags: [architecture, module, provider, transport, api-dispatch]
-sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, run_agent.py]
+sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, run_agent.py, providers/__init__.py, providers/base.py]
 ---
 
 # Provider Transport — API 路径统一抽象
 
 ## 概述
 
-Provider Transport 是 **v2026.4.17+** 引入的架构级重构，用统一的 ABC 抽象了所有 provider 的 API 数据路径（Anthropic Messages、OpenAI Chat Completions、OpenAI Responses API、AWS Bedrock）。位于 `agent/transports/`（1217 行），替代了之前散落在 `run_agent.py` 各处的 `if api_mode == "anthropic_messages": ... elif ...` 分支判断。
+Provider Transport 是 **v2026.4.17+** 引入的架构级重构，用统一的 ABC 抽象了所有 provider 的 API 数据路径（Anthropic Messages、OpenAI Chat Completions、OpenAI Responses API、AWS Bedrock）。位于 `agent/transports/`（v0.12.0 实测 1495 行），替代了之前散落在 `run_agent.py` 各处的 `if api_mode == "anthropic_messages": ... elif ...` 分支判断。
 
 **核心理念**：**一个 provider 的消息转换、工具转换、参数构建、响应规范化，应该聚合在一个类里，而不是散落在调用点。**
+
+> **v0.12.0（2026-05-05）增强**：新 `providers/` 包引入 `ProviderProfile` ABC（`providers/base.py`），把 provider 的**声明式数据**（base_url、env_vars、auth_type、default_aux_model、default_headers、fixed_temperature 等）从 transport 中拆出。Transport 仍负责数据路径，profile 通过 `prepare_messages` / `build_extra_body` / `build_api_kwargs_extras` 三个钩子注入 provider 特定 quirks。`chat_completions.py::_build_kwargs_from_profile()` 是 profile 路径入口；`run_agent.py` 现在传 `provider_profile=<ProviderProfile>` 让 transport 走 profile 路径，仅 `lmstudio` 和 `tencent-tokenhub`（带 session-aware reasoning probing）保留 legacy flag 路径。详见下文「ProviderProfile 与 Transport 的职责切分」。
 
 ## 架构原理
 
@@ -55,14 +57,17 @@ class ProviderTransport(ABC):
 
 ### 已实现的 Transport
 
-| Transport | 文件 | 行数 | api_mode | 覆盖 |
+| Transport | 文件 | 行数（v0.12.0） | api_mode | 覆盖 |
 |-----------|------|------|----------|------|
-| `AnthropicTransport` | `transports/anthropic.py` | 177 | `anthropic_messages` | Claude（直连、Nous Portal） |
-| `ChatCompletionsTransport` | `transports/chat_completions.py` | 387 | `chat_completions`、`openai` 等 | OpenAI、OpenRouter、Gemini、xAI、custom OpenAI 兼容 |
-| `ResponsesApiTransport` | `transports/codex.py` | 217 | `openai_responses` | OpenAI Codex、Responses API |
+| `AnthropicTransport` | `transports/anthropic.py` | 179 | `anthropic_messages` | Claude（直连、Nous Portal） |
+| `ChatCompletionsTransport` | `transports/chat_completions.py` | 597 | `chat_completions`、`openai` 等 | OpenAI、OpenRouter、Gemini、xAI、custom OpenAI 兼容 |
+| `ResponsesApiTransport` | `transports/codex.py` | 246 | `openai_responses` | OpenAI Codex、Responses API |
 | `BedrockTransport` | `transports/bedrock.py` | 154 | `bedrock_converse` | AWS Bedrock（Converse API） |
-| `NormalizedResponse` | `transports/types.py` | 142 | — | 共享响应类型 |
-| 基类 + 注册表 | `transports/base.py` + `__init__.py` | 89 + 51 | — | ABC + `get_transport()` 惰性发现 |
+| `NormalizedResponse` | `transports/types.py` | 162 | — | 共享响应类型 |
+| 基类 + 注册表 | `transports/base.py` + `__init__.py` | 89 + 68 | — | ABC + `get_transport()` 惰性发现 |
+| `ProviderProfile` ABC | `providers/base.py` | 171 | — | 声明式 provider 元数据 + 4 钩子 |
+| Provider 注册表 | `providers/__init__.py` | ~200 | — | `register_provider()` / `get_provider_profile()` / `list_providers()` 惰性发现 |
+| Bundled provider 插件 | `plugins/model-providers/<name>/` | 29 目录，33 profile | — | anthropic / openrouter / gemini / minimax / kimi-coding / xai / openai-codex / bedrock / 等 |
 
 ### 注册表：惰性发现
 
