@@ -122,3 +122,43 @@
   - 源码: gateway/hooks.py (170行), hermes_cli/plugins.py (609行)
   - 核心内容: Gateway Hooks 事件驱动(8种事件+通配符)，Plugin System 三级来源(用户/项目/pip)，PluginContext API(工具注册/消息注入/CLI命令/钩子)，缓存友好上下文注入
 - index.md 更新为 37 页
+
+## [2026-05-06] update | 211 commits 同步（v0.12.0 / v2026.4.30 + 后续补丁）
+
+新增 changelog: changelog/2026-05-06-update.md
+
+跨越 v0.12.0 大版本发布（2026-04-30）+ 一周后续补丁，共 211 commits（自 2026-04-29 以来）。所有结论经源码逐项验证。
+
+**架构级变更**：
+- `providers/` 模块（ProviderProfile ABC 165 行 + __init__.py 191 行）— 33 个 profile 全部以 plugins/model-providers/<name>/ 形式发布（28 个目录，gemini/kimi-coding/opencode-zen/minimax 多 profile），用户插件 last-writer-wins 覆盖 bundled
+- Kanban 多 Agent 协作板（hermes_cli/kanban.py 2036 + kanban_db.py 4087 + kanban_diagnostics.py 649 + tools/kanban_tools.py 855 = 7627 LOC）— 7 个 worker tools、15 动词 CLI、dispatcher in gateway、Dashboard plugin、诊断引擎
+- Checkpoints v2（tools/checkpoint_manager.py 1638 行）— 单仓 ~/.hermes/checkpoints/store/，git object 跨 project 去重，真 prune + size cap
+- Web Tools 按能力拆分（tools/web_providers/ ABC + per-capability backend）+ SearXNG search-only backend
+- Browser Lightpanda 引擎（agent-browser v0.25.3+ --engine lightpanda + 自动 Chrome fallback）
+- File Tools post-write delta lint（in-process .py/.json/.yaml/.toml linters，post-first/pre-lazy 模式）
+- i18n 系统（agent/i18n.py + locales/{en,zh,ja,de,es,fr,tr,uk}.yaml）— display.language config + HERMES_LANGUAGE env
+
+**新模块**：
+- Hindsight memory plugin（plugins/memory/hindsight/）— 长期记忆 + 知识图谱，cloud/local 双模式，update_mode='append' 自动探测
+- API Server X-Hermes-Session-Key（gateway/platforms/api_server.py:_parse_session_key_header）— OpenAI 兼容端点的稳定 channel 标识
+
+**显著变更**：
+- Skill Pin 语义收窄：_pinned_guard 仅触发 delete，patch/edit 在 pinned skill 上放行（#20220）
+- Curator 子命令扩到 11 个（archive/prune/backup/rollback 新增）
+- Curator 按 frontmatter name 二次保护 hub skills
+- Auth profile→global fallback：profile 缺 provider X 时 fall back 到 global auth.json
+- Gateway per-platform restart notification flag（PlatformConfig.gateway_restart_notification）
+- Reasoning 抽取锚定到当前 turn user 消息（fix stale reasoning across turns）
+- Compaction salvage batch：/compact→/compress 文档修正，cache eviction，memory authority 文案恢复
+
+**更新页面**：
+- concepts/web-tools-architecture.md — 5 backend + per-capability 选择 + WebSearchProvider/WebExtractProvider ABC
+- concepts/browser-tool-architecture.md — Lightpanda engine + auto Chrome fallback
+- concepts/skills-system-architecture.md — Curator 11 子命令、Pin 仅防删除、frontmatter name 保护
+- concepts/memory-system-architecture.md — Hindsight provider 详细配置 + update_mode='append' 探测
+- concepts/provider-transport-architecture.md — ProviderProfile ABC + 28 plugin 目录 / 33 profile + 发现链
+- concepts/smart-model-routing.md — ProviderProfile 插件指针
+- concepts/messaging-gateway-architecture.md — per-platform restart notification 三种 ping
+- concepts/gateway-session-management.md — X-Hermes-Session-Key 完整描述
+- README.md — Version → v0.12.0 (v2026.4.30)，6 changelog
+- index.md — 改为 37 页 + 6 changelogs，类别拓宽

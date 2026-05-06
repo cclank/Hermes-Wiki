@@ -1,7 +1,7 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-06
 type: concept
 tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
 sources: [gateway/run.py, gateway/platforms/, hermes_cli/config.py]
@@ -297,6 +297,21 @@ hermes gateway status   # 状态
 1. 发现所有运行中的 gateway 服务
 2. 重启 systemd/launchd 服务
 3. 停止非服务模式的手动进程
+
+### Per-platform 重启通知 opt-out（v2026.5+）
+
+`PlatformConfig.gateway_restart_notification`（默认 `True`）覆盖**三种 lifecycle ping**：
+
+1. **预重启 drain 通知**：`⚠️ Gateway restarting — Your current task will be interrupted...`，发送给所有活跃 session + home channel（`gateway/run.py:2462, 2500`）
+2. **重启完成 ping**：`♻ Gateway restarted`，发送给触发 `/restart` 的 chat（`gateway/run.py:11406`）
+3. **启动 ping**：`♻️ Gateway online`，发到 home channel（`gateway/run.py:11465`）
+
+设计动机：**operator vs end-user surfaces**。Telegram 这种 back-channel 保留 ping 合理；与 end user 共享的 Slack workspace 把 "Gateway restarting" 读作 "the bot is broken"，operator 应能一致禁用三种噪音：
+
+```yaml
+slack:
+  gateway_restart_notification: false
+```
 
 ## 平台特定功能
 
