@@ -1,9 +1,9 @@
 ---
 title: Browser Tool 浏览器自动化架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-05-09
 type: concept
-tags: [tool, toolset, architecture, component, browser]
+tags: [tool, toolset, architecture, component, browser, lightpanda]
 sources: [tools/browser_tool.py, tools/browser_providers/]
 ---
 
@@ -11,7 +11,7 @@ sources: [tools/browser_tool.py, tools/browser_providers/]
 
 ## 概述
 
-Browser Tool 位于 `tools/browser_tool.py`（84KB/2202行），提供**多后端浏览器自动化**能力。支持 4 种运行模式，所有模式对 Agent 暴露完全相同的工具接口（navigate/click/type/scroll/vision 等）。
+Browser Tool 位于 `tools/browser_tool.py`（84KB/2202行），提供**多后端浏览器自动化**能力。支持 4 种运行模式，所有模式对 Agent 暴露完全相同的工具接口（navigate/click/type/scroll/vision 等）。**v0.13.0+** 增加 Lightpanda 引擎支持（agent-browser v0.25.3+ 原生 `--engine lightpanda`），navigation 比 Chrome 快 1.3-5.8x。
 
 核心理念：**基于 accessibility tree（ariaSnapshot）的文本化页面表示**，使 LLM Agent 无需视觉能力即可操作网页。
 
@@ -282,6 +282,39 @@ export CAMOFOX_URL="http://camofox-server:8080"
 ```
 
 设置后所有浏览器操作通过 Camofox REST API 路由。
+
+## Lightpanda 引擎（v0.13.0+，PR #20451）
+
+`tools/browser_tool.py:407+` 引入 `_get_browser_engine()`，支持选择本地 browser 引擎：
+
+```yaml
+# config.yaml
+browser:
+  engine: "auto"        # auto | lightpanda | chrome
+```
+
+**校验集合**（`browser_tool.py:559`）：`{"auto", "lightpanda", "chrome"}`，其他值拒绝。
+
+| 引擎 | 优势 | 限制 |
+|------|------|------|
+| `chrome` | 完整功能、视频录制、扩展、复杂 JS 兼容 | 慢 |
+| `lightpanda` | navigation **1.3-5.8x 比 Chrome 快**，资源占用极低 | 无 GUI、无视频录制、复杂 JS 可能不兼容 |
+| `auto`（默认） | 让 agent-browser 自己决定 | 视环境而定 |
+
+### 自动 Chrome fallback
+
+`_lightpanda_fallback_reason(engine, command, result)`（`browser_tool.py:588`）—— Lightpanda 命令失败时自动用 Chrome 重试：
+
+```
+Lightpanda 'click' failed (timeout); retried with Chrome.
+```
+
+理由字段写进 user-visible reason 暴露给 agent，便于 LLM 理解为什么响应里出现"已切换"提示。
+
+### 错误处理鲁棒化（v0.13.0 post-release）
+
+- `48bf0ea24` — config 读失败时 fall-through 到 autodetect（不再硬错）
+- `3170c8d44` — cloud provider 解析为 None 时**不 cache 这个 transient 状态**（避免错误 None 被永久缓存）
 
 ## 与其他系统的关系
 

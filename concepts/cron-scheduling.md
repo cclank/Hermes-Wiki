@@ -1,10 +1,10 @@
 ---
 title: Cron 调度与自动化工作流
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-05-09
 type: concept
-tags: [architecture, cron, automation, scheduling]
-sources: [hermes-agent 源码分析 2026-04-07]
+tags: [architecture, cron, automation, scheduling, no-agent, watchers]
+sources: [tools/cronjob_tools.py, cron/scheduler.py, cron/jobs.py, optional-skills/devops/watchers/]
 ---
 
 # Cron 调度与自动化工作流
@@ -197,15 +197,67 @@ cron:
   output_dir: "~/.hermes/cron/output"
 ```
 
+## `no_agent` 看门狗模式（v0.13.0+，PR #19709）
+
+`cron/jobs.py:498` 新增字段 `no_agent: bool = False`，让 cron job **完全跳过 agent**，纯执行 `script`：
+
+```python
+def schedule_cron(
+    ...,
+    script: str | None = None,
+    no_agent: bool = False,         # script 模式（看门狗）
+    ...
+):
+    """
+    no_agent=True 时:
+      - script 是必需的（cron/jobs.py:581 强制）
+      - script 的 stdout 决定行为：空 = 静默，非空 = 原样投递
+      - prompt 仅作 name hint
+      - workdir 仍作 script 的 cwd
+    """
+```
+
+**适用场景**：
+
+```yaml
+# 一个监视 RSS 的 watchdog
+schedule: "*/15 * * * *"
+no_agent: true
+script: "python ~/.hermes/skills/watchers/scripts/rss_watch.py https://feed.url"
+deliver: telegram:home
+```
+
+**watchers skill** 是 no_agent 模式的官方实现（`optional-skills/devops/watchers/`）：
+
+- RSS / Atom 订阅、HTTP JSON endpoint polling、GitHub repo issues / pulls / releases / commits
+- watermark dedup（只投递新 item）
+- 共享 watermark helper
+
+详见 [`optional-skills/devops/watchers/SKILL.md`](https://github.com/NousResearch/hermes-agent/tree/main/optional-skills/devops/watchers/SKILL.md)。
+
+## `deliver=all` 路由意图（v0.13.0+，PR #21495）
+
+cron job 的 `deliver` 字段支持特殊值 `all`，表示**扇出到所有连接的 channel**（不指定具体平台）。
+
+## 安全：扫描 skill 内容做注入检测（v0.13.0+，PR #21350）
+
+P0 修复——cron prompt-injection 扫描器之前只看 `prompt` 字段，**v0.13.0** 起扫描组装后的完整 prompt（含 skill 内容），防止恶意 skill 注入指令通过 cron 触发。
+
+详见 [[security-defense-system]]。
+
 ## 相关页面
 
-- [[messaging-gateway-architecture]] — 网关驱动调度器 tick() 循环
-- [[hook-system-architecture]] — 网关事件钩子与 Cron 任务的协作
+- [[messaging-gateway-architecture]] — 网关驱动调度器 tick() 循环；deliver=all
+- [[hook-system-architecture]] — `standalone_sender_fn` 跨进程投递（PR `93e25ceb1`）
 - [[gateway-session-management]] — 会话 origin 用于 Cron 投递路由
+- [[skills-system-architecture]] — watchers skill 是 no_agent 配套
+- [[security-defense-system]] — cron 注入扫描
 
 ## 相关文件
 
 - `tools/cronjob_tools.py` — Cron 工具
 - `cron/scheduler.py` — 调度器
-- `cron/jobs.py` — 任务定义
+- `cron/jobs.py:498` — `no_agent` 字段
+- `cron/jobs.py:581` — `no_agent + script` 强制共存
+- `optional-skills/devops/watchers/` — RSS / HTTP / GitHub watcher 脚本
 - `gateway/run.py` — 网关集成

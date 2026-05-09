@@ -1,10 +1,10 @@
 ---
 title: Provider Transport 架构
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-05-09
 type: concept
-tags: [architecture, module, provider, transport, api-dispatch]
-sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, run_agent.py]
+tags: [architecture, module, provider, transport, api-dispatch, provider-plugin]
+sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, providers/base.py, providers/__init__.py, run_agent.py]
 ---
 
 # Provider Transport — API 路径统一抽象
@@ -128,10 +128,26 @@ def register_transport(api_mode: str, transport_cls: type) -> None:
 | AWS Bedrock | BedrockTransport | 全路径完成 |
 | Auxiliary Client（压缩/记忆） | 已迁移到 Transport | 完成 |
 
+## 与 ProviderProfile 协作（v0.13.0+）
+
+`providers/base.py` 的 `ProviderProfile` 是**声明式 dataclass**，描述每个 provider 的 auth / endpoints / quirks；Transport 是**数据路径执行器**。两者职责完全分离：
+
+```
+ProviderProfile         →  api_mode 决定走哪个 Transport
+ProviderProfile.fetch_models()  →  /model picker 拉 live 列表
+ProviderProfile.prepare_messages()  →  Transport.convert_messages 调用前
+ProviderProfile.build_extra_body()  →  Transport.build_kwargs 合并到 extra_body
+ProviderProfile.build_api_kwargs_extras()  →  Transport.build_kwargs 合并到 api_kwargs
+```
+
+`get_provider_profile(name).api_mode` → `get_transport(api_mode)` —— Profile 给 transport 提供数据，transport 给 Profile 提供数据路径。28 个 bundled provider 插件（`plugins/model-providers/`）都通过这个组合接入。
+
+详见 [[smart-model-routing]] 中的 ProviderProfile 章节。
+
 ## 与其他系统的关系
 
 - [[auxiliary-client-architecture]] — auxiliary_client 已迁移到 Transport
-- [[smart-model-routing]] — transport 基于 api_mode 派发，与模型路由配合
+- [[smart-model-routing]] — transport 基于 api_mode 派发，与 ProviderProfile 协作
 - [[interrupt-and-fault-tolerance]] — 中断、retry 仍在 AIAgent 层，不属于 transport 职责
 - [[prompt-caching-optimization]] — cache 统计通过 `extract_cache_stats` 钩子暴露
 

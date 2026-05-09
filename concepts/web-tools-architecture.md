@@ -1,44 +1,60 @@
 ---
 title: Web Tools 搜索/提取架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-05-09
 type: concept
-tags: [tool, toolset, architecture, component]
-sources: [tools/web_tools.py]
+tags: [tool, toolset, architecture, component, search]
+sources: [tools/web_tools.py, tools/web_providers/]
 ---
 
 # Web Tools — 搜索/提取架构
 
 ## 概述
 
-Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 搜索/提取/爬取**能力。支持 4 种后端提供商，所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口。
+Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 搜索/提取/爬取**能力。**v0.13.0+** 把 search-only backend 拆到 `tools/web_providers/` 子包（base.py / brave_free.py / ddgs.py / searxng.py），并支持 **per-capability backend**——search、extract、browse 可以分别配不同后端。
 
 核心理念：**内容获取优先于浏览器自动化**——简单信息检索使用 web_search/web_extract（更快、更便宜），仅在需要交互时才使用 browser 工具。
 
 ## 架构原理
 
-### 四大后端
+### 后端列表（`tools/web_tools.py:129`）
 
-| 后端 | Search | Extract | Crawl | 认证 |
+| 后端 | Search | Extract | Crawl | 认证 / 引入 |
 |---|---|---|---|---|
 | **Firecrawl** | ✅ | ✅ | ✅ | API Key 或 Nous Gateway |
 | **Exa** | ✅ | ✅ | ❌ | EXA_API_KEY |
 | **Parallel** | ✅ | ✅ | ❌ | PARALLEL_API_KEY |
 | **Tavily** | ✅ | ✅ | ✅ | TAVILY_API_KEY |
+| **SearXNG**（v0.13.0+） | ✅ | — | — | `SEARXNG_URL`，无 API key（自托管 / public 实例） |
+| **Brave Search Free**（v0.13.0+） | ✅ | — | — | `BRAVE_SEARCH_API_KEY`（free tier） |
+| **DDGS**（v0.13.0+） | ✅ | — | — | `ddgs` Python 包（自动探测） |
 
-### 后端选择链
+### 后端选择链（`tools/web_tools.py:140+`）
 
 ```python
 def _get_backend():
     """解析优先级:
-    1. config.yaml web.backend (显式指定: parallel/firecrawl/tavily/exa)
-    2. FIRECRAWL_API_KEY / FIRECRAWL_API_URL / tool-gateway
-    3. PARALLEL_API_KEY
-    4. TAVILY_API_KEY
-    5. EXA_API_KEY
-    6. 默认: firecrawl (向后兼容)
+    1. config.yaml web.backend (显式: parallel/firecrawl/tavily/exa/searxng/brave-free/ddgs)
+    2. 付费后端（按出现顺序）: PARALLEL_API_KEY → FIRECRAWL_* → TAVILY_API_KEY → EXA_API_KEY
+    3. 免费后端（trail paid）: SEARXNG_URL → BRAVE_SEARCH_API_KEY → ddgs 包
+    4. 默认: firecrawl (向后兼容)
     """
 ```
+
+**免费后端在付费后端之后做 fallback**——只要有付费 key 就优先付费，没有付费才走免费。
+
+### Per-capability backend 拆分（v0.13.0+）
+
+`web` 工具现支持给 search / extract / browse **分别**配后端（PR #20061 / #20823 / #20841）：
+
+```yaml
+web:
+  search_backend: "searxng"     # 免费 SearXNG 自托管
+  extract_backend: "firecrawl"  # 仍用 Firecrawl 提取页面
+  crawl_backend: "tavily"
+```
+
+适用场景：自有 SearXNG 实例做 search 省钱、extract / crawl 走专业服务。
 
 ### Firecrawl 双路径架构
 
