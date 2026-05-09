@@ -1,0 +1,261 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║                                                                      ║
+║              TRANSLATION PIPELINE v2.0 - COMMAND REFERENCE          ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+📤 PUSH TO GITHUB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+cd /tmp/Hermes-Wiki
+git push origin master
+
+Or use helper:
+./push_changes.sh
+
+
+🚀 SETUP & DEPLOYMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Interactive setup (local or cloud)
+cd /tmp/Hermes-Wiki/translation-pipeline
+./deploy.sh
+
+# Quick start (auto-setup + translate)
+python3 quick_start.py
+
+
+🔍 HEALTH & STATUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Check service health
+python3 client_enhanced.py health
+
+# Get service status
+python3 client_enhanced.py status
+
+
+📄 TRANSLATE SINGLE FILE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+python3 client_enhanced.py translate \
+  --file README.md \
+  --output README-en.md
+
+
+📦 TRANSLATE REPOSITORY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# With progress monitoring
+python3 client_enhanced.py translate \
+  --owner scapedotes \
+  --repo Hermes-Wiki \
+  --monitor
+
+# Specific branch
+python3 client_enhanced.py translate \
+  --owner scapedotes \
+  --repo Hermes-Wiki \
+  --branch develop \
+  --monitor
+
+# Without monitoring (background)
+python3 client_enhanced.py translate \
+  --owner scapedotes \
+  --repo Hermes-Wiki
+
+
+📊 TASK MANAGEMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Check task status
+python3 client_enhanced.py task-status <task-id>
+
+# List all translations
+python3 client_enhanced.py list
+
+
+💾 DOWNLOAD TRANSLATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Download specific file
+python3 client_enhanced.py download \
+  --path translations/scapedotes/Hermes-Wiki/20260502_123456/README.md \
+  --output README-en.md
+
+# Download manifest
+python3 client_enhanced.py download \
+  --path translations/scapedotes/Hermes-Wiki/20260502_123456/manifest.json
+
+
+🧪 TESTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Run test suite
+python3 test_pipeline.py
+
+
+🔧 CONFIGURATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Edit configuration
+nano .env
+
+# View example configuration
+cat .env.example
+
+
+🏠 LOCAL MODE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Start local service
+source venv/bin/activate
+python3 app_enhanced.py
+
+# Or with custom port
+PORT=8081 python3 app_enhanced.py
+
+
+☁️  CLOUD RUN MODE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Deploy to Cloud Run
+gcloud run deploy hermes-wiki-translator \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated
+
+# View logs
+gcloud run logs read hermes-wiki-translator --region us-central1
+
+# Get service URL
+gcloud run services describe hermes-wiki-translator \
+  --region us-central1 \
+  --format 'value(status.url)'
+
+
+🏗️  TERRAFORM DEPLOYMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+cd terraform
+
+# Initialize
+terraform init
+
+# Plan
+terraform plan
+
+# Apply
+terraform apply
+
+# Destroy
+terraform destroy
+
+
+📚 DOCUMENTATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# View README
+cat README_v2.md
+
+# View improvements
+cat IMPROVEMENTS.md
+
+# View API reference
+cat API.md
+
+# View deployment guide
+cat DEPLOY_GUIDE.md
+
+
+🔑 ENVIRONMENT VARIABLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Required:
+  CLAUDE_API_KEY          - Claude API key from console.anthropic.com
+
+Optional:
+  GITHUB_TOKEN            - GitHub token for private repos
+  LOCAL_MODE              - true/false (default: false)
+  LOCAL_STORAGE_PATH      - Local storage path (default: ./translations)
+  GCP_PROJECT_ID          - GCP project ID (cloud mode)
+  GCP_REGION              - GCP region (default: us-central1)
+  GCS_BUCKET_NAME         - GCS bucket name
+  MAX_WORKERS             - Parallel workers (default: 5)
+  TRANSLATION_MODEL       - Claude model (default: claude-3-5-sonnet-20241022)
+  MAX_TOKENS              - Max tokens per request (default: 4096)
+
+
+💡 TIPS & TRICKS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Use local mode for testing:
+   Set LOCAL_MODE=true in .env
+
+2. Monitor progress with --monitor flag:
+   python3 client_enhanced.py translate ... --monitor
+
+3. Stop monitoring with Ctrl+C (task continues):
+   Task keeps running in background
+
+4. Check cached translations:
+   Identical content returns instantly from cache
+
+5. Customize terminology:
+   Edit terminology_map.json to add your terms
+
+6. Reduce costs:
+   Use caching and local mode for development
+
+7. Scale workers:
+   Increase MAX_WORKERS for faster processing
+
+8. Private repos:
+   Set GITHUB_TOKEN in .env
+
+
+🐛 TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Service won't start:
+  • Check if port 8080 is in use: lsof -i :8080
+  • Use different port: PORT=8081 python3 app_enhanced.py
+
+Translation fails:
+  • Verify Claude API key: echo $CLAUDE_API_KEY
+  • Check service health: python3 client_enhanced.py health
+
+Git clone fails:
+  • For private repos, set GITHUB_TOKEN
+  • Check repo exists and is accessible
+
+Out of memory:
+  • Reduce MAX_WORKERS in .env
+  • Use cloud mode for large repos
+
+Dependencies missing:
+  • Run: pip install -r requirements.txt
+  • Or: ./deploy.sh (auto-installs)
+
+
+📞 SUPPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Documentation:
+  • README_v2.md - User guide
+  • IMPROVEMENTS.md - Technical details
+  • API.md - API reference
+  • DEPLOY_GUIDE.md - Deployment guide
+
+GitHub:
+  • Issues: https://github.com/scapedotes/Hermes-Wiki/issues
+  • Discussions: https://github.com/scapedotes/Hermes-Wiki/discussions
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║                                                                      ║
+║   Version: 2.0.0                                                    ║
+║   Status: ✅ PRODUCTION READY                                       ║
+║   Location: /tmp/Hermes-Wiki/translation-pipeline/                 ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝
