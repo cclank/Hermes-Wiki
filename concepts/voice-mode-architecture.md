@@ -1,10 +1,10 @@
 ---
 title: 语音模式架构
 created: 2026-04-10
-updated: 2026-04-18
+updated: 2026-05-10
 type: concept
-tags: [voice, stt, tts, architecture]
-sources: [tools/voice_mode.py, tools/tts_tool.py, tools/transcription_tools.py, cli.py]
+tags: [voice, stt, tts, architecture, video]
+sources: [tools/voice_mode.py, tools/tts_tool.py, tools/transcription_tools.py, tools/vision_tools.py, cli.py]
 ---
 
 # 语音模式架构
@@ -76,8 +76,40 @@ TTS Provider 选择和语音设置通过 `tools/tts_tool.py` 管理，支持 Ele
 | **Google Gemini TTS** | v0.10.0 新增，通过 Gemini API |
 | **xAI TTS** | v0.10.0 随 xAI Responses API 升级引入 |
 | **KittenTTS（本地）** | v2026.4.18+ 引入，本地 CPU 运行，无需 GPU 和 API key，默认模型 `KittenML/kitten-tts-nano-0.8-int8`（25MB），默认声音 `Jasper`，其他声音由 KittenTTS 包提供（25-80MB 模型范围） |
+| **Piper（本地）** | v0.12.0 引入，OHF-Voice/piper1-gpl 神经 VITS，44 种语言，`pip install piper-tts` 即可，跨平台无 GPU 依赖。源码：`tools/tts_tool.py:113 _import_piper()` |
+| **xAI Custom Voices**（声音克隆） | v0.13.0，`tools/tts_tool.py:874 _generate_xai_tts`：`voice_id` 可指向自训练 voice，默认 `eve`/`en`/sample_rate 24000/bitrate 128000，走 `https://api.x.ai/v1`，需 `XAI_API_KEY` |
 
 这些 provider 也可通过 Nous Tool Gateway 统一访问（无需自备 API key）。
+
+### TTS Provider Registry（v0.12.0）
+
+`tts.providers.<name>` 是个**可插拔注册表**——不止上面这些 built-in，第三方可挂自己的本地 CLI（Piper / VoxCPM / Kokoro CLI 等）。注册路径在 `tools/tts_tool.py:290` 注释里写：
+
+> ... built-ins so they can plug any local CLI (Piper, VoxCPM, Kokoro CLIs, ...) — provider: piper-en
+
+## 视频理解（v0.13.0）
+
+新增 `video_analyze` 工具，对应多模态 video 模型（Gemini 等）：
+
+```python
+# tools/vision_tools.py:1375 VIDEO_ANALYZE_SCHEMA
+{
+    "name": "video_analyze",
+    "description": "Analyze a video from a URL or local file path...",
+    "parameters": {
+        "properties": {
+            "video_url": {"type": "string"},
+            "question": {"type": "string"},
+        },
+        "required": ["video_url", "question"],
+    },
+}
+```
+
+- 支持 `mp4/webm/mov/avi/mkv/mpeg`，max ~50 MB（>20 MB 较慢）
+- 模型路由：`AUXILIARY_VIDEO_MODEL` → `AUXILIARY_VISION_MODEL` fallback
+- 注册：`registry.register(name="video_analyze", toolset="video", emoji="🎬", ...)`
+- 内部 prompt 模板会要求模型"先完整描述（含 motion / audio / 文字 / 转场），然后回答用户问题"
 
 ### STT Provider 扩展（v2026.4.18+）
 

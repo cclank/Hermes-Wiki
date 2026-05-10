@@ -1,17 +1,17 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-10
 type: concept
-tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
-sources: [gateway/run.py, gateway/platforms/, hermes_cli/config.py]
+tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy, google-chat, teams, line]
+sources: [gateway/run.py, gateway/platforms/, gateway/platform_registry.py, plugins/platforms/, hermes_cli/config.py]
 ---
 
 # 消息网关架构
 
 ## 概述
 
-Gateway 是 Hermes Agent 的**统一消息网关**，支持 14+ 消息平台，从单一进程管理所有平台的连接和消息分发。
+Gateway 是 Hermes Agent 的**统一消息网关**，v0.13.0 起支持 **20+ 消息平台**（17 个 native 平台 + 4 个插件平台），从单一进程管理所有平台的连接和消息分发，**网关重启会自动 resume 中段会话**（v0.13.0 新增）。
 
 ## 架构
 
@@ -73,6 +73,9 @@ gateway/
 | Webhook | HTTP | 外部事件接收 |
 | **腾讯元宝 Yuanbao** | API | 原生文本+媒体投递，sticker 支持（v2026.4.23+） |
 | **IRC**（插件） | TLS asyncio | 零外部依赖，TLS、PING/PONG、nick collision、NickServ、频道寻址（v2026.4.23+，参考实现） |
+| **Microsoft Teams**（插件） | Graph + webhook | `plugins/platforms/teams/`，第一个 plugin-shipped 平台（v0.12.0） |
+| **Google Chat**（插件，**20th**） | Cloud Pub/Sub pull subscription | `plugins/platforms/google_chat/`，无需公网 URL；OAuth per-user 附件（v0.13.0） |
+| **LINE**（插件） | Messaging API | `plugins/platforms/line/`（v0.13.0） |
 
 ## 平台适配器插件化（v2026.4.23+）
 
@@ -116,6 +119,39 @@ def register(ctx):
 `feat: complete plugin platform parity` (2e20f6ae2) + `feat: final platform plugin parity` (e464cde58) 让插件平台和内置平台行为一致：
 - webhook 投递、PLATFORM_HINTS、`get_connected_platforms`、cron 投递、动态 toolset 生成、setup wizard 等
 - bundled 插件平台（如 IRC）启动时自动加载（`feat(plugins): bundled platform plugins auto-load by default`）
+
+### 4 个 bundled 平台插件（v0.13.0）
+
+`plugins/platforms/` 下当前 bundled 4 个：
+
+| 插件 | 加入版本 | 备注 |
+|---|---|---|
+| `irc` | v0.11.0 (v2026.4.23) | 第一个参考实现 |
+| `teams` | v0.12.0 | Microsoft Teams，第一个 plugin-shipped 平台 |
+| `google_chat` | v0.13.0 | 20th 平台，Pub/Sub pull |
+| `line` | v0.13.0 | LINE Messaging API |
+
+## 网关自动恢复中断会话（v0.13.0）
+
+`gateway/run.py:3124,3192` —— 启动时扫描 `resume_pending` 标记，把"上次因 gateway 重启/`/update`/源文件 reload 而被打断"的 session 自动 schedule resume：
+
+```
+INFO  Scheduled auto-resume for 3 restart-interrupted session(s)
+```
+
+Resume 在**下一次真实用户消息**触发——而不是启动时立刻跑（避免 boot 风暴）。`gateway/run.py:4870` 注释说 `session_key auto-resumes from the existing conversation`。
+
+## `[[as_document]]` Skill 媒体指令（v0.13.0）
+
+技能输出里写 `[[as_document]]`，gateway 把所有附件以**文档形式**投递（而非 inline image），适合大图 / 原始 PNG / PDF：
+
+- `tools/send_message_tool.py:245` 在 `extract_media` 前 capture
+- `gateway/run.py:9928` 走 send-to-platform 同样 capture
+- `gateway/platforms/base.py:1976-2000` 文档说：agent 一旦 emit `[[as_document]]`，message 里**每个**图片路径都 force as document
+
+## 平台白名单（v0.13.0）
+
+`allowed_channels` / `allowed_chats` / `allowed_rooms` config 已在 Slack / Telegram / Mattermost / Matrix / DingTalk 落地——之前只有部分平台支持。
 
 ## 平台适配器基类
 

@@ -2,7 +2,7 @@
 
 > 内容目录。每个 wiki 页面按类型列出，附一行摘要。
 > 查询前先读此文件找到相关页面。
-> Last updated: 2026-04-08 | Total pages: 33
+> Last updated: 2026-05-10 | Total pages: 39
 
 ## Entities
 
@@ -31,22 +31,25 @@
 - [[large-tool-result-handling]] — 大型结果文件化、预飞行压缩、Surrogate 清理
 
 ### 安全与可靠性
-- [[security-defense-system]] — 5 层防御体系，100+ 威胁模式检测
+- [[security-defense-system]] — 5 层防御体系，100+ 威胁模式检测；v0.13.0 八个 P0 修复
 - [[interrupt-and-fault-tolerance]] — 中断传播、凭证池轮换、Fallback 模型链
 - [[credential-pool-and-isolation]] — 多密钥自动轮换、Profile 隔离
-- [[multi-agent-architecture]] — 多 Agent 体系，子代理委派+批量处理+跨平台通信
+- [[multi-agent-architecture]] — 5 种多 Agent 机制（delegate / MoA / review / send_message / Kanban）
+- [[kanban-multi-agent]] — 持久化多 Agent 协作板（v0.13.0），SQLite + heartbeat + reclaim
+- [[goal-and-ralph-loop]] — `/goal` 命令的 Ralph 循环目标锁定（v0.13.0）
 
 ### 平台与扩展
-- [[cli-architecture]] — CLI 架构、斜杠命令补全、Skin 引擎
+- [[cli-architecture]] — CLI 架构、斜杠命令补全、Skin 引擎；`/goal`/`/kanban`/`/curator`/`hermes -z`
 - [[configuration-and-profiles]] — 分层配置、Profile 隔离、自动迁移
-- [[hook-system-architecture]] — Hook 系统（Gateway Hooks + Plugin System），事件驱动+工具注册+上下文注入
-- [[mcp-and-plugins]] — MCP 集成、插件钩子系统、OAuth 支持
-- [[terminal-backends]] — 6 种终端后端、环境抽象、持久化 Shell
-- [[cron-scheduling]] — 内置调度器、自然语言调度、多平台投递
+- [[hook-system-architecture]] — Hook 系统（Gateway + Plugin），`transform_llm_output`（v0.13.0）
+- [[mcp-and-plugins]] — MCP 集成、SSE transport、OAuth 转发、image MEDIA tag（v0.13.0）
+- [[provider-transport-architecture]] — Transport ABC + ProviderProfile 全面插件化（v0.13.0）
+- [[terminal-backends]] — 7 种终端后端（含 Vercel Sandbox）、环境抽象、持久化 Shell
+- [[cron-scheduling]] — 内置调度器、自然语言调度、多平台投递；`no_agent` watchdog（v0.13.0）
 - [[trajectory-and-data-generation]] — 轨迹保存、批量运行器、RL 训练环境
 - [[prompt-builder-architecture]] — 系统提示模块化组装，注入防护+技能缓存+模型特定指导
 - [[context-compressor-architecture]] — 自动上下文压缩，结构化摘要+迭代更新+工具对完整性保障
 - [[model-tools-dispatch]] — 工具编排与调度，异步桥接+动态 schema 调整+参数类型强制
 - [[gateway-session-management]] — 网关会话管理，多平台会话隔离+PII 脱敏+重置策略
-- [[messaging-gateway-architecture]] — 消息网关架构、平台适配器、DM 配对
+- [[messaging-gateway-architecture]] — 20+ 平台（含 Teams/Google Chat/LINE 插件平台），auto-resume
 

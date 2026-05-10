@@ -1,10 +1,10 @@
 ---
 title: Cron 调度与自动化工作流
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-05-10
 type: concept
-tags: [architecture, cron, automation, scheduling]
-sources: [hermes-agent 源码分析 2026-04-07]
+tags: [architecture, cron, automation, scheduling, no-agent, watchdog]
+sources: [tools/cronjob_tools.py, cron/scheduler.py, cron/jobs.py]
 ---
 
 # Cron 调度与自动化工作流
@@ -197,15 +197,62 @@ cron:
   output_dir: "~/.hermes/cron/output"
 ```
 
+## `no_agent` 模式（v0.13.0）
+
+`cron/jobs.py:498`：
+
+```python
+def create_job(
+    ...,
+    no_agent: bool = False,
+    ...,
+):
+    """When True, skip the agent entirely — run ``script`` on schedule.
+    Empty stdout is silent, non-empty gets delivered verbatim."""
+```
+
+**当 `no_agent=True`**，LLM 完全不介入：
+
+| 字段 | 行为 |
+|---|---|
+| `script` | **必填**（否则报 "no_agent=True requires a script — with no agent and no script ..."）。脚本路径 / 命令 |
+| `prompt` | 忽略，只作为可选名字提示 |
+| `workdir` | subprocess cwd（不是 agent shell workdir） |
+| stdout 空 | 静默——不投递 |
+| stdout 非空 | 原文投递到目标平台（不经 LLM rewrite） |
+
+`cron/scheduler.py:1040`：
+
+```python
+if job.get("no_agent"):
+    err = "no_agent=True but no script is set for this job"
+    # ... 短路逻辑：直接 spawn subprocess，不 fork agent
+```
+
+**用途**：
+- 运行 bash watchdog（disk usage、健康检查）
+- 把 `kubectl get pods` 这种命令的输出直接推到 chat
+- 跳过 LLM 的延迟和成本
+
+scheduler.py:711 注释：
+
+> Shell support lets `no_agent=True` jobs ship classic bash watchdogs ...
+
+## Cron Prompt-Injection 扫描覆盖装配后的技能（v0.13.0）
+
+v0.13.0 安全 wave：cron 启动时扫的是**装配好的 skill content**（assembled skill content），不是 prompt 字面量。避免动态加载的 skill 在 cron 触发时走私 injection。详见 [[security-defense-system]]。
+
 ## 相关页面
 
 - [[messaging-gateway-architecture]] — 网关驱动调度器 tick() 循环
 - [[hook-system-architecture]] — 网关事件钩子与 Cron 任务的协作
 - [[gateway-session-management]] — 会话 origin 用于 Cron 投递路由
+- [[kanban-multi-agent]] — Cron + Kanban 组合：定时投递 task 到 board
+- [[security-defense-system]] — Cron prompt-injection 扫描
 
 ## 相关文件
 
 - `tools/cronjob_tools.py` — Cron 工具
-- `cron/scheduler.py` — 调度器
-- `cron/jobs.py` — 任务定义
+- `cron/scheduler.py:1040` — `no_agent` 短路；`tick()` 由 Gateway 驱动
+- `cron/jobs.py:498` — `no_agent` 参数定义
 - `gateway/run.py` — 网关集成

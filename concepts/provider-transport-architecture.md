@@ -1,10 +1,10 @@
 ---
 title: Provider Transport 架构
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-05-10
 type: concept
-tags: [architecture, module, provider, transport, api-dispatch]
-sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, run_agent.py]
+tags: [architecture, module, provider, transport, api-dispatch, providers-as-plugins]
+sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, providers/base.py, providers/__init__.py, plugins/model-providers/, run_agent.py]
 ---
 
 # Provider Transport — API 路径统一抽象
@@ -138,11 +138,64 @@ def register_transport(api_mode: str, transport_cls: type) -> None:
 ## 相关文件
 
 - `agent/transports/base.py`（89 行） — `ProviderTransport` ABC
-- `agent/transports/types.py`（142 行） — `NormalizedResponse` 共享类型
-- `agent/transports/__init__.py`（51 行） — 注册表 + 惰性发现
-- `agent/transports/anthropic.py`（177 行） — Anthropic Messages
-- `agent/transports/chat_completions.py`（387 行） — Chat Completions
-- `agent/transports/codex.py`（217 行） — OpenAI Responses API
+- `agent/transports/types.py`（162 行） — `NormalizedResponse` 共享类型
+- `agent/transports/__init__.py`（68 行） — 注册表 + 惰性发现
+- `agent/transports/anthropic.py`（179 行） — Anthropic Messages
+- `agent/transports/chat_completions.py`（614 行） — Chat Completions（LM Studio reasoning 等扩展后增长）
+- `agent/transports/codex.py`（247 行） — OpenAI Responses API
 - `agent/transports/bedrock.py`（154 行） — AWS Bedrock Converse
+- `providers/base.py` — **`ProviderProfile` ABC（v0.13.0）**
+- `providers/__init__.py` — 插件目录扫描（bundled + user）
+- `plugins/model-providers/<name>/` — **29 个 bundled provider profile**
 - `run_agent.py` — 10+ 接入点
 - `agent/auxiliary_client.py` — 辅助路径已迁移
+
+## v0.13.0：Provider Profile 全面插件化
+
+Transport ABC 抽象了"消息/工具格式 + 调用形状"，**ProviderProfile**（`providers/base.py:25`）抽象了"provider 的元数据 + 行为开关"：
+
+```python
+@dataclass
+class ProviderProfile:
+    # Identity
+    name: str
+    api_mode: str = "chat_completions"
+    aliases: tuple = ()
+
+    # Human-readable metadata
+    display_name: str = ""
+    description: str = ""
+    signup_url: str = ""
+
+    # Auth & endpoints
+    env_vars: tuple = ()
+    base_url: str = ""
+    models_url: str = ""
+    auth_type: str = "api_key"  # api_key | oauth_device_code | oauth_external | copilot | aws_sdk
+
+    # Model catalog
+    fallback_models: tuple = ()
+    # ...
+```
+
+`providers/__init__.py` 头部注释明确：
+
+> Provider profiles can live in two places:
+>   1. Bundled plugins: `plugins/model-providers/<name>/`
+>   2. User plugins: `$HERMES_HOME/plugins/model-providers/<name>/`
+
+每个 plugin dir 含：
+- `__init__.py` — 在 import 时调用 `register_provider(profile)`
+- `plugin.yaml` — manifest（`kind: model-provider`）
+
+**惰性发现**：第一次 `get_provider_profile()` / `list_providers()` 调用时扫描两边，导入每个 plugin。**用户插件覆盖 bundled**（last-writer-wins），第三方可以 monkey-patch / 替换任意内置 profile。
+
+**向后兼容**：`providers/*.py` 的单文件 profile 仍走 `pkgutil.iter_modules` 发现（不强制 plugin dir 结构）；新 profile 推荐 plugin layout。
+
+### 当前 bundled 29 个
+
+ai-gateway, alibaba, alibaba-coding-plan, anthropic, arcee, azure-foundry, bedrock, copilot, copilot-acp, custom, deepseek, gemini, gmi, huggingface, kilocode, kimi-coding, minimax, nous, nvidia, ollama-cloud, openai-codex, opencode-zen, openrouter, qwen-oauth, stepfun, xai, xiaomi, zai
+
+### 与 Transport 的协作
+
+ProviderProfile 描述**这个 provider 怎么登/在哪/默认行什么模型**，Transport 描述**怎么编消息/工具/响应**——profile.`api_mode` 字段决定走哪个 transport，profile 的其它字段塞 transport 的 `build_kwargs(provider_quirks=...)` 形参。从此 transport 不再写满布尔开关，profile 不碰 client 构造/凭证轮转/streaming（这些留在 AIAgent）。

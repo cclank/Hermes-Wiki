@@ -1,23 +1,29 @@
 ---
 title: Hermes 多 Agent 架构
 created: 2026-04-08
-updated: 2026-04-18
+updated: 2026-05-10
 type: concept
-tags: [architecture, module, agent, delegation, concurrency]
-sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, run_agent.py]
+tags: [architecture, module, agent, delegation, concurrency, kanban]
+sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, tools/send_message_tool.py, hermes_cli/kanban.py, hermes_cli/kanban_db.py, run_agent.py]
 ---
 
 # Hermes 多 Agent 架构
 
 ## 概述
 
-Hermes 的多 Agent 能力分为**三种运行时机制**，全部在 Agent 对话过程中触发，不涉及外部脚本或离线工具：
+Hermes 的多 Agent 能力 v0.13.0 起共 **5 种运行时机制**，按"谁触发 / 持久化与否"分为两层：
 
-| 机制                    | 触发方式                  | 用途                   |
-| --------------------- | --------------------- | -------------------- |
-| **Delegate Task**     | LLM tool call（模型自主决定） | 并行子任务，最多 3 路         |
-| **Mixture of Agents** | LLM tool call（模型自主决定） | 多模型协同推理              |
-| **Background Review** | 系统计数器自动触发             | 后台提炼经验 → 创建/改进 skill |
+| 机制                    | 触发方式                  | 持久化 | 用途                   |
+| --------------------- | --------------------- | --- | -------------------- |
+| **Delegate Task**     | LLM tool call（模型自主决定） | ❌   | 并行子任务，默认最多 3 路、可配深度 |
+| **Mixture of Agents** | LLM tool call（模型自主决定） | ❌   | 多模型协同推理              |
+| **Background Review** | 系统计数器自动触发             | ❌   | 后台提炼经验 → 创建/改进 skill |
+| **send_message**      | LLM tool call         | ❌   | 跨平台消息投递              |
+| **Kanban**（v0.13.0）   | 用户 / cron / API       | ✅ SQLite | 多 worker、跨进程、跨重启的持久任务板 |
+
+前 4 种是**同进程内**的 Agent 协作（fork 子 Agent / 多模型 ensemble / 后台微调 / 跨平台发包），Kanban 是**跨进程、可恢复**的协作板，独立成页：[[kanban-multi-agent]]。
+
+此外 v0.13.0 引入 `/goal` 做"单 Agent 长任务锁定"，是 Ralph loop 一等公民——和多 Agent 编排正交，但同样靠 SessionDB 持久化目标状态（[[goal-and-ralph-loop]]）。
 
 ## 触发机制
 

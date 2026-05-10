@@ -376,6 +376,44 @@ def my_command_hook(event_type, context):
 
 决策类型：`deny` / `handled` / `rewrite` / `allow`，在核心处理前拦截。向后兼容——fire-and-forget 遥测钩子仍走 `emit()`。
 
+### PluginContext 新增 API（v0.12.0 / v0.13.0）
+
+`hermes_cli/plugins.py` 的 `PluginContext` 又扩了几个一等公民入口：
+
+| 方法 | 行 | 说明 |
+|---|---|---|
+| `register_command()` | 401 | 见 v0.10.0 |
+| `register_cli_command()` | 376 | 只在 CLI 注册，不上 gateway |
+| `register_tool()` | 317 | 给 agent 加工具 |
+| `register_hook()` | 603 | 注册任意 lifecycle hook |
+| `register_skill()` | 622 | 插件命名空间技能 |
+| `register_context_engine()` | 488 | v0.11.0，自定义 context 注入 |
+| `register_image_gen_provider()` | 520 | v0.11.0+，image_gen 后端 |
+| `register_platform()` | 547 | v2026.4.23，平台插件 |
+
+### 新 lifecycle hook：`transform_llm_output`（v0.13.0）
+
+`hermes_cli/plugins.py:136` 把 `transform_llm_output` 加进合法 hook 列表：
+
+```python
+KNOWN_HOOKS = (
+    ...,
+    "transform_terminal_output",     # v0.11.0
+    "transform_tool_result",         # v0.11.0
+    ...,
+    "transform_llm_output",          # v0.13.0
+)
+```
+
+**触发点**：LLM 原始输出（**包括 tool calls + 文本响应**）进 conversation history 之前。插件返回值替换原值。
+
+**典型用途**：
+- Context-window reducer——把 LLM 的冗长解释砍短
+- 内容过滤——脱敏、合规改写
+- 风格归一化
+
+和 `transform_tool_result`（改工具结果）、`transform_terminal_output`（改终端流）配对，构成"全链路输出整形"工具箱。
+
 ### Dashboard 插件系统
 
 插件可以向 Web Dashboard 添加自定义标签页：

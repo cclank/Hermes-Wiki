@@ -3,8 +3,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown" alt="Wiki" height="28">
   <img src="https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github" alt="Source" height="28">
-  <img src="https://img.shields.io/badge/Knowledge_Base-37_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
-  <img src="https://img.shields.io/badge/Version-v2026.4.23-purple?style=for-the-badge" alt="Version" height="28">
+  <img src="https://img.shields.io/badge/Knowledge_Base-39_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
+  <img src="https://img.shields.io/badge/Version-v0.13.0_(v2026.5.7)-purple?style=for-the-badge" alt="Version" height="28">
   <img src="https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge" alt="Verified" height="28">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" height="28">
 </p>
@@ -52,26 +52,28 @@
 
 ### 安全与可靠性
 
-- [security-defense-system](concepts/security-defense-system.md): 多层防御体系 + 危险命令审批系统（manual/smart/off 三模式）
+- [security-defense-system](concepts/security-defense-system.md): 多层防御 + 危险命令审批 + v0.13.0 八个 P0 修复（redaction、CVSS 8.1 Discord、TOCTOU）
 - [interrupt-and-fault-tolerance](concepts/interrupt-and-fault-tolerance.md): 中断传播、结构化错误分类（error_classifier）、Fallback 模型链
 - [credential-pool-and-isolation](concepts/credential-pool-and-isolation.md): 多密钥自动轮换、4 种选池策略、Profile 隔离
 
 ### 多 Agent
 
-- [multi-agent-architecture](concepts/multi-agent-architecture.md): 4 种运行时机制（delegate_task/MoA/Background Review/send_message）
+- [multi-agent-architecture](concepts/multi-agent-architecture.md): 5 种运行时机制（delegate_task/MoA/Background Review/send_message/Kanban）
+- [kanban-multi-agent](concepts/kanban-multi-agent.md): 持久化多 Agent 协作板（v0.13.0），SQLite + heartbeat + reclaim + 幻觉防护
+- [goal-and-ralph-loop](concepts/goal-and-ralph-loop.md): `/goal` 命令的 Ralph 循环，judge 模型每轮判 done/continue（v0.13.0）
 - [configuration-and-profiles](concepts/configuration-and-profiles.md): 多 Profile 架构，完全隔离的 agent 实例（第二种多 Agent 方案）
 
 ### 平台与扩展
 
-- [cli-architecture](concepts/cli-architecture.md): CLI 架构、斜杠命令、hermes dump
+- [cli-architecture](concepts/cli-architecture.md): CLI/TUI 架构、`/goal`/`/kanban`/`/curator` 斜杠命令、`hermes -z` 一次性模式（v0.12+）
 - [terminal-backends](concepts/terminal-backends.md): 7 种终端后端（含 Vercel Sandbox）、统一 spawn-per-call 执行模型
-- [messaging-gateway-architecture](concepts/messaging-gateway-architecture.md): 18+ 平台统一网关（含 IRC/腾讯元宝/微信/QQ Bot），平台适配器插件化（PlatformRegistry）、代理模式、channel_prompts、角色权限
+- [messaging-gateway-architecture](concepts/messaging-gateway-architecture.md): 20+ 平台统一网关（含 Google Chat/Teams/LINE 插件平台），PlatformRegistry、auto-resume
 - [gateway-session-management](concepts/gateway-session-management.md): 网关会话管理，多平台会话隔离+PII 脱敏+重置策略
-- [hook-system-architecture](concepts/hook-system-architecture.md): 双 Hook 系统（Gateway Hooks + Plugin System），register_command/dispatch_tool，Dashboard 插件
-- [mcp-and-plugins](concepts/mcp-and-plugins.md): MCP 集成、插件钩子系统、OAuth 支持
+- [hook-system-architecture](concepts/hook-system-architecture.md): 双 Hook 系统（Gateway + Plugin），`transform_llm_output`（v0.13.0）/register_platform/register_provider
+- [mcp-and-plugins](concepts/mcp-and-plugins.md): MCP 集成、SSE transport、OAuth 转发、image MEDIA tag（v0.13.0）
 - [skin-engine](concepts/skin-engine.md): YAML 驱动的皮肤/主题系统
 - [worktree-isolation](concepts/worktree-isolation.md): Git Worktree 并行隔离模式
-- [cron-scheduling](concepts/cron-scheduling.md): 内置调度器、自然语言调度、多平台投递
+- [cron-scheduling](concepts/cron-scheduling.md): 内置调度器、自然语言调度、多平台投递；`no_agent` watchdog 模式（v0.13.0）
 - [trajectory-and-data-generation](concepts/trajectory-and-data-generation.md): 轨迹保存、批量运行器、RL 训练环境
 
 ### 更新日志
@@ -81,16 +83,17 @@
 - [2026-04-17-update](changelog/2026-04-17-update.md): 641 commits (v0.10.0)，压缩 v3、Bedrock/Gemini/Ollama 新 Provider、Tool Gateway、插件命名空间技能、钉钉 QR 认证、Dashboard 插件
 - [2026-04-18-update](changelog/2026-04-18-update.md): 410 commits post-v0.10.0，Transport ABC 重构、Shell Hooks、Delegate Orchestrator、Step Plan/AI Gateway/xAI STT/KittenTTS、WeCom QR、Subagent 观测性
 - [2026-04-29-update](changelog/2026-04-29-update.md): 182 commits (v2026.4.23)，平台适配器插件化（PlatformRegistry + IRC 参考实现）、Curator 后台技能维护、MiniMax OAuth、Vercel Sandbox、腾讯元宝、`on_session_switch`、`/reload-skills`
+- [2026-05-10-update](changelog/2026-05-10-update.md): v0.12.0 + v0.13.0 共 1960 commits，Curator 自治化、多 Agent Kanban（持久化）、`/goal` Ralph 循环、Checkpoints v2、video_analyze、xAI 声音克隆、Google Chat（20th 平台）、Provider 全面插件化、MCP SSE/OAuth、8 个 P0 安全修复、`no_agent` cron、`transform_llm_output` 钩子、7 语言 i18n
 
 ---
 
 ## 统计信息
 
-- **概念页面**: 37 个
-- **更新日志**: 5 个
+- **概念页面**: 39 个
+- **更新日志**: 6 个
 - **源码覆盖**: 关键模块逐行验证
-- **跟踪版本**: v2026.4.23
-- **最后更新**: 2026-04-29
+- **跟踪版本**: v0.13.0 (v2026.5.7)
+- **最后更新**: 2026-05-10
 
 
 ## 使用方式

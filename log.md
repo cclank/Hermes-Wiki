@@ -122,3 +122,53 @@
   - 源码: gateway/hooks.py (170行), hermes_cli/plugins.py (609行)
   - 核心内容: Gateway Hooks 事件驱动(8种事件+通配符)，Plugin System 三级来源(用户/项目/pip)，PluginContext API(工具注册/消息注入/CLI命令/钩子)，缓存友好上下文注入
 - index.md 更新为 37 页
+
+## [2026-05-10] update | 对齐 Hermes v0.12.0 + v0.13.0（1960 commits）
+基于 `/tmp/hermes-agent` HEAD = cdb6e5e (2026-05-10) 的全量源码对照，新增/更新如下：
+
+**新增 changelog (1):**
+- changelog/2026-05-10-update.md — 覆盖 v0.12.0 (v2026.4.30) + v0.13.0 (v2026.5.7)，逐条标注源码行号
+
+**新增 concept 页面 (2):**
+- concepts/kanban-multi-agent.md — 持久化多 Agent 协作板
+  - 源码: hermes_cli/kanban.py(2228), kanban_db.py(4740), kanban_diagnostics.py(649), tools/kanban_tools.py(1130), plugins/kanban/
+  - 核心: SQLite 任务表 + heartbeat/reclaim/zombie 检测 + workspace 隔离(scratch/worktree/dir) + 幻觉防护 + per-task max_retries + 多板跨 profile
+- concepts/goal-and-ralph-loop.md — `/goal` Ralph 循环
+  - 源码: hermes_cli/goals.py(593)
+  - 核心: GoalState dataclass, JUDGE_SYSTEM_PROMPT, SessionDB state_meta 持久化, consecutive_parse_failures 防死循环, /resume/pause/clear
+
+**更新 concept 页面 (13):**
+- multi-agent-architecture — 第 5 种机制 Kanban
+- messaging-gateway-architecture — 20+ 平台、Google Chat/Teams/LINE 插件、`[[as_document]]` 指令、auto-resume
+- security-defense-system — v0.13.0 八个 P0 修复（redaction 默认/CVSS 8.1 Discord/WhatsApp 拒陌生人/TOCTOU/SSRF 地板/cron prompt-injection/debug share redact）
+- voice-mode-architecture — xAI Custom Voices 声音克隆、Piper 本地 TTS、TTS Provider Registry、`video_analyze` 工具
+- smart-model-routing — Provider 全面插件化、29 个 bundled 插件、LM Studio 一等公民、GMI/Azure Foundry/Tencent Tokenhub、Remote model catalog manifest、native multimodal image routing
+- hook-system-architecture — `transform_llm_output` 钩子、PluginContext 新增 register_platform/register_image_gen_provider/register_context_engine/register_skill
+- mcp-and-plugins — MCP SSE transport、OAuth 转发、stale-pipe retry、image → MEDIA tag、keepalive、TOCTOU 修复
+- cron-scheduling — `no_agent` watchdog 模式
+- prompt-caching-optimization — `cache_ttl: "1h"` 可配
+- web-tools-architecture — 7 个后端、SearXNG/Brave Free/DDGS、按 capability 选 backend
+- provider-transport-architecture — ProviderProfile ABC + plugins/model-providers/ 29 个
+- skills-system-architecture — Curator 子命令扩展（archive/prune/list-archived）、active-update bias、class-first prompt、bump_use 钩入
+- cli-architecture — `/goal`/`/kanban`/`/curator`/`/steer`/`/queue`/`/reload-skills`/`/clear`/`hermes -z` 一次性模式
+
+**根目录更新:**
+- index.md — 39 页，新增多 Agent 分类条目
+- README.md — badge 改 v0.13.0 (v2026.5.7)、39 pages、6 changelogs、Kanban + Goal 上链
+- log.md — 本条日志
+
+**源码核对锚点（全部对照 /tmp/hermes-agent）:**
+- hermes_cli/kanban.py:189,2181 / kanban_db.py:781,843 / kanban_diagnostics.py
+- hermes_cli/goals.py:108,148,282,391-410,546
+- tools/vision_tools.py:1167 (video_analyze), 1375 schema
+- tools/tts_tool.py:113 (Piper), 874 (xAI TTS+voice clone)
+- cron/jobs.py:498 / cron/scheduler.py:1040 (no_agent)
+- agent/redact.py:67 (HERMES_REDACT_SECRETS=true 默认)
+- agent/prompt_caching.py:43,58 (cache_ttl)
+- agent/transports/{anthropic,bedrock,chat_completions,codex}.py
+- providers/__init__.py / providers/base.py:25 / plugins/model-providers/ (29 bundled)
+- plugins/platforms/{google_chat,irc,line,teams}/
+- gateway/platforms/api_server.py:727 (X-Hermes-Session-Key)
+- gateway/run.py:3192 (auto-resume) / 9928 ([[as_document]])
+- hermes_cli/plugins.py:136 (transform_llm_output)
+- tools/mcp_tool.py:33,201 (SSE)

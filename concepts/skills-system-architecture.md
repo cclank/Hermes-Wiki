@@ -1,10 +1,10 @@
 ---
 title: Skills System Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-10
 type: concept
-tags: [skill, architecture, module, prompt-builder]
-sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, run_agent.py, agent/prompt_builder.py, hermes_cli/plugins.py, agent/skill_utils.py]
+tags: [skill, architecture, module, prompt-builder, curator, active-update]
+sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, tools/skill_usage.py, run_agent.py, agent/prompt_builder.py, agent/curator.py, hermes_cli/curator.py, hermes_cli/plugins.py, agent/skill_utils.py]
 ---
 
 # 技能系统架构
@@ -271,15 +271,31 @@ active ──不用 N 天──> stale ──继续不用──> archived
 ### CLI
 
 ```bash
-hermes curator status        # 当前状态、待处理 skill
-hermes curator run           # 立即跑一轮
+hermes curator status        # 当前状态、按使用量排名（v0.12+）
+hermes curator run [--sync]  # 立即跑一轮（v0.13 起默认同步等结果）
 hermes curator pause/resume  # 暂停/恢复
 hermes curator pin <skill>   # 钉住某个 skill（跳过自动转换）
 hermes curator unpin <skill>
-hermes curator restore <skill>  # 从归档恢复
+hermes curator restore <skill>  # 从归档恢复（v0.13: 扫嵌套子目录）
+hermes curator archive <skill>     # v0.13 新增：手动归档
+hermes curator prune [--idle-days N]  # v0.13 新增：删除归档过的
+hermes curator list-archived       # v0.13 新增：列归档
+hermes curator backup/rollback     # 备份/回滚
 ```
 
 `/curator` 斜杠命令暴露相同子命令。
+
+### Curator 升级要点（v0.12.0 + v0.13.0）
+
+- **真正的后台 Agent**：跑在 gateway cron-ticker 上，默认 7 天循环，umbrella-first prompt，继承 parent config，**unbounded iterations**（不卡 max_turns）
+- **Per-run 报告**：`logs/curator/run.json` + `REPORT.md` 每周期一份
+- **Consolidated vs Pruned 分类**：归档时由 model + heuristic 联合决定是"被合并到别的 skill"还是"过期删除"
+- **统一在 `auxiliary.curator`**：在 `hermes model` 配置 curator 模型，dashboard 也能改
+- **Manual run 改同步**（v0.13）：`hermes curator run` 现在直接 wait 完成，不用 poll
+- **`skill_manage` 拒写 pinned**：在 `_pinned_guard()` 拦截，扩展 Curator 的 pinned 不变量
+- **Active-update bias**：background review 偏好"刚刚被 agent 加载过的 skill"，支持 `references/` + `templates/` sub-file
+- **Class-first prompt**：rubric 分级 vs 开放式判断
+- **`bump_use()` 钩到 skill invocation + preload + skill_view**：使用量统计真实反映 agent 行为
 
 ## /reload-skills 和 /reload-mcp（v2026.4.23+）
 

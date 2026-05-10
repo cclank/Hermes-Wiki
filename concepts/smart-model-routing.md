@@ -1,10 +1,10 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-04-29
+updated: 2026-05-10
 type: concept
-tags: [architecture, module, model-routing, performance, caching, anthropic]
-sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py]
+tags: [architecture, module, model-routing, performance, caching, anthropic, providers-as-plugins]
+sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py, providers/__init__.py, plugins/model-providers/]
 ---
 
 # Smart Model Routing — 智能模型路由
@@ -482,8 +482,45 @@ browser:
 - `hermes model` 交互流程：Nous 登录后展示可用工具列表，用户选择启用全部 / 仅未配置的 / 跳过
 - 免费层用户看到升级提示
 
+### Providers 全面插件化（v0.13.0）
+
+`providers/__init__.py` 头部规定 provider profile **走插件目录**：
+
+```
+1. Bundled plugins: plugins/model-providers/<name>/
+2. User plugins:    $HERMES_HOME/plugins/model-providers/<name>/
+```
+
+每个 plugin dir 含 `__init__.py`（在 import 时 `register_provider(profile)`）和 `plugin.yaml`（manifest）。当前 bundled **29 个**：
+
+ai-gateway, alibaba, alibaba-coding-plan, anthropic, arcee, azure-foundry, bedrock, copilot, copilot-acp, custom, deepseek, gemini, gmi, huggingface, kilocode, kimi-coding, minimax, nous, nvidia, ollama-cloud, openai-codex, opencode-zen, openrouter, qwen-oauth, stepfun, xai, xiaomi, zai
+
+**用户插件可覆盖 bundled**（last-writer-wins）——第三方不用动核心代码就能加 provider 或 monkey-patch 内置 profile。详见 [[provider-transport-architecture]]。
+
+### v0.12.0 / v0.13.0 新 Provider（全部源码核对）
+
+| Provider | 位置 | 备注 |
+|---|---|---|
+| **LM Studio** | `agent/lmstudio_reasoning.py`、`chat_completions.py` 引用 | 从 custom-endpoint 别名升级为 native provider（reasoning transport + `/models` 探测 + `hermes doctor`） |
+| **GMI Cloud** | `plugins/model-providers/gmi/` | First-class，多模型直连 |
+| **Azure AI Foundry** | `plugins/model-providers/azure-foundry/` | 自动探测 |
+| **MiniMax OAuth** | `plugins/model-providers/minimax/` | PKCE browser flow |
+| **Tencent Tokenhub** | `plugins/model-providers/` | 中国区 |
+| **NVIDIA NIM** | bundled 在 v0.11.0；继续完善 | native provider |
+| **Arcee AI** | `plugins/model-providers/arcee/` | direct provider |
+| **Step Plan** | `plugins/model-providers/stepfun/` | StepFun |
+
+### Remote Model Catalog Manifest（v0.12.0）
+
+OpenRouter + Nous Portal 的模型目录从**远端 manifest** 拉取，新模型上线不再要求 hermes 发版。
+
+### Native Multimodal Image Routing（v0.12.0）
+
+图片现在按**模型实际 vision 能力**路由，不再使用 provider 默认值——多模态请求会自动落到能看图的那条 transport。
+
 ## 与其他系统的关系
 
 - [[context-compressor-architecture]] — 使用 get_model_context_length() 确定上下文限制
-- [[prompt-caching-optimization]] — 缓存成本信息来自 models.dev
+- [[prompt-caching-optimization]] — 缓存成本信息来自 models.dev，TTL 可配
 - [[auxiliary-client-architecture]] — 辅助模型通过 models.dev 解析上下文长度
+- [[provider-transport-architecture]] — Provider profile + Transport ABC 是同一张设计图的两面

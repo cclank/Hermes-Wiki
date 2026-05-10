@@ -1,23 +1,23 @@
 ---
 title: Web Tools 搜索/提取架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-05-10
 type: concept
-tags: [tool, toolset, architecture, component]
-sources: [tools/web_tools.py]
+tags: [tool, toolset, architecture, component, searxng, brave-free, ddgs]
+sources: [tools/web_tools.py, tools/web_providers/searxng.py]
 ---
 
 # Web Tools — 搜索/提取架构
 
 ## 概述
 
-Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 搜索/提取/爬取**能力。支持 4 种后端提供商，所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口。
+Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 搜索/提取/爬取**能力。v0.13.0 后支持 **7 种后端**，所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口，且**可以按 capability 混搭**：搜索走 SearXNG，提取走 Firecrawl。
 
 核心理念：**内容获取优先于浏览器自动化**——简单信息检索使用 web_search/web_extract（更快、更便宜），仅在需要交互时才使用 browser 工具。
 
 ## 架构原理
 
-### 四大后端
+### 七大后端
 
 | 后端 | Search | Extract | Crawl | 认证 |
 |---|---|---|---|---|
@@ -25,6 +25,27 @@ Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 
 | **Exa** | ✅ | ✅ | ❌ | EXA_API_KEY |
 | **Parallel** | ✅ | ✅ | ❌ | PARALLEL_API_KEY |
 | **Tavily** | ✅ | ✅ | ✅ | TAVILY_API_KEY |
+| **SearXNG**（v0.13.0） | ✅ | — | — | self-hosted；`SEARXNG_URL` env |
+| **Brave Search 免费层**（v0.13.0） | ✅ | — | — | 免费 |
+| **DDGS / DuckDuckGo**（v0.13.0） | ✅ | — | — | 无 |
+
+后端探测顺序（`tools/web_tools.py:129-142`）：付费 backend (`parallel/firecrawl/tavily/exa`) 优先，再到免费的 `searxng/brave-free/ddgs`。
+
+### 按 Capability 选择后端（v0.13.0）
+
+`tools/web_tools.py:142` 显式注释：
+
+> ... e.g. SearXNG for search + Firecrawl for extract
+
+——`web_search` 和 `web_extract` 可以**分别**配不同后端。SearXNG 不做 extract，配置时 search 走 searxng、extract 走 firecrawl 是 v0.13.0 之后的标准玩法。
+
+```yaml
+web:
+  search:
+    backend: searxng
+  extract:
+    backend: firecrawl
+```
 
 ### 后端选择链
 

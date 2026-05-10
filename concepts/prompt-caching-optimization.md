@@ -1,7 +1,7 @@
 ---
 title: Prompt Caching 优化架构
 created: 2026-04-07
-updated: 2026-04-08
+updated: 2026-05-10
 type: concept
 tags: [architecture, module, performance, cost-optimization, anthropic]
 sources: [agent/prompt_caching.py, run_agent.py]
@@ -98,6 +98,24 @@ marker = {"type": "ephemeral", "ttl": "1h"}  # 1 小时 TTL
 **使用场景**：
 - **5m（默认）**：适合快速连续对话，缓存命中率高
 - **1h**：适合长时间对话间隔，容忍更高的缓存未命中
+
+### v0.12.0：`cache_ttl` 可配置
+
+`agent/prompt_caching.py:43`：
+
+```python
+def apply_anthropic_cache_control(
+    api_messages: List[Dict[str, Any]],
+    cache_ttl: str = "5m",        # ← 现在是参数
+    native_anthropic: bool = False,
+) -> List[Dict[str, Any]]:
+    ...
+    marker = {"type": "ephemeral"}
+    if cache_ttl == "1h":
+        marker["ttl"] = "1h"
+```
+
+配置入口：`prompt_caching.cache_ttl: "1h"`。对**频繁但间隔长**的会话（bursty workload）很有用——5min 默认会缓存丢，1h 可以让全天散弹式查询都吃到缓存。注意 1h cache 写入价格高一些，写入次数少时才回本。
 
 ## 成本效益
 
