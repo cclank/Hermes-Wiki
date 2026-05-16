@@ -3,8 +3,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown" alt="Wiki" height="28">
   <img src="https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github" alt="Source" height="28">
-  <img src="https://img.shields.io/badge/Knowledge_Base-37_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
-  <img src="https://img.shields.io/badge/Version-v2026.4.23-purple?style=for-the-badge" alt="Version" height="28">
+  <img src="https://img.shields.io/badge/Knowledge_Base-39_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
+  <img src="https://img.shields.io/badge/Version-v2026.5.16-purple?style=for-the-badge" alt="Version" height="28">
   <img src="https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge" alt="Verified" height="28">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" height="28">
 </p>
@@ -58,7 +58,9 @@
 
 ### 多 Agent
 
-- [multi-agent-architecture](concepts/multi-agent-architecture.md): 4 种运行时机制（delegate_task/MoA/Background Review/send_message）
+- [multi-agent-architecture](concepts/multi-agent-architecture.md): 5 种运行时机制（delegate_task/MoA/Background Review/send_message/Kanban）
+- [kanban-system](concepts/kanban-system.md): 持久化 SQLite 协作看板，跨进程多 worker，dispatcher/orchestrator/诊断引擎
+- [goals-and-ralph-loop](concepts/goals-and-ralph-loop.md): `/goal` 跨轮次持久目标，judge 模型驱动的 Ralph Loop
 - [configuration-and-profiles](concepts/configuration-and-profiles.md): 多 Profile 架构，完全隔离的 agent 实例（第二种多 Agent 方案）
 
 ### 平台与扩展
@@ -81,16 +83,17 @@
 - [2026-04-17-update](changelog/2026-04-17-update.md): 641 commits (v0.10.0)，压缩 v3、Bedrock/Gemini/Ollama 新 Provider、Tool Gateway、插件命名空间技能、钉钉 QR 认证、Dashboard 插件
 - [2026-04-18-update](changelog/2026-04-18-update.md): 410 commits post-v0.10.0，Transport ABC 重构、Shell Hooks、Delegate Orchestrator、Step Plan/AI Gateway/xAI STT/KittenTTS、WeCom QR、Subagent 观测性
 - [2026-04-29-update](changelog/2026-04-29-update.md): 182 commits (v2026.4.23)，平台适配器插件化（PlatformRegistry + IRC 参考实现）、Curator 后台技能维护、MiniMax OAuth、Vercel Sandbox、腾讯元宝、`on_session_switch`、`/reload-skills`
+- [2026-05-16-update](changelog/2026-05-16-update.md): 2890 commits（v0.12.0–v0.14.0 / v2026.5.16），Web 搜索 + Model Provider 双插件化、Kanban 协作看板、Goals/Ralph Loop、LSP 语义诊断、video_generate、cua-driver、新平台（SimpleX/LINE/Google Chat/Teams）、Checkpoints v2、Trigram FTS5
 
 ---
 
 ## 统计信息
 
-- **概念页面**: 37 个
-- **更新日志**: 5 个
+- **概念页面**: 39 个
+- **更新日志**: 6 个
 - **源码覆盖**: 关键模块逐行验证
-- **跟踪版本**: v2026.4.23
-- **最后更新**: 2026-04-29
+- **跟踪版本**: v2026.5.16（v0.14.0）
+- **最后更新**: 2026-05-16
 
 
 ## 使用方式

@@ -1,10 +1,10 @@
 ---
 title: Session Search and SessionDB
 created: 2026-04-07
-updated: 2026-04-18
+updated: 2026-05-16
 type: concept
 tags: [session-search, session-store, memory, architecture]
-sources: [hermes-agent 源码分析 2026-04-07]
+sources: [hermes-agent 源码分析 2026-04-07, hermes_state.py, tools/session_search_tool.py]
 ---
 
 # 会话搜索与 SessionDB
@@ -52,6 +52,18 @@ SELECT * FROM messages_fts WHERE messages_fts MATCH 'elevenlabs OR baseten OR fu
 - **短语匹配** — `"docker networking"`
 - **布尔逻辑** — `python NOT java`
 - **前缀匹配** — `deploy*`
+
+### Trigram FTS5 索引（CJK 搜索，v2026.5.x）
+
+默认的 `unicode61` tokenizer 会把中日韩文本切成**单字** token，破坏短语/子串匹配。`hermes_state.py` 新增 `messages_fts_trigram` 虚拟表（`FTS_TRIGRAM_SQL`，`tokenize='trigram'`），用重叠的 3 字节序列建索引，使**任意脚本**的子串查询都能命中——取代了原来对 CJK 的 `LIKE` 回退。
+
+```sql
+CREATE VIRTUAL TABLE messages_fts_trigram USING fts5(
+    content, ..., tokenize='trigram'
+);
+```
+
+schema 迁移 **v10** 建表并回填存量行，**v11** 重新索引以覆盖 `tool_name` / `tool_calls`。配套 insert/delete/update 触发器镜像 `messages` 表。
 
 ## Session Search 工具
 

@@ -1,66 +1,88 @@
 ---
 title: Web Tools 搜索/提取架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-05-16
 type: concept
-tags: [tool, toolset, architecture, component]
-sources: [tools/web_tools.py]
+tags: [tool, toolset, architecture, component, plugins]
+sources: [tools/web_tools.py, agent/web_search_provider.py, agent/web_search_registry.py, plugins/web/]
 ---
 
 # Web Tools — 搜索/提取架构
 
 ## 概述
 
-Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 搜索/提取/爬取**能力。支持 4 种后端提供商，所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口。
+Web Tools 位于 `tools/web_tools.py`（1551 行），提供**多后端 Web 搜索/提取/爬取**能力。所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口。
 
 核心理念：**内容获取优先于浏览器自动化**——简单信息检索使用 web_search/web_extract（更快、更便宜），仅在需要交互时才使用 browser 工具。
 
+> **v2026.5.x 重大重构**：所有搜索后端从 `tools/web_tools.py` 内联实现迁移为**插件**（`plugins/web/`）。旧的 `tools/web_providers/` 目录已删除。`web_tools.py` 现在只做工具壳层 + 安全 + LLM 压缩，后端解析全部通过 `agent/web_search_registry` 完成。详见下文「Provider 插件化」。
+
 ## 架构原理
 
-### 四大后端
+### Provider 插件化（v2026.5.x）
 
-| 后端 | Search | Extract | Crawl | 认证 |
-|---|---|---|---|---|
-| **Firecrawl** | ✅ | ✅ | ✅ | API Key 或 Nous Gateway |
-| **Exa** | ✅ | ✅ | ❌ | EXA_API_KEY |
-| **Parallel** | ✅ | ✅ | ❌ | PARALLEL_API_KEY |
-| **Tavily** | ✅ | ✅ | ✅ | TAVILY_API_KEY |
+后端不再硬编码在 `web_tools.py`，而是实现统一 ABC，作为 `kind: backend` 插件自动加载。
 
-### 后端选择链
+**ABC — `agent/web_search_provider.py`（221 行）**：`WebSearchProvider(abc.ABC)`
 
-```python
-def _get_backend():
-    """解析优先级:
-    1. config.yaml web.backend (显式指定: parallel/firecrawl/tavily/exa)
-    2. FIRECRAWL_API_KEY / FIRECRAWL_API_URL / tool-gateway
-    3. PARALLEL_API_KEY
-    4. TAVILY_API_KEY
-    5. EXA_API_KEY
-    6. 默认: firecrawl (向后兼容)
-    """
+| 成员 | 说明 |
+|---|---|
+| `name` / `display_name` | provider 标识 |
+| `is_available()` | 凭证/依赖是否就绪 |
+| `supports_search()` | 能力标志，默认 `True` |
+| `supports_extract()` | 能力标志，默认 `False` |
+| `supports_crawl()` | 能力标志，默认 `False` |
+| `search(query, limit=5)` | 搜索；未覆盖则 `NotImplementedError` |
+| `extract(urls, **kwargs)` | 提取；**可为 `async def`** |
+| `crawl(url, **kwargs)` | 爬取；**可为 `async def`** |
+| `get_setup_schema()` | 供 `hermes tools` picker 使用 |
+
+`extract`/`crawl` 允许是协程，dispatcher 通过 `inspect.iscoroutinefunction` 检测并 await。响应格式与旧契约**逐字节保持一致**，工具壳层无需翻译。
+
+**注册门面**：`ctx.register_web_search_provider()`（PluginContext），每个插件 `__init__.py` 提供 `register(ctx)`。
+
+### Registry 与解析链 — `agent/web_search_registry.py`（262 行）
+
+线程锁保护的 `_providers` 字典，提供 `register_provider()` / `list_providers()` / `get_provider()`，以及**按能力**解析的 `get_active_search_provider()` / `get_active_extract_provider()` / `get_active_crawl_provider()`。
+
+`_resolve()` 优先级：
+
+```text
+1. 显式配置 web.{cap}_backend 或 web.backend —— 即使不可用也优先（精确报错）
+2. 唯一一个「有该能力且可用」的 provider —— 直接走捷径
+3. _LEGACY_PREFERENCE 顺序按 is_available() 过滤：
+   firecrawl → parallel → tavily → exa → searxng → brave-free → ddgs
+4. 否则 None
 ```
+
+注意是**按能力**分别解析——search/extract/crawl 可以落在不同 provider 上。
+
+### 七个内置 Provider
+
+`plugins/web/<name>/{plugin.yaml, __init__.py, provider.py}`，全部支持 search + extract：
+
+| Provider | 类 | Crawl | Async extract |
+|---|---|---|---|
+| **firecrawl** | `FirecrawlWebSearchProvider` | ✅ | ✅ |
+| **tavily** | `TavilyWebSearchProvider` | ✅ | ❌ |
+| **parallel** | `ParallelWebSearchProvider` | ❌ | ✅ |
+| **exa** | `ExaWebSearchProvider` | ❌ | ❌ |
+| **searxng** | `SearXNGWebSearchProvider` | ❌ | ❌ |
+| **brave_free** | `BraveFreeWebSearchProvider` | ❌ | ❌ |
+| **ddgs** | `DDGSWebSearchProvider` | ❌ | ❌ |
+
+用户可在 `~/.hermes/plugins/web/` 放同名插件覆盖内置实现。
 
 ### Firecrawl 双路径架构
 
-Firecrawl 是默认后端，支持两种连接模式：
+Firecrawl 插件保留两种连接模式，由 `web.use_gateway` 配置控制（两套凭证都存在时选哪个）：
 
 | 模式 | 路径 | 适用对象 |
 |---|---|---|
 | **直接模式** | `FIRECRAWL_API_KEY` / `FIRECRAWL_API_URL` | 所有用户 |
-| **托管 Gateway** | Nous 托管的 tool-gateway | Nous 订阅者 |
+| **托管 Gateway** | Nous 托管的 tool-gateway（`FIRECRAWL_GATEWAY_URL` / `TOOL_GATEWAY_*`） | Nous 订阅者 |
 
-```python
-def _get_firecrawl_client():
-    """优先级:
-    1. 直接 Firecrawl 配置 (api_key + api_url)
-    2. Nous 托管 Gateway (nous_user_token + gateway_origin)
-    """
-    # 客户端缓存 —— 配置不变时复用同一实例
-    if _firecrawl_client is not None and _firecrawl_client_config == client_config:
-        return _firecrawl_client
-```
-
-**优越性**：Nous 订阅者无需单独购买 Firecrawl，通过 tool-gateway 共享访问。
+`plugins/web/firecrawl/provider.py`（773 行）的 `_get_firecrawl_client()` + `_is_tool_gateway_ready()` 实现该判定，客户端按配置缓存。**优越性**：Nous 订阅者无需单独购买 Firecrawl。
 
 ## 核心组件
 

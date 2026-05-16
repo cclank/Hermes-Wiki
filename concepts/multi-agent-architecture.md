@@ -1,23 +1,29 @@
 ---
 title: Hermes 多 Agent 架构
 created: 2026-04-08
-updated: 2026-04-18
+updated: 2026-05-16
 type: concept
-tags: [architecture, module, agent, delegation, concurrency]
-sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, run_agent.py]
+tags: [architecture, module, agent, delegation, concurrency, kanban]
+sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, tools/send_message_tool.py, run_agent.py]
 ---
 
 # Hermes 多 Agent 架构
 
 ## 概述
 
-Hermes 的多 Agent 能力分为**三种运行时机制**，全部在 Agent 对话过程中触发，不涉及外部脚本或离线工具：
+Hermes 的多 Agent 能力分为**五种运行时机制**：
 
-| 机制                    | 触发方式                  | 用途                   |
-| --------------------- | --------------------- | -------------------- |
-| **Delegate Task**     | LLM tool call（模型自主决定） | 并行子任务，最多 3 路         |
-| **Mixture of Agents** | LLM tool call（模型自主决定） | 多模型协同推理              |
-| **Background Review** | 系统计数器自动触发             | 后台提炼经验 → 创建/改进 skill |
+| 机制                    | 触发方式                  | 进程模型 | 用途                   |
+| --------------------- | --------------------- | --- | -------------------- |
+| **Delegate Task**     | LLM tool call（模型自主决定） | 进程内子 Agent | 并行子任务，最多 3 路         |
+| **Mixture of Agents** | LLM tool call（模型自主决定） | 进程内多模型 | 多模型协同推理              |
+| **Background Review** | 系统计数器自动触发             | 进程内守护线程 | 后台提炼经验 → 创建/改进 skill |
+| **send_message**      | LLM tool call         | 跨平台投递 | Agent 间/跨平台消息 |
+| **Kanban**            | 看板 dispatcher          | 跨进程多 worker | 持久、异步、可审计的协作工作流（详见 [[kanban-system]]） |
+
+前四种在 Agent 对话过程中触发，不涉及外部脚本；**Kanban**（v2026.5.x 新增）是唯一跨进程、可崩溃恢复、SQLite 持久化的方案——单独成页 [[kanban-system]]。
+
+> **delegate_task v2026.5.x 变更**：默认 `child_timeout_seconds` 提升到 **600s**；子 Agent 超时且 **0 次 API 调用**时写出结构化诊断 dump（`_dump_subagent_timeout_diagnostic`）；工具描述动态嵌入当前并发上限与 `max_spawn_depth`。
 
 ## 触发机制
 

@@ -1,10 +1,10 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-04-29
+updated: 2026-05-16
 type: concept
-tags: [architecture, module, model-routing, performance, caching, anthropic]
-sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py]
+tags: [architecture, module, model-routing, performance, caching, anthropic, plugins]
+sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py, providers/base.py, plugins/model-providers/]
 ---
 
 # Smart Model Routing — 智能模型路由
@@ -482,8 +482,52 @@ browser:
 - `hermes model` 交互流程：Nous 登录后展示可用工具列表，用户选择启用全部 / 仅未配置的 / 跳过
 - 免费层用户看到升级提示
 
+## Provider 插件化（v2026.5.x — 重大架构）
+
+v2026.5.x 把全部 **33 个 provider 改造成插件**。在 v2026.4.23 时 `providers/` 包和 `plugins/model-providers/` 目录**都还不存在**——整个系统是这一窗口期内新增的。
+
+### ProviderProfile — `providers/base.py`（184 行）
+
+一个声明式 `@dataclass`（不是经典 ABC），描述一个 provider 的全部特征：
+
+| 分组 | 字段 |
+|---|---|
+| 标识 | `name`、`api_mode`（默认 `chat_completions`）、`aliases` |
+| 元数据 | `display_name`、`description`、`signup_url` |
+| 认证/端点 | `env_vars`、`base_url`、`models_url`、`auth_type`（`api_key`/`oauth_device_code`/`oauth_external`/`copilot`/`aws_sdk`）、`supports_health_check` |
+| 目录 | `fallback_models`、`hostname` |
+| 怪癖 | `default_headers`、`fixed_temperature`、`default_max_tokens`、`default_aux_model` |
+
+可覆盖钩子：`get_hostname()`、`prepare_messages()`、`build_extra_body()`、`build_api_kwargs_extras()`、`fetch_models(api_key, timeout=8.0)`（默认对 `models_url` 做 Bearer 认证 GET）。
+
+**"transport 单路径"**：transport 读取 ProviderProfile，而不再接收 20+ 个布尔 flag——一个声明式 profile 驱动认证/端点/请求怪癖。profile 仅声明，客户端构造、凭证轮换、流式仍留在 [[provider-transport-architecture|AIAgent / transport]] 层。
+
+### 发现与注册 — `providers/__init__.py`（191 行）
+
+`_discover_providers()` 惰性执行（首次 `get_provider_profile()` / `list_providers()` 时），按顺序导入：
+
+1. bundled `<repo>/plugins/model-providers/<name>/`
+2. 用户 `$HERMES_HOME/plugins/model-providers/<name>/`（覆盖，last-writer-wins）
+3. 旧式 `providers/<name>.py` 单文件模块（向后兼容）
+
+每个 `__init__.py` 在导入时调用 `register_provider(profile)`；`plugin.yaml` 标 `kind: model-provider`。
+
+**33 个 profile 分布在 29 个插件目录**——多 profile 目录：`gemini`、`kimi-coding`、`minimax`、`opencode-zen`。
+
+### v2026.5.x 新增 provider
+
+| Provider | 目录 / key | 说明 |
+|---|---|---|
+| **NovitaAI** | `novita/`，key `novita` | `base_url=https://api.novita.ai/openai/v1` |
+| **GMI Cloud** | `gmi/`，key `gmi` | `base_url=https://api.gmi-serving.com/v1` |
+| **Azure Foundry** | `azure-foundry/`，key `azure-foundry` | 空 `base_url`，setup 时按 resource 填 |
+| **xAI** | `xai/`，key `xai` | `api_mode=codex_responses`，别名 `grok`/`x-ai`/`x.ai` |
+
+> **xAI Grok OAuth（SuperGrok 订阅）** 是独立的 `xai-oauth` provider，定义在 `hermes_cli/auth.py` 的 `ProviderConfig`（loopback PKCE），**不是** model-provider 插件；`xai/` 插件本身只走 `api_key` 认证。
+
 ## 与其他系统的关系
 
+- [[provider-transport-architecture]] — ProviderProfile 驱动 transport 单路径
 - [[context-compressor-architecture]] — 使用 get_model_context_length() 确定上下文限制
 - [[prompt-caching-optimization]] — 缓存成本信息来自 models.dev
 - [[auxiliary-client-architecture]] — 辅助模型通过 models.dev 解析上下文长度

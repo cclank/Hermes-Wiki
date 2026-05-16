@@ -1,7 +1,7 @@
 ---
 title: Context Compressor 上下文压缩架构
 created: 2026-04-08
-updated: 2026-04-17
+updated: 2026-05-16
 type: concept
 tags: [architecture, module, component, agent, context-compression]
 sources: [agent/context_engine.py, agent/context_compressor.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
@@ -99,6 +99,8 @@ class ContextCompressor:
 ```
 
 **缩放设计**：尾部预算和摘要上限都与模型上下文窗口成比例，大窗口模型获得更丰富的摘要。
+
+**`protect_first_n`（v2026.5.x 可配置）**：`compression.protect_first_n`（默认 `3`，`ContextCompressor.__init__` 同名参数）——除恒受保护的系统提示外，额外**逐字保留**的开头非系统消息数量；设为 `0` 则只钉系统提示。`ContextEngine` 也暴露同名字段。
 
 ### 2. 工具输出修剪（三段式预处理）
 

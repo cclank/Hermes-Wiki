@@ -1,17 +1,17 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-16
 type: concept
-tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
-sources: [gateway/run.py, gateway/platforms/, hermes_cli/config.py]
+tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy, i18n]
+sources: [gateway/run.py, gateway/platforms/, plugins/platforms/, gateway/slash_access.py, hermes_cli/config.py]
 ---
 
 # 消息网关架构
 
 ## 概述
 
-Gateway 是 Hermes Agent 的**统一消息网关**，支持 14+ 消息平台，从单一进程管理所有平台的连接和消息分发。
+Gateway 是 Hermes Agent 的**统一消息网关**，支持 25 个消息平台（20 个核心 + 5 个 bundled 插件平台），从单一进程管理所有平台的连接和消息分发。
 
 ## 架构
 
@@ -72,7 +72,12 @@ gateway/
 | QQ Bot | Official API v2 | WebSocket 入站(C2C/群/频道/DM) + REST 出站,语音转录(腾讯 ASR),allowlist + DM 配对 |
 | Webhook | HTTP | 外部事件接收 |
 | **腾讯元宝 Yuanbao** | API | 原生文本+媒体投递，sticker 支持（v2026.4.23+） |
+| **Microsoft Graph webhook**（核心） | HTTP webhook | `gateway/platforms/msgraph_webhook.py`，Graph change-notification 入站，订阅验证握手，`allowed_source_cidrs`（v2026.5.x+） |
 | **IRC**（插件） | TLS asyncio | 零外部依赖，TLS、PING/PONG、nick collision、NickServ、频道寻址（v2026.4.23+，参考实现） |
+| **SimpleX Chat**（插件） | WebSocket | `plugins/platforms/simplex/`，连接本地 simplex-chat daemon，不透明 per-connection 联系人 ID（v2026.5.x+） |
+| **LINE**（插件） | Messaging API | `plugins/platforms/line/`，aiohttp webhook + HMAC-SHA256 校验，reply-token → Push 回退（v2026.5.x+） |
+| **Google Chat**（插件） | Pub/Sub | `plugins/platforms/google_chat/`，Cloud Pub/Sub pull 订阅入站，per-user OAuth 文件附件（v2026.5.x+） |
+| **Microsoft Teams**（插件） | Bot Framework | `plugins/platforms/teams/`，Adaptive Card 审批提示（v2026.5.x+） |
 
 ## 平台适配器插件化（v2026.4.23+）
 
@@ -359,6 +364,50 @@ hermes gateway status   # 状态
 - **MEDIA: 标签扩展**：支持 PDF、document、archive 扩展名的自动提取
 - **全局隧道/代理场景 URL 开关**：`security.allow_private_urls` / `HERMES_ALLOW_PRIVATE_URLS` 允许解析私有 IP 范围（198.18.0.0/15、100.64.0.0/10），解决 OpenWrt / TUN 代理（Clash/Mihomo/Sing-box）/ 企业 VPN / Tailscale 场景。云元数据端点（169.254.169.254 等）始终阻断
 - **平台 hints**：`PLATFORM_HINTS` 覆盖 Matrix、Mattermost、Feishu 的系统提示
+
+### v2026.5.x 增强
+
+#### 新平台插件（5 个 bundled）
+
+SimpleX、LINE、Google Chat、Microsoft Teams 全部以 bundled 插件形式接入（`plugins/platforms/<name>/adapter.py` + `plugin.yaml`，通过 `ctx.register_platform()` 注册），核心 gateway 代码零改动。另有核心适配器 `gateway/platforms/msgraph_webhook.py`。`PlatformEntry` 现暴露通用插件钩子 `env_enablement_fn`（自动启用时注入环境变量）和 `cron_deliver_env_var`（cron `deliver=` 的 home-channel 目标）。
+
+#### 斜杠命令的 admin/user 分级（`gateway/slash_access.py`）
+
+新模块 `SlashAccessPolicy` dataclass 区分管理员和普通用户可执行的斜杠命令：
+
+| 维度 | DM 配置键 | 群组配置键 |
+|---|---|---|
+| 管理员来源 | `allow_admin_from` | `group_allow_admin_from` |
+| 用户可用命令 | `user_allowed_commands` | `group_user_allowed_commands` |
+
+`is_admin()` / `can_run()` 做判定，`_ALWAYS_ALLOWED_FOR_USERS` 是兜底白名单。入口 `policy_from_extra()` / `policy_for_source()`。
+
+#### `/handoff` — 跨平台会话转移
+
+CLI 把 session 在 `state.db` 标记 `handoff_state='pending'`。`gateway/run.py` 的 `_handoff_watcher()`（2 秒轮询）通过 `claim_handoff()` 认领待转移记录，`_process_handoff()` 调用目标平台适配器的 `create_handoff_thread()`（Telegram 重写为创建论坛话题），以 `user_id="system:handoff"` 投递转移通知，最后标记 `completed`/`failed`。让一个会话能从 CLI「接力」到某个聊天平台继续。
+
+#### i18n 静态文本本地化（`agent/i18n.py`）
+
+`t(key, lang, **kwargs)` + `get_language()`，catalog 从 `locales/<lang>.yaml` 扁平化加载。当前 **16 种语言**：af, de, en, es, fr, ga, hu, it, ja, ko, pt, ru, tr, uk, zh, zh-hant。`display.language` 配置静态消息翻译，gateway 命令与 web dashboard 均已本地化。
+
+#### 关停取证（`gateway/shutdown_forensics.py`）
+
+`snapshot_shutdown_context()` 在收到 SIGTERM/SIGINT 时 <10ms 内快照 `/proc` 找出信号发送方，`spawn_async_diagnostic()` 非阻塞地输出 per-phase 计时与 stale-unit 警告，`check_systemd_timing_alignment()` 检查 systemd 超时配置是否合理。
+
+#### 中断会话自动恢复
+
+gateway 重启/崩溃后自动恢复被打断的 session。逻辑在 `gateway/session.py`（`mark_resume_pending()` / `clear_resume_pending()`，`resume_reason="restart_interrupted"`）与 `gateway/run.py`（`resume_pending` 持久标记 + 新鲜度守卫，防止陈旧 tool-tail 复活旧任务）。
+
+#### 频道白名单
+
+`allowed_{chats,channels,rooms}` 白名单扩展到 Telegram、Slack、Mattermost、Matrix、DingTalk、LINE，由 `gateway/config.py` 把 YAML 键映射为环境变量（如 `SLACK_ALLOWED_CHANNELS`、`TELEGRAM_ALLOWED_CHATS`、`LINE_ALLOWED_{USERS,GROUPS,ROOMS}`）。
+
+#### Telegram 增强
+
+- **原生草稿流式（draft streaming）**：`send_draft()` 用 Bot API 9.5 的 `sendMessageDraft`，复用 `draft_id` 动画化预览，仅私聊。
+- **clarify 内联键盘**：`send_clarify()` 把多选澄清渲染成 `InlineKeyboardMarkup` 按钮回调（审批/更新提示也复用）。
+- **guest mention 模式**：`TELEGRAM_GUEST_MODE` 下，非白名单群成员仅能通过显式 @ 提及触发 bot。
+- **通知模式**：`notifications` 配置 `important`/`all`，静默发送中间态推送（`disable_notification=True`），除非 `metadata["notify"]=True`。
 
 ### 与其他 Agent 框架对比
 

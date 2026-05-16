@@ -1,7 +1,7 @@
 ---
 title: Provider Transport 架构
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-05-16
 type: concept
 tags: [architecture, module, provider, transport, api-dispatch]
 sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, run_agent.py]
@@ -63,6 +63,8 @@ class ProviderTransport(ABC):
 | `BedrockTransport` | `transports/bedrock.py` | 154 | `bedrock_converse` | AWS Bedrock（Converse API） |
 | `NormalizedResponse` | `transports/types.py` | 142 | — | 共享响应类型 |
 | 基类 + 注册表 | `transports/base.py` + `__init__.py` | 89 + 51 | — | ABC + `get_transport()` 惰性发现 |
+
+> **Codex app-server runtime（v2026.5.x，opt-in）**：`agent/transports/codex_app_server.py`（368 行，`CodexAppServerClient`）通过 stdio 上的 JSON-RPC 2.0 与 `codex app-server` 子进程通信（`MIN_CODEX_VERSION=(0,125,0)`）。仅在 `model.openai_runtime == "codex_app_server"` 时启用，否则默认工具派发不变。它与上表的 `ResponsesApiTransport`（无状态格式转换，包 `codex_responses_adapter.py`）是两条不同的路径。
 
 ### 注册表：惰性发现
 

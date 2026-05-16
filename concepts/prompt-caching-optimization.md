@@ -1,7 +1,7 @@
 ---
 title: Prompt Caching 优化架构
 created: 2026-04-07
-updated: 2026-04-08
+updated: 2026-05-16
 type: concept
 tags: [architecture, module, performance, cost-optimization, anthropic]
 sources: [agent/prompt_caching.py, run_agent.py]
@@ -98,6 +98,8 @@ marker = {"type": "ephemeral", "ttl": "1h"}  # 1 小时 TTL
 **使用场景**：
 - **5m（默认）**：适合快速连续对话，缓存命中率高
 - **1h**：适合长时间对话间隔，容忍更高的缓存未命中
+
+v2026.5.x：`cache_ttl` 从 `config.yaml` 的 `prompt_caching.cache_ttl` 读取（`run_agent.py`），传给 `apply_anthropic_cache_control`；`_build_marker(ttl)` 抽出为辅助函数。Claude 在 Anthropic / OpenRouter / Nous Portal 上支持跨 session 的 1h prefix cache。OpenRouter 另有独立的响应缓存——`agent/auxiliary_client.py:build_or_headers()` 从 `openrouter.{response_cache, response_cache_ttl}`（默认开启，300s）发出 `X-OpenRouter-Cache*` 头。
 
 ## 成本效益
 

@@ -1,7 +1,7 @@
 ---
 title: Hook 系统架构
 created: 2026-04-08
-updated: 2026-04-18
+updated: 2026-05-16
 type: concept
 tags: [architecture, module, extensibility, mcp, plugins]
 sources: [gateway/hooks.py, hermes_cli/plugins.py, model_tools.py, run_agent.py]
@@ -393,6 +393,24 @@ def my_command_hook(event_type, context):
 - 支持可选的后端 API 路由自动挂载
 
 同时新增 **Dashboard 主题系统**，支持实时切换。
+
+## v2026.5.x 插件增强
+
+`hermes_cli/plugins.py` 的 `VALID_HOOKS` 新增四个钩子：
+
+| 钩子 | 时机 |
+|---|---|
+| `transform_llm_output` | 改写 LLM 输出 |
+| `pre_gateway_dispatch` | gateway 分发消息前 |
+| `pre_approval_request` | 危险操作审批请求前 |
+| `post_approval_response` | 审批响应后 |
+
+其他新增能力：
+
+- **`ctx.llm`** — `PluginContext` 的 `llm` 属性惰性构建 `agent/plugin_llm.py`（1046 行）的门面，提供 `complete` / `complete_structured` 及 async 版本，可在插件内直接发起 LLM 调用；provider/model 覆盖受信任门控。
+- **工具覆盖**：`register_tool(..., override=True)` 可替换内置工具（closes #11049）。
+- **Provider 注册门面**：`ctx.register_web_search_provider()`（详见 [[web-tools-architecture]]）、`ctx.register_video_gen_provider()`、`ctx.register_platform()`（详见 [[messaging-gateway-architecture]]）。model-provider 也以插件形式存在（`kind: model-provider`，详见 [[smart-model-routing]]）。
+- **Bundled observability 插件**：`plugins/observability/langfuse/` 通过 `pre/post_api_request`、`pre/post_llm_call`、`pre/post_tool_call` 钩子上报 trace。
 
 ## 与其他系统的关系
 

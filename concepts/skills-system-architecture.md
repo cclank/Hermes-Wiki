@@ -1,9 +1,9 @@
 ---
 title: Skills System Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-16
 type: concept
-tags: [skill, architecture, module, prompt-builder]
+tags: [skill, architecture, module, prompt-builder, skill-management]
 sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, run_agent.py, agent/prompt_builder.py, hermes_cli/plugins.py, agent/skill_utils.py]
 ---
 
@@ -109,10 +109,12 @@ _build_skills_index(available_tools, available_toolsets) → str
 
 ## 平台过滤
 
-通过 `platforms` frontmatter 字段限制技能只在特定 OS 上加载：
+通过 `platforms` frontmatter 字段（YAML 列表，如 `platforms: [macos, linux]`）限制技能只在特定 OS 上加载：
 - `macos` → `sys.platform == "darwin"`
 - `linux` → `sys.platform == "linux"`
 - `windows` → `sys.platform == "win32"`
+
+执行逻辑在 `agent/skill_utils.py:92` 的 `skill_matches_platform(frontmatter)`：字段**为空或缺失视为兼容所有平台**（向后兼容），`PLATFORM_MAP` 把友好名映射到 `sys.platform` 前缀。在 prompt 组装阶段（`agent/prompt_builder.py:1050`）把不匹配的 skill 过滤出系统提示。v2026.5.x 给全部 79 个内置 + 63 个 optional skill 补齐了 `platforms` frontmatter，并把 7 个 Linux/macOS-only skill 对 Windows 做了 gate。
 
 ## 插件命名空间技能（2026-04-14）
 
@@ -271,15 +273,21 @@ active ──不用 N 天──> stale ──继续不用──> archived
 ### CLI
 
 ```bash
-hermes curator status        # 当前状态、待处理 skill
+hermes curator status        # 三桶状态 + most/least active + 待处理 skill
 hermes curator run           # 立即跑一轮
 hermes curator pause/resume  # 暂停/恢复
 hermes curator pin <skill>   # 钉住某个 skill（跳过自动转换）
 hermes curator unpin <skill>
-hermes curator restore <skill>  # 从归档恢复
+hermes curator restore <skill>      # 从归档恢复
+hermes curator list-archived        # 列出已归档 skill（v2026.5.x）
+hermes curator archive <skill>      # 手动归档（v2026.5.x）
+hermes curator prune [--days 90] [--dry-run] [--yes]  # 物理清理陈旧归档（v2026.5.x）
+hermes curator backup / rollback    # 备份与回滚
 ```
 
-`/curator` 斜杠命令暴露相同子命令。
+`/curator` 斜杠命令暴露相同子命令。`status` 计算「最近不活跃」（按 `last_activity_at`）、「最活跃 / 最不活跃」（按 `activity_count` = use+view+patch）各 top-5。
+
+**consolidated vs pruned 分类**（`agent/curator.py:_classify_removed_skills`）：被移除的 skill 分两类——**consolidated**（内容被并入某个 umbrella skill，返回 `{name, into, evidence}`）和 **pruned**（因陈旧归档、无合并目标，`{name}`）。`_reconcile_classification()` 调和三路信号：(a) 模型在 `skill_manage` 删除时声明的 `absorbed_into=`（权威）、(b) 模型写的 `## Structured summary` YAML 块里的 `consolidations:`/`prunings:`、(c) 扫描 `skill_manage` 调用的工具调用启发式。
 
 ## /reload-skills 和 /reload-mcp（v2026.4.23+）
 
@@ -299,6 +307,14 @@ if rec.get("pinned"):
 ```
 
 这是 Curator 不变量的延伸——pinned 状态对 agent 也是禁区，只能通过 `hermes curator unpin` 显式解锁。
+
+## Skills Hub — 来源与信任（v2026.5.x）
+
+`tools/skills_hub.py` 从多种来源安装 skill。
+
+**Trusted "tap" 机制**：`GitHubSource.DEFAULT_TAPS` 是内置 tap 列表，v2026.5.x 加入 `huggingface/skills`（与 `openai/skills`、`anthropics/skills`、`VoltAgent/awesome-agent-skills` 并列）。用户 tap 由 `TapsManager` 管理，存 `~/.hermes/.hub/taps.json`。信任级别 `builtin` / `trusted` / `community`——`trust_level_for()` 仅对 `TRUSTED_REPOS` 内的仓库返回 `trusted`。
+
+**直接 HTTP(S) URL 安装**：`UrlSource(SkillSource)`（`skills_hub.py:978`）——标识符就是 URL，认领以 `.md` 结尾的裸 HTTP(S) URL，仅支持单文件 SKILL.md，信任级别恒为 `community`，与其他来源一样跑安全扫描。
 
 ## 相关页面
 
