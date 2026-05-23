@@ -1,10 +1,10 @@
 ---
 title: Hermes 多 Agent 架构
 created: 2026-04-08
-updated: 2026-05-07
+updated: 2026-05-09
 type: concept
 tags: [architecture, module, agent, delegation, concurrency, kanban]
-sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, tools/kanban_tools.py, hermes_cli/kanban.py, hermes_cli/goals.py, run_agent.py]
+sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, tools/kanban_tools.py, hermes_cli/kanban_db.py, hermes_cli/kanban_diagnostics.py, hermes_cli/kanban_specify.py, run_agent.py]
 ---
 
 # Hermes 多 Agent 架构
@@ -628,13 +628,81 @@ Discord 还有**多 bot 过滤**：消息 @了其他 bot 但没 @自己时自动
 
 详见 → [[configuration-and-profiles]]
 
+## Kanban —— 持久化多 Agent 协作看板（v0.13.0+）
+
+**第 5 种多 Agent 机制**（PR #17805 重新实现）。Kanban 是**长寿命**的协作板：用户 / 编排 agent 把任务放上去，多个 worker agent 跑在独立 profile / process 里**自主**领任务、跑完、传递、关闭。
+
+### 模块构成
+
+| 文件 | 行数 | 职责 |
+|------|------|------|
+| `tools/kanban_tools.py` | 873 | 结构化工具调用 surface（worker / orchestrator agent 用） |
+| `hermes_cli/kanban_db.py` | 4576 | SQLite kanban store（多 board / 多 tenant、heartbeat、迁移、事务） |
+| `hermes_cli/kanban_diagnostics.py` | 649 | distress signal 引擎（worker 卡住 / 重试爆 → 自动 block + UX） |
+| `hermes_cli/kanban_specify.py` | 265 | `kanban specify <task>` —— 辅助 LLM 把粗糙 triage 卡片自动填充成 spec |
+
+### Tool gating
+
+`tools/kanban_tools.py:7-26` 的设计原理：
+
+1. **后端可移植** —— worker 的 terminal 工具可能指向 Docker / Modal / Singularity / SSH，里面**没有装 hermes 也没挂 kanban.db**。kanban tools 跑在 agent 的 Python 进程里，永远能拿到 `~/.hermes/kanban.db`
+2. **避免 shlex 引号坑** —— `--metadata '{"x": [...]}'` 在 shlex+argparse 下脆弱，结构化工具参数直接绕开
+3. **错误是结构化 JSON** —— LLM 能 reason
+
+**关键 gating**：kanban tools **只在 `HERMES_KANBAN_TASK` 环境变量被设置时**注册到 schema —— 普通 `hermes chat` 看不到，避免污染常规工作。
+
+### 人 / Agent 入口分离
+
+```
+┌──────────────────────┬────────────────────────┐
+│ 人类                 │ Worker Agent           │
+├──────────────────────┼────────────────────────┤
+│ hermes kanban CLI    │ kanban_tools 工具调用 │
+│ /kanban slash        │ (HERMES_KANBAN_TASK)   │
+│ hermes dashboard     │                        │
+└──────────────────────┴────────────────────────┘
+   ↓ 全部绕过 agent          ↓ agent 把控制权交回
+   ↓                          kernel 时调用
+                  ┌─────────────────────────┐
+                  │ ~/.hermes/kanban.db     │
+                  │ (单一 source of truth)  │
+                  └─────────────────────────┘
+```
+
+### 核心特性
+
+| 维度 | 说明 |
+|------|------|
+| **多 board** | 一次安装支持多个 kanban，`workspace kind + path` 在 inline create form 里指定（PR #19653 / #19679） |
+| **多 profile** | 看板按 profile 隔离，workspace + worker logs 跨 profile 共享 |
+| **Heartbeat + reclaim + zombie** | worker 假死会被 reclaim，darwin zombie 检测（salvage #20023），未完成退出自动 block（PR #21214） |
+| **Hallucination gate** | worker 假装"创建过的卡片不存在"时自动恢复 UX（关闭 #20017，PR #20232） |
+| **Per-task `max_retries` override** | 单任务覆盖全局重试预算（PR #21330） |
+| **诊断引擎** | `kanban_diagnostics.py` 通用 distress signal 引擎（PR #20332） |
+| **Specify** | `kanban specify` 辅助 LLM 充实 triage 卡片成 spec（PR #21435） |
+| **Tenant 过滤** | dashboard 按 tenant 过滤 board（PR #21349） |
+| **Auto-subscribe** | tool-driven `kanban_create` 自动订阅 gateway chat（PR #19718） |
+| **Worker ownership** | destructive tool call 强制 task ownership（PR #19713） |
+| **Drop worker identity claim** | KANBAN_GUIDANCE 不再让 worker 假定身份（PR #19427） |
+| **失败计数器统一** | spawn / timeout / crash 共享统一计数器（PR #20410） |
+| **`max_spawn` 配置** | gateway 限制并发任务（PR `f0d278412`） |
+| **Theme-immune 渲染** | dashboard kanban code/pre 样式跨主题统一（PR #21247） |
+
+### Worker / Orchestrator skills
+
+- `skills/devops/kanban-orchestrator/` —— 编排 agent 拆任务进 board
+- `skills/devops/kanban-worker/` —— worker 启动模板
+- `optional-skills/creative/kanban-video-orchestrator/` —— 创意 worker 示例
+
+详见 [[skills-system-architecture]]。
+
 ## 相关页面
 
-- [[configuration-and-profiles]] — 多 Profile 架构（另一种多 Agent 方案）
-- [[tool-registry-architecture]] — 子代理通过 registry 获取受限工具集
+- [[configuration-and-profiles]] — 多 Profile 架构（另一种多 Agent 方案）；kanban 多 profile worker
+- [[tool-registry-architecture]] — 子代理通过 registry 获取受限工具集；kanban tool gating
 - [[auxiliary-client-architecture]] — 子代理可配置独立的辅助模型
 - [[credential-pool-and-isolation]] — 凭证池共享与轮换
-- [[skills-system-architecture]] — Background Review 自动创建/改进的 skill 存储在这里
+- [[skills-system-architecture]] — Background Review、kanban-orchestrator/worker skills
 - [[trajectory-and-data-generation]] — Batch Runner（Nous 内部训练工具，不属于 Agent 运行时）
 
 ## 相关文件
@@ -642,4 +710,8 @@ Discord 还有**多 bot 过滤**：消息 @了其他 bot 但没 @自己时自动
 - `tools/delegate_tool.py` — 子代理委派实现
 - `tools/mixture_of_agents_tool.py` — 多模型协同推理
 - `tools/send_message_tool.py` — 跨平台消息投递（不属于多 Agent，归类于 messaging-gateway）
+- `tools/kanban_tools.py` — Kanban worker / orchestrator 工具
+- `hermes_cli/kanban_db.py` — Kanban SQLite store
+- `hermes_cli/kanban_diagnostics.py` — 诊断引擎
+- `hermes_cli/kanban_specify.py` — Spec 自动充实
 - `run_agent.py` — IterationBudget 类、Background Review、中断传播

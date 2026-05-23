@@ -1,10 +1,10 @@
 ---
 title: 安全防御体系 — 多层注入检测
 created: 2026-04-07
-updated: 2026-05-07
+updated: 2026-05-09
 type: concept
-tags: [architecture, security, injection-defense, skills-guard, p0]
-sources: [hermes-agent 源码分析 2026-04-07, RELEASE_v0.13.0.md]
+tags: [architecture, security, injection-defense, skills-guard, secret-redaction, toctou]
+sources: [tools/skills_guard.py, tools/memory_tool.py, agent/prompt_builder.py, run_agent.py, tools/approval.py, tools/tirith_security.py, tools/url_safety.py, tools/osv_check.py, hermes_cli/config.py, hermes_cli/auth.py, gateway/platforms/discord.py, gateway/platforms/whatsapp.py]
 ---
 
 > **v2026.5.7 安全 wave —— 8 个 P0 闭环**：
@@ -466,6 +466,61 @@ def redact_sensitive_text(text: str, *, force: bool = False) -> str:
 涉及 `gateway/run.py:909-922`（watch pattern / background process / MCP reload）、`agent/skill_commands.py:440,487`（skill invocation marker）、`tools/process_registry.py:779`（背景进程完成通知）。
 
 `grep '\[SYSTEM:'` 在源码里**已全部清零** —— 不存在向后兼容残留。
+
+## v0.13.0 安全强化（8 个 P0 闭环）
+
+### 1. Secret redaction 默认 ON（PR #21193）
+
+`hermes_cli/config.py:1245` `redact_secrets: True`（默认值）：
+
+```
+# Secret redaction is ON by default — strings that look like API keys,
+# tokens, etc. are auto-redacted from tool outputs and LLM responses
+# before the model or user ever sees them. Set redact_secrets to false
+# to disable (e.g. when developing the redactor itself).
+```
+
+模型 / 用户都看不到看似 API key 的字符串。**仅开发 redactor 自身时关闭**。
+
+### 2. Discord `DISCORD_ALLOWED_ROLES` 限定 originating guild（CVSS 8.1，PR #21241）
+
+之前 cross-guild DM 旁路：bot 在多个 server 都有相同名字的 role 时，攻击者可以加入其中任一 server 拿到那个 role，然后给 bot 发 DM 触发对**所有 server** 都允许的命令。修复后 `DISCORD_ALLOWED_ROLES` 限定到**消息来源的 guild**。
+
+### 3. WhatsApp 默认拒绝陌生人（PR #21291）
+
+未在 `WHATSAPP_ALLOWED_USERS` 列表的对话方默认拒绝；bot 永远不在 self-chat（与自己对话）响应。
+
+### 4. MCP OAuth TOCTOU 闭环（PR #21176）
+
+凭证写入文件之间存在的窗口期被关闭。
+
+### 5. `hermes_cli/auth.py` TOCTOU 闭环（PR #21194）
+
+同上，credential writers 路径。
+
+### 6. Browser cloud-metadata SSRF floor（#16234，PR #21228）
+
+混合路由场景下 cloud metadata 端点（`169.254.169.254` 等）始终阻断—— 即使本地 SSRF 配置允许 private IP（OpenWrt / 企业 VPN 场景），cloud metadata 仍是硬底线。
+
+### 7. `hermes debug share` 上传时 redact（PR #19318）
+
+debug share 在**上传时**做 redaction（不是在写盘时），保证用户配置的 redact 模式生效。
+
+### 8. Cron prompt-injection 扫描含 skill 内容（PR #21350）
+
+cron 注入扫描器之前只看 `prompt` 字段，本期起扫描组装后的完整 prompt（含 skill 内容） —— 防止恶意 skill 通过 cron 触发。
+
+### 附加防护
+
+| 修复 | 说明 |
+|------|------|
+| `.env` / `auth.json` / `state.db` 还原 0600 | restore 时保留严格权限 |
+| Dashboard plugin scripts SRI | Subresource Integrity 防止 plugin script 篡改 |
+| Google Meet node server 仅绑 localhost | token file owner-read |
+| 敏感写目标扩展 | shell rc + credential files |
+| YOLO mode quoted-bool | 强化 env 解析 |
+| OSV-Scanner CI + Dependabot | 仅 github-actions（避免噪声） |
+| `kanban_comment` author override 拒绝 | 之前 caller-controlled author 可冒充其他 worker |
 
 ## 相关页面
 

@@ -1,10 +1,10 @@
 ---
 title: Skills System Architecture
 created: 2026-04-07
-updated: 2026-05-07
+updated: 2026-05-09
 type: concept
-tags: [skill, architecture, module, prompt-builder, curator]
-sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, run_agent.py, agent/prompt_builder.py, hermes_cli/plugins.py, hermes_cli/curator.py, agent/skill_utils.py]
+tags: [skill, architecture, module, prompt-builder, curator, watchers, platforms-frontmatter]
+sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, run_agent.py, agent/prompt_builder.py, hermes_cli/plugins.py, agent/skill_utils.py, agent/curator.py, hermes_cli/curator.py]
 ---
 
 > **v2026.5.7 增量**：
@@ -380,6 +380,56 @@ def _pinned_guard(name: str) -> Optional[str]:
 - **`skill_manage` 在 `external_dirs` 中原地编辑**（v0.12.0 #17512）
 - **`.archive/` 目录从 skill index walk 排除**（v0.12.0 #17931）
 - **bundled skill 同步到所有 profile 包括 active**（v0.12.0 #16176）
+
+## Curator 子命令扩展（v0.13.0+）
+
+`hermes curator` 在 `status / run / pause / resume / pin / unpin / restore` 之上新增：
+
+| 子命令 | 作用 | 来源 PR |
+|--------|------|---------|
+| `archive <skill>` | 手动归档 skill（同 curator 自动归档路径） | #20200 |
+| `prune` | 真正删除归档区里足够老的 skill（默认 14 天） | #20200 |
+| `list-archived` | 列出归档区的 skill | #21236 |
+
+**`hermes curator run` 现在同步执行**——返回前等结果，不再让用户 polling 后台进程（PR #21216）。
+
+`/curator` 斜杠命令暴露相同子命令。
+
+## `platforms` frontmatter 全覆盖（v0.13.0+）
+
+PR `98db898c0`（79 个 built-in） + `db22efbe8`（63 个 optional）批量补 `platforms` 声明，PR `b18b17f9c` 把 7 个 Linux/macOS-only skill 在 Windows 上自动 gate（`platforms: [linux, macos]`）。
+
+```yaml
+---
+name: my-skill
+platforms: [linux, macos]    # 可选；省略 = 全平台
+---
+```
+
+**用途**：Native Windows beta（PR #22115）启动后，运行时 platform 不在 `platforms` 列表的 skill 自动跳过 —— 不会出现 macOS-only 工具在 Windows 报错的脏体验。
+
+## `watchers` skill —— RSS / HTTP / GitHub 看门狗（optional）
+
+`optional-skills/devops/watchers/`（PR #21881）—— 配合 cron `no_agent` 模式（[[cron-scheduling]]）用：
+
+- 三个独立脚本：RSS / Atom、HTTP JSON endpoint、GitHub repo（issues / pulls / releases / commits）
+- watermark dedup helper —— 只投递新 item
+- `requires_toolsets: [terminal]`
+
+## 新增 skill（v0.13.0+）
+
+| Skill | 类型 | 说明 |
+|-------|------|------|
+| `comfyui` | built-in | 从 optional 移到内置，重写为官方 CLI + REST API（v2026.4.23 提，本期固化） |
+| `here.now` | built-in + optional | 双版本（PR `f7dfd4ae3` / `7cbe943d2`） |
+| `shopify` | optional | Admin + Storefront GraphQL（PR #18116） |
+| `shop-app` | optional | 个人购物助手（PR #20702） |
+| `finance` | optional bundle | Anthropic financial-services 移植（PR #21180） |
+| `linear` | built-in 增强 | + Documents 支持 + Python helper（PR #20752） |
+| `searxng-search` | optional | 配 SearXNG backend |
+| `kanban-video-orchestrator` | optional 创意 | (@SHL0MS) PR #19281 |
+| `hyperframes` | optional 创意 | |
+| `watchers` | optional devops | （见上） |
 
 ## 相关页面
 

@@ -1,20 +1,17 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-05-07
+updated: 2026-05-09
 type: concept
-tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy]
-sources: [gateway/run.py, gateway/platforms/, gateway/platform_registry.py, plugins/platforms/, hermes_cli/config.py, hermes_cli/plugins.py]
+tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy, teams, google_chat]
+sources: [gateway/run.py, gateway/platforms/, gateway/platform_registry.py, hermes_cli/config.py, plugins/platforms/]
 ---
 
 # 消息网关架构
 
 ## 概述
 
-Gateway 是 Hermes Agent 的**统一消息网关**，支持 **20 个消息平台**（v2026.5.7 起），从单一进程管理所有平台的连接和消息分发。其中：
-
-- **17 个内置平台**（`gateway/platforms/`）
-- **3 个插件平台**（`plugins/platforms/`）—— IRC（v2026.4.23+）、Microsoft Teams（v2026.4.30+）、Google Chat（v2026.5.7+）
+Gateway 是 Hermes Agent 的**统一消息网关**，支持 **20+ 消息平台**（v0.13.0 起 Google Chat 是第 20 个），从单一进程管理所有平台的连接和消息分发。**v2026.4.23+** 引入 `PlatformRegistry` 让平台适配器以纯插件形式接入；**v0.13.0** 进一步引入通用 `env_enablement_fn` / `cron_deliver_env_var` 钩子，IRC + Teams + Google Chat 已迁出 gateway 核心走 `plugins/platforms/`。
 
 ## 架构
 
@@ -76,30 +73,9 @@ gateway/
 | Webhook | HTTP | 外部事件接收 |
 | **腾讯元宝 Yuanbao** | API | 原生文本+媒体投递，sticker 支持（v2026.4.23+），群聊 owner identity check |
 | **IRC**（插件） | TLS asyncio | 零外部依赖，TLS、PING/PONG、nick collision、NickServ、频道寻址（v2026.4.23+，参考实现） |
-| **Microsoft Teams**（插件） | Bot Framework | 第 19 个平台 / 第 2 个插件平台（v2026.4.30+），sidebar + threading + group-chat fallback |
-| **Google Chat**（插件） | Chat API | 第 20 个平台 / 第 3 个插件平台（v2026.5.7+），通用 `env_enablement_fn` / `cron_deliver_env_var` 钩子统一接口 |
-
-### 跨平台 allowlist（v2026.5.7+）
-
-`allowed_channels` / `allowed_chats` / `allowed_rooms` 配置覆盖：
-
-| 平台 | 配置键 | 源码 |
-|------|--------|------|
-| Slack | `allowed_channels` | gateway/platforms/slack.py |
-| Telegram | `allowed_chats` | gateway/platforms/telegram.py:2778 `_telegram_allowed_chats()` |
-| Mattermost | `allowed_channels` | gateway/platforms/mattermost.py |
-| Matrix | `allowed_rooms` / `MATRIX_ALLOWED_ROOMS` | gateway/platforms/matrix.py:21 |
-| DingTalk | `allowed_chats` | gateway/platforms/dingtalk.py |
-
-非空时**硬 gate**：DM 与允许列表外的频道一律拒绝（DM 在 Matrix 等平台可豁免）。
-
-### `[[as_document]]` 媒体路由指令（v2026.5.7+）
-
-skill 输出可以加 `[[as_document]]` 标记，强制平台以 document（文件附件）形式投递而非 inline image。源码 `gateway/platforms/base.py:1899-1923` 在 `extract_media` 之前捕获，剥离指令后保留原始路径。
-
-### `transform_llm_output` 插件钩子（v2026.5.7+）
-
-新生命周期钩子（`run_agent.py:14279`、`hermes_cli/plugins.py:86`），允许插件在 LLM 输出进入对话前 reshape / 过滤。适用上下文窗口压缩、内容过滤等场景。
+| **Microsoft Teams**（插件） | Bot Framework + Adaptive Cards | DM / group chat / channel 投递、Adaptive Card 审批、`teams_pipeline` operator CLI、`app.reply()` threading、User-Agent `Hermes-via 2.0.0`（v0.13.0+） |
+| **Google Chat**（插件，第 20 个） | Cloud Pub/Sub Pull + REST | per-user OAuth `/setup-files`、ADC fallback、native attachment、`GOOGLE_CHAT_ALLOWED_USERS` / `_HOME_CHANNEL`（v0.13.0+） |
+| **MS Graph Webhook** | Change-notification Listener | `gateway/platforms/msgraph_webhook.py` 397 行——订阅校验握手、`allowed_source_cidrs` IP 白名单、JSON 事件 → MessageEvent（v0.13.0+） |
 
 ## 平台适配器插件化（v2026.4.23+）
 
@@ -196,6 +172,46 @@ Signal → 多 attachment 单消息
 - Yuanbao：群聊斜杠命令强制 owner identity 检查（b7ad3f4）
 - Feishu：operator-configurable bot admission and mention policy（b94cb8e）
 - WhatsApp：pin protobufjs >=7.5.5 修复 3 个 critical 漏洞（55647a5 #19204）
+
+### 通用插件平台 hooks（v0.13.0+，PR #21306）
+
+`feat(gateway): generic plugin hooks for env enablement + cron delivery` 引入两个通用 hook，让插件平台不必改 gateway 核心代码就能完成 env 启用判断和 cron 投递路由：
+
+- **`env_enablement_fn`** — 平台插件返回是否启用（基于 env vars）
+- **`cron_deliver_env_var`** — cron 投递时根据 env var 决定走哪个 chat
+
+**Teams 和 IRC 已经从 gateway 内置迁到插件路径**；Google Chat 是第一个**纯插件**新平台。
+
+### `[[as_document]]` —— 媒体路由指令
+
+`gateway/platforms/base.py:1949+` 的 `[[as_document]]` 指令允许 skill / agent 输出强制走 document 路径（不走图片渲染）：
+
+```
+[[as_document]]
+MEDIA: /path/to/big-image.png
+```
+
+`base.py:1973` 在解析后剥离指令文本，`base.py:2891` 决定后续所有 image path 都按 document 投递（每个支持 document 的平台走自己的 native path）。
+
+### 跨平台白名单（PR #21251）
+
+`allowed_chats` / `allowed_channels` / `allowed_rooms` 三种命名按平台习俗统一：
+
+| 平台 | 命名 | 实现位置 |
+|------|------|----------|
+| Slack | `allowed_channels` | gateway/platforms/slack.py |
+| Telegram | `allowed_chats` / `TELEGRAM_ALLOWED_CHATS` | |
+| Mattermost | `allowed_channels` | |
+| Matrix | `allowed_rooms` / `MATRIX_ALLOWED_ROOMS` | gateway/platforms/matrix.py:21,359-368 |
+| DingTalk | `allowed_chats` | gateway/platforms/dingtalk.py:368-475 |
+
+**白名单是硬门** —— 非空时未列出的 chat 完全静默（除某些平台 DM 豁免）。
+
+### 会话自动恢复（v0.13.0+，PR #21192）
+
+gateway 中途重启（手动 / `/update` / 源码热重载）后**自动恢复中断 session**，恢复 home-channel thread 路由、pending update prompts、document type、queue。
+
+附加：per-platform `gateway_restart_notification` flag、`busy_ack_enabled` 配置项（抑制 ack 消息）、slash-command 系统通知 TTL 自动删除、临时进度气泡 opt-in 清理。
 
 ## 平台适配器基类
 

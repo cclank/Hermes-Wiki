@@ -1,10 +1,10 @@
 ---
 title: Provider Transport 架构
 created: 2026-04-18
-updated: 2026-05-06
+updated: 2026-05-09
 type: concept
-tags: [architecture, module, provider, transport, api-dispatch, plugin]
-sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, providers/base.py, providers/__init__.py, plugins/model-providers/, run_agent.py]
+tags: [architecture, module, provider, transport, api-dispatch, provider-plugin]
+sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, providers/base.py, providers/__init__.py, run_agent.py]
 ---
 
 # Provider Transport — API 路径统一抽象
@@ -133,99 +133,26 @@ def register_transport(api_mode: str, transport_cls: type) -> None:
 | AWS Bedrock | BedrockTransport | 全路径完成 |
 | Auxiliary Client（压缩/记忆） | 已迁移到 Transport | 完成 |
 
-## Provider Profile 插件系统（v2026.5+）
+## 与 ProviderProfile 协作（v0.13.0+）
 
-### 关注点拆分
-
-| 维度 | Transport | Provider Profile |
-|------|-----------|------------------|
-| 抽象 | API **数据路径**（消息/工具/响应转换） | Provider **身份与配置**（auth/endpoint/quirks/aux defaults） |
-| 数量 | 4 个（Anthropic / Chat Completions / Responses / Bedrock） | 33 个（每个真实 provider 一个） |
-| 复用 | 多个 provider 共享同一 transport | 每个 provider 一个 profile，独立 |
-| 位置 | `agent/transports/` | `providers/` + `plugins/model-providers/` |
-
-### `ProviderProfile` 声明式 dataclass
-
-```python
-# providers/base.py
-@dataclass
-class ProviderProfile:
-    name: str                              # 'openrouter'
-    api_mode: str = "chat_completions"     # 决定用哪个 Transport
-    aliases: tuple = ()                    # ('claude', 'claude-oauth')
-    display_name: str = ""                 # 'GMI Cloud'
-    description: str = ""                  # picker subtitle
-    signup_url: str = ""
-
-    # auth + endpoints
-    env_vars: tuple = ()
-    base_url: str = ""
-    models_url: str = ""                   # default {base_url}/models
-    auth_type: str = "api_key"             # api_key|oauth_device_code|oauth_external|copilot|aws_sdk
-
-    fallback_models: tuple = ()
-    hostname: str = ""                     # for URL → provider reverse mapping
-
-    default_headers: dict = field(default_factory=dict)
-    fixed_temperature: Any = None          # OMIT_TEMPERATURE 哨兵 = 不发送
-    default_max_tokens: int | None = None
-    default_aux_model: str = ""            # cheap aux 模型
-
-    # 子类可覆盖 hooks：
-    def fetch_models(self, *, api_key, timeout) -> list[str] | None: ...
-    def prepare_messages(self, messages) -> list[dict]: ...
-    def build_extra_body(self, *, session_id, **context) -> dict: ...
-```
-
-### 插件发现链（`providers/__init__.py:_discover_providers()`）
+`providers/base.py` 的 `ProviderProfile` 是**声明式 dataclass**，描述每个 provider 的 auth / endpoints / quirks；Transport 是**数据路径执行器**。两者职责完全分离：
 
 ```
-1. <repo>/plugins/model-providers/<name>/__init__.py    # bundled
-2. $HERMES_HOME/plugins/model-providers/<name>/         # user (last-writer-wins)
-3. providers/<name>.py                                  # legacy 单文件兼容
+ProviderProfile         →  api_mode 决定走哪个 Transport
+ProviderProfile.fetch_models()  →  /model picker 拉 live 列表
+ProviderProfile.prepare_messages()  →  Transport.convert_messages 调用前
+ProviderProfile.build_extra_body()  →  Transport.build_kwargs 合并到 extra_body
+ProviderProfile.build_api_kwargs_extras()  →  Transport.build_kwargs 合并到 api_kwargs
 ```
 
-每个 `__init__.py` 调用 `register_provider(profile)` 即注册；用户 plugin **覆盖同名 bundled**——任何人 monkey-patch 或替换内置 profile 不必改 repo 源码。
+`get_provider_profile(name).api_mode` → `get_transport(api_mode)` —— Profile 给 transport 提供数据，transport 给 Profile 提供数据路径。28 个 bundled provider 插件（`plugins/model-providers/`）都通过这个组合接入。
 
-### 33 个 Profile 在 28 个目录下
-
-| 多 profile 目录 | 包含 profiles |
-|---|---|
-| `gemini/` | gemini + 1 其他 |
-| `kimi-coding/` | kimi-coding + kimi |
-| `opencode-zen/` | opencode-go + opencode-zen |
-| `minimax/` | minimax + minimax-oauth + 1 其他 |
-
-**24 个一目录一 profile**：anthropic、openrouter、bedrock、deepseek、xai、nous、nvidia、arcee、stepfun、ollama-cloud、azure-foundry、ai-gateway、alibaba、alibaba-coding-plan、copilot、copilot-acp、custom、gmi、huggingface、kilocode、openai-codex、qwen-oauth、xiaomi、zai。
-
-### 实例：anthropic profile（plugins/model-providers/anthropic/__init__.py）
-
-```python
-from providers import register_provider
-from providers.base import ProviderProfile
-
-class AnthropicProfile(ProviderProfile):
-    def fetch_models(self, *, api_key, timeout=8.0):
-        # x-api-key header (not Bearer)
-        ...
-
-anthropic = AnthropicProfile(
-    name="anthropic",
-    aliases=("claude", "claude-oauth", "claude-code"),
-    api_mode="anthropic_messages",
-    env_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"),
-    base_url="https://api.anthropic.com",
-    auth_type="api_key",
-    default_aux_model="claude-haiku-4-5-20251001",
-)
-```
-
-`register_provider(anthropic)` 由 module-level 调用执行；`get_provider_profile("claude")` 经 alias 解析返回该 profile；`AIAgent` 读 `profile.api_mode` 选 transport，读其余字段构 client + 请求。
+详见 [[smart-model-routing]] 中的 ProviderProfile 章节。
 
 ## 与其他系统的关系
 
 - [[auxiliary-client-architecture]] — auxiliary_client 已迁移到 Transport
-- [[smart-model-routing]] — transport 基于 api_mode 派发，provider profile 提供 fallback_models / aliases / hostname → provider 反向映射
+- [[smart-model-routing]] — transport 基于 api_mode 派发，与 ProviderProfile 协作
 - [[interrupt-and-fault-tolerance]] — 中断、retry 仍在 AIAgent 层，不属于 transport 职责
 - [[prompt-caching-optimization]] — cache 统计通过 `extract_cache_stats` 钩子暴露
 
