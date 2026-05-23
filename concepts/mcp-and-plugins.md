@@ -1,10 +1,10 @@
 ---
 title: MCP 集成与插件系统
 created: 2026-04-07
-updated: 2026-05-10
+updated: 2026-05-14
 type: concept
-tags: [architecture, mcp, plugins, extensibility, sse, oauth]
-sources: [tools/mcp_tool.py, tools/mcp_oauth.py, hermes_cli/plugins.py]
+tags: [architecture, mcp, plugins, extensibility]
+sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py]
 ---
 
 > **v2026.5.7 MCP 升级**：
@@ -27,6 +27,16 @@ sources: [tools/mcp_tool.py, tools/mcp_oauth.py, hermes_cli/plugins.py]
 ## 设计原理
 
 Hermes 通过 **MCP（Model Context Protocol）** 和**插件系统**实现可扩展性，允许连接外部工具和自定义行为。
+
+## MCP v0.13.0 升级
+
+| 改进 | 说明 |
+|------|------|
+| **SSE transport + OAuth forwarding** | SSE transport 接入 OAuth header 转发（`#21227`） |
+| **Stale-pipe retries** | 长连接 pipe 失活时自动重试（`#21323`） |
+| **Image 结果 → MEDIA tag** | image result 不再被丢弃，转成 `MEDIA:` 标签供 gateway 抽取并原生投递（`#21289`） |
+| **Long-lived lifecycle keepalive** | long-running tool 等待时 keepalive 防止连接 idle 断（`#21328`） |
+| **Stop retrying initial auth failures** | 首次 auth 失败不无限重试（`1247ff2dc`，v0.13.0 post-release） |
 
 ## MCP 集成
 

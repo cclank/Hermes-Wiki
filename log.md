@@ -123,49 +123,46 @@
   - 核心内容: Gateway Hooks 事件驱动(8种事件+通配符)，Plugin System 三级来源(用户/项目/pip)，PluginContext API(工具注册/消息注入/CLI命令/钩子)，缓存友好上下文注入
 - index.md 更新为 37 页
 
-## [2026-05-13] update | sync wiki with hermes-agent v0.12.0 → v0.13.0 (595 commits, 2026-04-30 ~ 2026-05-13)
-拉取 hermes-agent 最新代码（HEAD `08671d8`，2026-05-13）对照 wiki，每条结论均经源码验证。
+## [2026-05-14] update | 同步 v0.12.0 + v0.13.0 + post-release（1,533 commits）
 
-**新增 changelog**:
-- changelog/2026-05-13-update.md — 完整 595-commit 综述
+基于 hermes-agent main 分支 `cd64bed55` (2026-05-14) 的逐行源码验证。覆盖 v0.12.0 (2026.4.30, "The Curator Release") + v0.13.0 (2026.5.7, "The Tenacity Release") + v0.13.0 之后的 fix wave。
 
-**概念页面更新**（10 处源码验证后改动）:
-- concepts/messaging-gateway-architecture.md
-  - 新增 Microsoft Teams / LINE / Google Chat 三个 bundled 平台插件（源码 plugins/platforms/teams,line,google_chat）
-  - 新增 v0.12.0+ gateway 增强段（i18n、Telegram native draft、cadence tuning、QQBot guild ACL、stream-retry 诊断、shutdown forensics 等）
-- concepts/voice-mode-architecture.md
-  - TTS Provider 从 5 个扩展到 10 个内置 + 命令型自定义注册表（源码 tools/tts_tool.py:339-350 BUILTIN_TTS_PROVIDERS frozenset）
-  - 加入 Piper（44 语种，源码 tools/tts_tool.py:1342+），命令型 provider（源码 tools/tts_tool.py:309-470），FLAC 路由（源码 gateway/platforms/base.py:_AUDIO_EXTS），WSL audio 检测改进
-- concepts/prompt-caching-optimization.md
-  - 1h cross-session 前缀缓存（PR #23828，源码 run_agent.py:1455-1470）
-  - 系统提示 byte-static 设计（PR #24778，b06e999）
-- concepts/gateway-session-management.md
-  - `/handoff` 跨平台 session 转移（源码 gateway/run.py:3708-3795，hermes_cli/commands.py:82）
-  - Telegram `/topic` DM 多 session（源码 gateway/platforms/telegram.py:419-585）
-- concepts/cron-scheduling.md
-  - `no_agent` 模式（源码 cron/jobs.py:1041-1106，hermes_cli/cron.py:96/177/233）
-- concepts/skills-system-architecture.md
-  - Curator 扩展：archive/prune/backup/rollback/list-archived 子命令（源码 hermes_cli/curator.py:_cmd_*）
-  - 状态机分裂 consolidated vs pruned（8b290a5）
-  - bump_use() 接入更多调用点（4178ab3/ae8930a）
-  - Pin 仅保护 deletion（b10e38e）
-  - .archive 在 walk 中跳过（eda1d51/a845177）
-  - 统一到 auxiliary.curator 入口（0da66e8）
-- concepts/hook-system-architecture.md
-  - `ctx.llm` 让插件直接调用宿主模型（PR #23194，源码 hermes_cli/plugins.py:299-313）
-  - Bundled plugins 列表（hermes-achievements + 4 个 platform plugins）
-- concepts/agent-loop-and-prompt-assembly.md
-  - Per-turn file-mutation verifier footer（PR #24498，源码 run_agent.py:5331-5395）
-  - LSP semantic diagnostics（PR #24168，源码 tools/file_operations.py:929-991）
-  - In-process delta lint（PR #20191，5168226）
+**新增 changelog（1）**：
+- `changelog/2026-05-14-update.md` —— 1,533 commits 综述
 
-**元数据更新**:
-- README.md — Version v2026.4.23 → v0.13.0、最后更新 → 2026-05-13、changelog 列表 +1
-- index.md — Last updated → 2026-05-13、Total pages 注记
-- log.md — 本条记录
+**新增概念页（5）**：
+- `concepts/kanban-architecture.md` —— v0.13.0 旗舰：持久多 profile 协作看板（`tools/kanban_tools.py` + `hermes_cli/kanban*.py`，~10.9k 行）
+- `concepts/goal-loop-architecture.md` —— `/goal` + `/subgoal` Ralph 判官循环（`hermes_cli/goals.py`，722 行）
+- `concepts/i18n-localization.md` —— `agent/i18n.py` + 16 个 locale catalog
+- `concepts/provider-profile-plugins.md` —— ProviderProfile ABC + 30 个 plugins/model-providers/<name>/
+- `concepts/checkpoints-architecture.md` —— Checkpoint v2 单 shared shadow git store + 真 prune
 
-**追踪信息**:
-- hermes-agent pyproject.toml: `version = "0.13.0"`
-- v0.12.0 release commit: 73bf3ab (chore: release v0.12.0 (2026.4.30))
-- 截至 commit: 08671d8 tui: make URLs clickable + hover-highlight (#25071), 2026-05-13T13:52
-- 总 commits: 595
+**更新概念页（9）**：
+- messaging-gateway-architecture — 20+ 平台（Google Chat 第 20）+ 4 个插件平台 + 多平台 allowlists + Discord guild-scoped 安全 + `[[as_document]]` 媒体路由
+- multi-agent-architecture — 从 3 类机制扩到 **5 类**（加入 Goal Loop + Kanban），完整对比表
+- skills-system-architecture — Curator 子命令扩张（archive/prune/list-archived，同步 run，per-run 报告）
+- web-tools-architecture — 7 个 plugins/web/ 全量插件化，按 capability 独立选 provider
+- voice-mode-architecture — TTS provider registry + Piper + xAI Custom Voices
+- security-defense-system — Redaction 默认 ON（`agent/redact.py:67` 验证）+ Discord guild-scoped + post-write delta lint + v0.13.0 安全 wave 全表（已验证 vs release notes 声明）
+- hook-system-architecture — 17 个 VALID_HOOKS 完整列出 + `transform_llm_output` 详解
+- mcp-and-plugins — MCP v0.13.0 升级（SSE OAuth / stale-pipe retry / MEDIA tag / keepalive）
+- cli-architecture — 新斜杠命令清单（/goal、/subgoal、/queue、/steer、/kanban、/curator 子命令、/mouse、/indicator）+ `hermes -z` 一次性模式
+- smart-model-routing — 链接到 ProviderProfile 插件化
+
+**Top-level**：README（v0.13.0 / 42 页 / 6 changelog）、index.md（同步）
+
+**源码验证摘录**：
+- Kanban: `tools/kanban_tools.py:_check_kanban_mode` line 60；9 tool 注册；`hermes_cli/kanban_db.py:VALID_STATUSES` line 93；`SCHEMA_SQL` line 754；`DEFAULT_FAILURE_LIMIT = 2` line 2887
+- /goal: `hermes_cli/goals.py` 722 行；`DEFAULT_MAX_TURNS = 20` line 47；`_meta_key(session_id) = f"goal:{session_id}"` line 194；`hermes_cli/commands.py:105-108`
+- i18n: `agent/i18n.py:SUPPORTED_LANGUAGES` line 42 列 16 个语言；`locales/` 16 个 YAML 文件
+- ProviderProfile: `providers/base.py:ProviderProfile` dataclass line 25；`providers/__init__.py` 描述发现路径；`plugins/model-providers/` 30 个目录
+- Checkpoint v2: `tools/checkpoint_manager.py` 1638 行；`_STORE_DIRNAME = "store"` line 72；`prune_checkpoints` line 1223；自动迁移 `legacy-<ts>/` line 340
+- Redaction: `agent/redact.py:_REDACT_ENABLED = os.getenv("HERMES_REDACT_SECRETS", "true")` line 67（默认 ON，secure default per #17691）
+- Discord guild-scoped: `gateway/platforms/discord.py:2130` "guild-scoped and not cross-guild"
+- transform_llm_output: `hermes_cli/plugins.py:136` 在 VALID_HOOKS 中；`run_agent.py:15510-15529` 调度
+- video_analyze: `tools/vision_tools.py:1414 registry.register(name="video_analyze")`
+- 16 个 locale: `c39168453` (2026-05-10, #22914) 一次性补齐到 16
+
+**未在源码验证 / 保守标注的声明**：
+- WhatsApp"默认拒绝陌生人"——当前 `gateway/platforms/whatsapp.py:263` `dm_policy` 默认仍为 `"open"`，wiki 在 security-defense-system.md 显式标注未验证
+- 其他 release notes 声明项（TOCTOU 修复、cron prompt-injection 扫描、`hermes debug share` redaction）保留 release notes 描述并明确标注 verification 状态

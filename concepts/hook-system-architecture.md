@@ -1,7 +1,7 @@
 ---
 title: Hook 系统架构
 created: 2026-04-08
-updated: 2026-05-12
+updated: 2026-05-14
 type: concept
 tags: [architecture, module, extensibility, mcp, plugins]
 sources: [gateway/hooks.py, hermes_cli/plugins.py, model_tools.py, run_agent.py, gateway/platform_registry.py]
@@ -170,37 +170,42 @@ class PluginManager:
 
 `hermes_cli/plugins.py:128 VALID_HOOKS`：
 
+完整 `VALID_HOOKS` 集合（`hermes_cli/plugins.py:128-168`，v0.13.0）：
+
 ```python
 # hermes_cli/plugins.py:128-168 — 截至 v0.13.0
 VALID_HOOKS = {
-    "pre_tool_call",                 # 工具调用前；可返回 block 阻止执行
-    "post_tool_call",                # 工具调用后；含 duration_ms（v0.12 起）
-    "transform_terminal_output",     # 改写 terminal 输出
-    "transform_tool_result",         # 改写任意 tool 结果
-    "transform_llm_output",          # 改写 LLM 输出文本（v0.13 新增）
-    "pre_llm_call",                  # LLM 调用前
-    "post_llm_call",                 # LLM 调用后
-    "pre_api_request",               # API 请求前
-    "post_api_request",              # API 请求后
-    "on_session_start",              # 会话开始
-    "on_session_end",                # 会话结束
-    "on_session_finalize",
-    "on_session_reset",
-    "subagent_stop",
-    "pre_gateway_dispatch",          # gateway 事件分发前；可 skip / rewrite / allow（v0.12）
-    "pre_approval_request",          # 危险命令审批前（observer，v0.12）
-    "post_approval_response",        # 审批响应后（observer，v0.12）
+    "pre_tool_call",            # 工具调用前；可 {"action": "block", "message": ...}
+    "post_tool_call",           # 工具调用后
+    "transform_terminal_output",# 终端输出预过滤
+    "transform_tool_result",    # 工具结果转换
+    "transform_llm_output",     # ★ v0.13.0：LLM 回复落地前最后一道；first non-None string wins
+    "pre_llm_call",             # LLM 调用前
+    "post_llm_call",            # LLM 调用后
+    "pre_api_request",          # API 请求前
+    "post_api_request",         # API 请求后
+    "on_session_start",         # 会话开始
+    "on_session_end",           # 会话结束
+    "on_session_finalize",      # finalize（落盘）
+    "on_session_reset",         # /reset
+    "subagent_stop",            # delegate / MoA 子 agent 停止
+    "pre_gateway_dispatch",     # gateway 入站 message 预处理（可 skip / rewrite / allow）
+    "pre_approval_request",     # dangerous-command approval 弹出前
+    "post_approval_response",   # approval 选择后（once/session/always/deny/timeout）
 }
 ```
 
-**v0.12-v0.13 新增**：
-- `transform_llm_output`（v0.13，PR #21235）— 在响应送达用户前改写文本。第一个非 None 字符串胜出。典型用途：内容过滤、词表替换、人格转换。
-- `transform_tool_result` / `transform_terminal_output` — 改写工具结果或 terminal 输出
-- `pre_gateway_dispatch`（v0.12，PR #15050）— gateway 内部事件 guard 后、auth/pairing 前。可返回 `{"action": "skip" / "rewrite" / "allow"}`
-- `pre_approval_request` / `post_approval_response`（v0.12，PR #16776）— observer-only（返回值忽略），覆盖 CLI 和 gateway/ACP 审批
-- `post_tool_call` 新增 `duration_ms` kwarg（v0.12，PR #15429，灵感来自 Claude Code 2.1.119）
+#### `transform_llm_output`（v0.13.0 新 hook）
 
-**v0.12 平台插件 hooks**（在 `PlatformEntry` 上声明，不在 `VALID_HOOKS` 里，但同属插件机制）：`env_enablement_fn` / `cron_deliver_env_var` / `standalone_sender_fn`。详见 [[messaging-gateway-architecture]]。
+签名：
+
+```python
+def transform_llm_output(text: str, **ctx) -> Optional[str]:
+    """Return a string to replace the response, or None / "" to pass through.
+    First non-None string from any plugin wins."""
+```
+
+调度点：`run_agent.py:15510-15529`。异常被 catch 不破坏 turn。用途：vocabulary / personality 转换、内容过滤、context-window reducer。
 
 #### 钩子调用
 

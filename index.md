@@ -2,7 +2,7 @@
 
 > 内容目录。每个 wiki 页面按类型列出，附一行摘要。
 > 查询前先读此文件找到相关页面。
-> Last updated: 2026-05-13 | Total pages: 37 concepts + 6 changelogs + 2 entities | Tracking: hermes-agent v0.13.0
+> Last updated: 2026-05-14 | Total pages: 42 | 跟踪版本: v0.13.0 (2026.5.7)
 
 ## Entities
 
@@ -14,77 +14,59 @@
 ### 核心架构
 - [[tool-registry-architecture]] — 中央工具注册系统，声明式注册+集中调度，循环导入安全
 - [[auxiliary-client-architecture]] — 辅助 LLM 客户端路由器，多 provider 解析链+适配器模式+自动降级
-- [[provider-transport-architecture]] — Transport ABC + ProviderProfile 插件系统（33 profiles）
-- [[browser-tool-architecture]] — 多后端浏览器自动化，accessibility tree 文本表示+三层安全防护+Lightpanda
-- [[web-tools-architecture]] — 多后端搜索/提取（per-capability backend+SearXNG），LLM 智能内容压缩
-- [[skills-system-architecture]] — 渐进式披露架构、Curator 后台维护、Pin 仅防删除
-- [[memory-system-architecture]] — 冻结快照模式、原子写入、Hindsight long-term memory plugin
+- [[browser-tool-architecture]] — 多后端浏览器自动化，accessibility tree 文本表示+三层安全防护+并发隔离
+- [[web-tools-architecture]] — Web 搜索/提取/爬取 7 个 plugin 后端，按 capability 独立选 provider
+- [[skills-system-architecture]] — 渐进式披露 + Curator 后台维护（archive/prune/list-archived）
+- [[memory-system-architecture]] — 冻结快照模式、原子写入、安全扫描
 - [[agent-loop-and-prompt-assembly]] — Agent 循环、系统提示构建、平台提示、执行指导
 - [[skills-and-memory-interaction]] — Skills 与 Memory 的互补关系和决策树
-- [[toolsets-system]] — 工具分组系统、递归解析、14+ 平台工具集
+- [[toolsets-system]] — 工具分组系统、递归解析、20+ 平台工具集
 - [[session-search-and-sessiondb]] — FTS5 搜索 + LLM 摘要的跨会话回忆
-- [[provider-transport-architecture]] — Provider Transport ABC，统一抽象 Anthropic/Chat Completions/Responses/Bedrock
+- [[provider-transport-architecture]] — Provider Transport ABC（Anthropic / Chat / Responses / Bedrock）
+- [[provider-profile-plugins]] — **新** ProviderProfile ABC + 30 个 plugin（v0.13.0）
 
 ### 性能与优化
 - [[parallel-tool-execution]] — 智能并发安全检测，三层分类 + 路径冲突检测
-- [[prompt-caching-optimization]] — Anthropic system_and_3 缓存策略，75% 成本节省
-- [[fuzzy-matching-engine]] — 8 策略链模糊匹配，从精确到相似度匹配
-- [[smart-model-routing]] — 智能模型路由 + ProviderProfile 插件化（28 个 bundled provider，v0.13.0+）
-- [[large-tool-result-handling]] — 大型结果文件化、预飞行压缩、Surrogate 清理
+- [[prompt-caching-optimization]] — 冻结快照保护 prefix cache，75% 成本节省
+- [[fuzzy-matching-engine]] — 8 策略链模糊匹配
+- [[smart-model-routing]] — 智能模型路由，10级上下文长度解析链
+- [[large-tool-result-handling]] — 三层溢出防护
 
 ### 安全与可靠性
-- [[security-defense-system]] — 5 层防御体系，100+ 威胁模式检测；v0.13.0 八个 P0 修复
-- [[interrupt-and-fault-tolerance]] — 中断传播、凭证池轮换、Fallback 模型链
+- [[security-defense-system]] — 多层防御 + Redaction 默认 ON + Discord guild-scoped + post-write delta lint
+- [[interrupt-and-fault-tolerance]] — 中断传播、Fallback 模型链
 - [[credential-pool-and-isolation]] — 多密钥自动轮换、Profile 隔离
-- [[multi-agent-architecture]] — 5 种多 Agent 机制（delegate / MoA / review / send_message / Kanban）
-- [[kanban-multi-agent]] — 持久化多 Agent 协作板（v0.13.0），SQLite + heartbeat + reclaim
-- [[goal-and-ralph-loop]] — `/goal` 命令的 Ralph 循环目标锁定（v0.13.0）
+- [[checkpoints-architecture]] — **新** Checkpoint v2 共享 shadow git store
+
+### 多 Agent
+- [[multi-agent-architecture]] — **5 类机制**：Delegate / MoA / Background Review / Goal Loop / Kanban
+- [[goal-loop-architecture]] — **新** `/goal` 持久目标 + Ralph 判官循环
+- [[kanban-architecture]] — **新** 持久多 profile 协作看板（v0.13.0 旗舰）
 
 ### 平台与扩展
-- [[cli-architecture]] — CLI 架构、斜杠命令补全、Skin 引擎；`/goal`/`/kanban`/`/curator`/`hermes -z`
-- [[configuration-and-profiles]] — 分层配置、Profile 隔离、自动迁移
-- [[hook-system-architecture]] — Hook 系统（Gateway Hooks + Plugin System），事件驱动+工具注册+上下文注入
-- [[mcp-and-plugins]] — MCP 集成、插件钩子系统、OAuth 支持
-- [[terminal-backends]] — 7 种终端后端（含 Vercel Sandbox）、环境抽象、持久化 Shell
-- [[cron-scheduling]] — 内置调度器、自然语言调度、多平台投递（含 v0.13.0 `no_agent` 模式）
-- [[trajectory-and-data-generation]] — 轨迹保存、批量运行器、RL 训练环境
-- [[prompt-builder-architecture]] — 系统提示模块化组装，注入防护+技能缓存+模型特定指导
-- [[context-compressor-architecture]] — 自动上下文压缩，结构化摘要+迭代更新+工具对完整性保障
-- [[model-tools-dispatch]] — 工具编排与调度，异步桥接+动态 schema 调整+参数类型强制
-- [[gateway-session-management]] — 网关会话管理，多平台会话隔离+PII 脱敏+重置策略（v0.13.0 跨重启 auto-resume）
-- [[messaging-gateway-architecture]] — 消息网关架构、20+ 平台、PlatformRegistry 插件化（IRC/Teams/LINE/Google Chat）
-- [[provider-transport-architecture]] — Transport ABC + 29 个 bundled model-provider 插件
-- [[skin-engine]] — YAML 驱动的皮肤/主题系统
-- [[worktree-isolation]] — Git Worktree 并行隔离模式（Checkpoints v2 单存储重写）
-
-## Changelogs
-
-- [[2026-04-09-update]] / [[2026-04-10-update]] / [[2026-04-17-update]] / [[2026-04-18-update]] / [[2026-04-29-update]] — v0.9 → v0.11 演进
-- [[2026-04-30-update]] — **v0.12.0 "The Curator Release"**（1,096 commits）
-- [[2026-05-07-update]] — **v0.13.0 "The Tenacity Release"**（864 commits）—— Kanban / `/goal` / video_analyze / 8 P0 安全
-- [[2026-05-11-update]] — post-v0.13.0（441 commits）—— 跨 session 1h prefix cache / HERMES_SESSION_ID ContextVar / Kanban 安全修复
+- [[cli-architecture]] — CLI 架构、斜杠命令（含 /goal、/kanban、/queue、/steer）
+- [[configuration-and-profiles]] — 分层配置、Profile 隔离
+- [[hook-system-architecture]] — Hook 系统（含 `transform_llm_output` v0.13.0 新 hook）
+- [[mcp-and-plugins]] — MCP（SSE OAuth、MEDIA tag 升级）+ 插件系统
+- [[terminal-backends]] — 7 种终端后端
+- [[cron-scheduling]] — 内置调度器（含 `no_agent` 模式）
+- [[trajectory-and-data-generation]] — 轨迹保存、批量运行器
+- [[prompt-builder-architecture]] — 系统提示模块化组装
+- [[context-compressor-architecture]] — 自动上下文压缩 v3
+- [[model-tools-dispatch]] — 工具编排与调度
+- [[gateway-session-management]] — 网关会话管理（含 resume_pending 重启接续）
+- [[messaging-gateway-architecture]] — 20+ 消息平台（Google Chat 为第 20）+ 平台适配器插件化
+- [[skin-engine]] — YAML 驱动的皮肤/主题
+- [[worktree-isolation]] — Git Worktree 并行隔离
+- [[i18n-localization]] — **新** 静态消息本地化（16 个 locale）
+- [[voice-mode-architecture]] — 语音模式（含 xAI Custom Voices + Piper + TTS provider registry）
+- [[context-references]] — @file/@folder/@diff/@url/@git 引用系统
+- [[code-execution-sandbox]] — execute_code 沙箱
 
 ### 更新日志
-- [[changelog/2026-04-09-update]] — 59 commits, 错误分类 + 三层溢出 + BlueBubbles
-- [[changelog/2026-04-10-update]] — 293 commits, Context Engine 插件化 + watch_patterns + WeChat/xAI/Discord/Slack 增强
-- [[changelog/2026-04-17-update]] — 641 commits (v0.10.0)，压缩 v3 + 新 Provider + Tool Gateway + 钉钉 QR + Dashboard 插件
-- [[changelog/2026-04-18-update]] — 410 commits post-v0.10.0，Transport ABC + Shell Hooks + Step Plan + xAI STT + KittenTTS
-- [[changelog/2026-04-29-update]] — 182 commits (v2026.4.23)，平台适配器插件化 + Curator + MiniMax OAuth + Vercel Sandbox + 元宝
-- [[changelog/2026-05-09-update]] — 1100 commits (v0.13.0 + post-release)，**Provider 插件 + Kanban 持久化看板 + `/goal` Ralph + Checkpoints v2 + Google Chat/Teams/MS Graph + SearXNG/Brave/DDGS + Lightpanda + cron no_agent + 5 新 hook + 8 P0 安全闭环 + i18n 7 语言 + Windows beta**
-
-## Changelog
-- [[2026-04-09-update]] — 59 commits（结构化错误分类、统一执行层）
-- [[2026-04-10-update]] — 293 commits（Context Engine 插件化、WeChat、xAI）
-- [[2026-04-17-update]] — 641 commits / v0.10.0（压缩 v3、Bedrock、Tool Gateway、Dashboard 插件）
-- [[2026-04-18-update]] — 410 commits post-v0.10.0（Transport ABC、Shell Hooks、Delegate Orchestrator）
-- [[2026-04-29-update]] — 182 commits / v2026.4.23（PlatformRegistry + IRC、Curator、Vercel Sandbox、元宝）
-- [[2026-05-06-update]] — 211 commits（含 v0.12.0/v2026.4.30；Provider 插件化、Kanban、Checkpoints v2、SearXNG、Lightpanda、i18n、Hindsight）
-
-## Changelogs
-
-- [[2026-04-09-update]] — 59 commits，结构化错误分类、统一执行层、三层溢出防护、BlueBubbles
-- [[2026-04-10-update]] — 293 commits，Context Engine 插件化、watch_patterns、WeChat、xAI、Discord/Slack 增强
-- [[2026-04-17-update]] — 641 commits (v0.10.0)，压缩 v3、Bedrock/Gemini/Ollama、Tool Gateway、插件命名空间技能、钉钉 QR、Dashboard
-- [[2026-04-18-update]] — 410 commits post-v0.10.0，Transport ABC 重构、Shell Hooks、Delegate Orchestrator、Step Plan/AI Gateway/xAI STT/KittenTTS、WeCom QR
-- [[2026-04-29-update]] — 182 commits (v2026.4.23)，平台适配器插件化（PlatformRegistry + IRC 参考实现）、Curator 后台技能维护、MiniMax OAuth、Vercel Sandbox、腾讯元宝
-- [[2026-05-04-update]] — **353 commits (v0.12.0 / v2026.4.30)**，Persistent Goals (Ralph Loop)、Kanban 多 Profile 看板、Tool Loop Guardrails、Microsoft Teams 插件、Piper TTS、OpenRouter 响应缓存、video_analyze
+- [[2026-04-09-update]] — 59 commits
+- [[2026-04-10-update]] — 293 commits
+- [[2026-04-17-update]] — 641 commits (v0.10.0)
+- [[2026-04-18-update]] — 410 commits post-v0.10.0
+- [[2026-04-29-update]] — 182 commits (v2026.4.23)
+- [[2026-05-14-update]] — **新** 1,533 commits（v0.12.0 + v0.13.0 + post-release）

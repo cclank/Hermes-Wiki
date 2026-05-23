@@ -1,10 +1,10 @@
 ---
 title: Web Tools 搜索/提取架构
 created: 2026-04-08
-updated: 2026-05-10
+updated: 2026-05-14
 type: concept
-tags: [tool, toolset, architecture, component, searxng, brave-free, ddgs]
-sources: [tools/web_tools.py, tools/web_providers/searxng.py]
+tags: [tool, toolset, architecture, component, plugin]
+sources: [tools/web_tools.py, agent/web_search_provider.py, agent/web_search_registry.py, plugins/web/]
 ---
 
 > **v2026.5.7 增量**：
@@ -20,7 +20,9 @@ sources: [tools/web_tools.py, tools/web_providers/searxng.py]
 
 ## 概述
 
-Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 搜索/提取/爬取**能力。v0.13.0 后支持 **7 种后端**，所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口，且**可以按 capability 混搭**：搜索走 SearXNG，提取走 Firecrawl。
+Web Tools 提供**多后端 Web 搜索/提取/爬取**能力。所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口。
+
+**v0.13.0 重大重构**：所有 web provider 从硬编码迁出成 *plugin*。`agent/web_search_provider.py` 提供 `WebSearchProvider` ABC（镜像 `image_gen` 模板，`2cea98e14`），`agent/web_search_registry.py` 是 registry（`007a630b1`）。tools 现在按 *capability*（search / extract / crawl）独立选 provider，不再强制单一后端。`tools/web_providers/` 旧目录已删（`39b4ebfce`）。
 
 核心理念：**内容获取优先于浏览器自动化**——简单信息检索使用 web_search/web_extract（更快、更便宜），仅在需要交互时才使用 browser 工具。
 
@@ -28,37 +30,36 @@ Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 
 
 ## 架构原理
 
-### 七大后端
+### Provider Plugin 目录（v0.13.0）
 
-| 后端 | Search | Extract | Crawl | 认证 / 引入 |
-|---|---|---|---|---|
-| **Firecrawl** | ✅ | ✅ | ✅ | API Key 或 Nous Gateway |
-| **Exa** | ✅ | ✅ | ❌ | EXA_API_KEY |
-| **Parallel** | ✅ | ✅ | ❌ | PARALLEL_API_KEY |
-| **Tavily** | ✅ | ✅ | ✅ | TAVILY_API_KEY |
-| **SearXNG**（v0.13.0） | ✅ | — | — | self-hosted；`SEARXNG_URL` env |
-| **Brave Search 免费层**（v0.13.0） | ✅ | — | — | 免费 |
-| **DDGS / DuckDuckGo**（v0.13.0） | ✅ | — | — | 无 |
+`plugins/web/` 下 7 个独立 plugin：
 
-后端探测顺序（`tools/web_tools.py:129-142`）：付费 backend (`parallel/firecrawl/tavily/exa`) 优先，再到免费的 `searxng/brave-free/ddgs`。
+| Plugin | Search | Extract | Crawl | 来源 commit | 备注 |
+|---|---|---|---|---|---|
+| **brave_free** | ✅ | ❌ | ❌ | `d403cf018` | 首批迁移，无 API key 免费 |
+| **ddgs** | ✅ | ❌ | ❌ | `5c7d098be` | DuckDuckGo Search |
+| **searxng** | ✅ | ❌ | ❌ | `0d085d945` | 自托管 SearXNG 实例（v0.13.0 新增） |
+| **parallel** | ❌ | ✅ async | ❌ | `481664610` | 首个 async-extract plugin |
+| **exa** | ✅ | ✅ | ❌ | `ec8449e9c` | 首个 multi-capability migration |
+| **tavily** | ✅ | ✅ | ✅ | `31fcde876` | 首个 three-capability plugin |
+| **firecrawl** | ✅ | ✅ async | ✅ | `143184e94` + `21e3a863b` | 最大迁移，dual auth（直连 + Nous Gateway） |
 
-### 按 Capability 选择后端（v0.13.0）
+`hermes tools` → Web 现在可以**按 capability 独立选 provider**（例：search 用 brave_free，extract 用 firecrawl，crawl 用 tavily），不再强制单一后端。
 
-`tools/web_tools.py:142` 显式注释：
+### 插件 API
 
-> ... e.g. SearXNG for search + Firecrawl for extract
+`hermes_cli/plugins.py:574 register_web_search_provider()`（`f29f02a73`）—— 第三方可以 ship 自己的 plugin。Image gen / video gen 走完全相同的模式：
 
-——`web_search` 和 `web_extract` 可以**分别**配不同后端。SearXNG 不做 extract，配置时 search 走 searxng、extract 走 firecrawl 是 v0.13.0 之后的标准玩法。
-
-```yaml
-web:
-  search:
-    backend: searxng
-  extract:
-    backend: firecrawl
+```python
+def register(ctx):
+    ctx.register_web_search_provider(MyProvider())
 ```
 
-### 后端选择链（`tools/web_tools.py:140+`）
+### 后端选择链（v0.13.0 后）
+
+picker / 配置在 plugin registry 上做 `is_available()` 过滤（`0a7cbd334`，"filter resolution by `is_available()` in web + image_gen registries"），未配置 / 未安装的 provider 自动跳过。`_LEGACY_PREFERENCE` 仍保留对老 7-provider 默认顺序的兼容（`657e6d87c`）。
+
+旧版选择链（保留以备参考）：
 
 ```python
 def _get_backend():

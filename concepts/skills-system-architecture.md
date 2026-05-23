@@ -294,32 +294,27 @@ active ──不用 N 天──> stale ──继续不用──> archived
 ### CLI 子命令（hermes_cli/curator.py 的 `_cmd_*` 函数）
 
 ```bash
-hermes curator status        # 当前状态、待处理 skill（v0.12.0+ 显示 most-used / least-used，d60a991）
-hermes curator run           # 立即跑一轮
-hermes curator pause/resume  # 暂停/恢复
-hermes curator pin <skill>   # 钉住某个 skill（v0.12.0 起仅保护删除）
+hermes curator status                # 当前状态、待处理 skill；按使用量排序（v0.12.0+）
+hermes curator run                   # 立即跑一轮——v0.12.0+ 同步执行直接看结果
+hermes curator pause/resume          # 暂停/恢复
+hermes curator pin <skill>           # 钉住某个 skill（跳过自动转换）
 hermes curator unpin <skill>
-hermes curator restore <skill>  # 从归档恢复
-# v0.12.0+ 新增子命令（436672d）：
-hermes curator archive <skill>  # 手动归档
-hermes curator prune            # 把已 archived 的 skill 物理移除（保留 backup）
-hermes curator backup           # 显式打 backup 快照
-hermes curator rollback         # 还原最近 backup
-hermes curator list-archived    # 看 archived 列表
+hermes curator restore <skill>       # 从归档恢复
+hermes curator archive <skill>       # 手动归档（v0.13.0+，#20200）
+hermes curator prune                 # 手动批量剪枝（v0.13.0+，#21216）
+hermes curator list-archived         # 列出已归档的 skill（v0.13.0+，hermes_cli/curator.py:464）
+hermes curator backup / rollback     # 快照 / 回滚（hermes_cli/curator.py:372/391）
 ```
 
 `/curator` 斜杠命令暴露相同子命令。
 
-### v0.12.0 增强（2026-04-30 ~ 2026-05-13）
+### v0.12 → v0.13 增强
 
-- **`archive` / `prune` 子命令**（436672d）：分离 "下架"（archive）和 "物理清理"（prune）两个步骤——archive 是可逆的状态变更，prune 真正删除文件（带 backup 兜底）。
-- **`backup` / `rollback`**：每次结构性变更打快照；`rollback` 一键还原最近一次 backup，配合 `prune` 的"先 backup 再删"形成完整恢复链。
-- **状态机分裂 archived → consolidated / pruned**（8b290a5）：模型 + 启发式联合分类，区分"被合并到别的 skill"（consolidated）和"无价值清除"（pruned），统计更准。
-- **`bump_use()` 接入更多调用点**（4178ab3 + ae8930a）：skill invocation 和 preload paths 都走 `bump_use()`，连 `skill_view` 工具调用也算一次"使用"——闲置判定更准。
-- **嵌套 archive 子目录扫描**（564a649）：`restore_skill` 能进到嵌套子目录里找 archive。
-- **最近使用 / 最少使用展示**（d60a991）：`hermes curator status` 输出 most-used 和 least-used 列表。
-- **`hermes curator pin` 提示**（7312f7e）：rename block 时建议用户 `hermes curator pin` 防止后续被自动整合。
-- **defaults seed-on-update + logs dir + 延迟 fire 导入**（e8e5985）：curator 配置首次 update 时填入默认值，自动建 `logs/curator` 目录，`fire` 库改成 lazy import 避免影响启动时长。
+- **per-run 报告**：`logs/curator/run.json` + `REPORT.md`（`#17307`）
+- **consolidated vs pruned 分类**：归档时区分整合 vs 剪枝（`#17941`）
+- **`hermes curator status` 排序**：按使用量列出 most-used / least-used skill（`#18033`、`hermes_cli/curator.py:86 by_state`）
+- **`auxiliary.curator` 配置统一**：curator 用哪个辅助模型在 `hermes model` 里选（`#17868`），不再需要 hand-edit yaml
+- **fixes**：`bump_use()` 接到 skill_invoke + preload + `skill_view`（`#17932`，原 PR #17782）；`restore_skill` 扫嵌套归档子目录（`#17951`）；status 使用真实活动时间戳而非状态（`#17953`）；seed defaults / 创建 `logs/curator/` 目录 / 延后 fire import（`#17927`）
 
 ## /reload-skills 和 /reload-mcp（v2026.4.23+）
 

@@ -1,7 +1,7 @@
 ---
 title: 语音模式架构
 created: 2026-04-10
-updated: 2026-05-13
+updated: 2026-05-14
 type: concept
 tags: [voice, stt, tts, architecture, piper]
 sources: [tools/voice_mode.py, tools/tts_tool.py, tools/transcription_tools.py, cli.py]
@@ -96,19 +96,14 @@ TTS Provider 选择和语音设置通过 `tools/tts_tool.py` 管理，支持 Ele
 | **Google Gemini TTS** | v0.10.0 新增，通过 Gemini API |
 | **xAI TTS** | v0.10.0 随 xAI Responses API 升级引入 |
 | **KittenTTS（本地）** | v2026.4.18+ 引入，本地 CPU 运行，无需 GPU 和 API key，默认模型 `KittenML/kitten-tts-nano-0.8-int8`（25MB），默认声音 `Jasper`，其他声音由 KittenTTS 包提供（25-80MB 模型范围） |
-| **Piper（本地）** | v0.12.0 引入，OHF-Voice/piper1-gpl 神经 VITS，44 种语言，`pip install piper-tts` 即可，跨平台无 GPU 依赖。源码：`tools/tts_tool.py:113 _import_piper()` |
-| **xAI Custom Voices**（声音克隆） | v0.13.0，`tools/tts_tool.py:874 _generate_xai_tts`：`voice_id` 可指向自训练 voice，默认 `eve`/`en`/sample_rate 24000/bitrate 128000，走 `https://api.x.ai/v1`，需 `XAI_API_KEY` |
+| **Piper（本地）** | v0.12.0 新增（`#17885`），作为 native local TTS provider 通过 `tts.providers.<name>` registry 注册，closes #8508 |
+| **xAI Custom Voices** | v0.13.0 新增（`#18776`，@alt-glitch），**voice cloning** 支持 |
 
 这些 provider 也可通过 Nous Tool Gateway 统一访问（无需自备 API key）。
 
-### v0.12.0+ TTS 更新
+### TTS Provider Registry（v0.12.0+）
 
-| 变更 | 说明 |
-|------|------|
-| **Piper 原生 provider** | `pip install piper-tts` 启用，OHF-Voice/piper1-gpl 神经 VITS，44 语种。模块级 `_piper_voice_cache` 复用 voice 实例。源码 `tools/tts_tool.py:1342-1500`。closes #8508（8d302e3） |
-| **`tts.providers.<name>` 命令型 provider 注册表** | 用户可在 `~/.hermes/config.yaml` 声明 `type: command` 的命名 provider，Hermes 将文本写入 UTF-8 临时文件并执行配置好的 shell 命令（占位符替换 `{output_path}` / `{input_path}`）。已有 10 个内置 provider 名字被保留为 frozenset `BUILTIN_TTS_PROVIDERS`，命令型 provider 不能撞名。默认超时 120s，支持 `mp3/wav/ogg/flac`，默认 5000 字符限制。源码 `tools/tts_tool.py:309-470`（2facea7） |
-| **gateway 音频路由集中化 + FLAC 支持** | `gateway/platforms/base.py:_AUDIO_EXTS` 加入 `.flac`，Telegram 对原生不支持的 `.wav`/`.flac` 自动 document fallback（aa7bf32） |
-| **MiniMax TTS endpoint 更新** | API 升级到 `v1/text_to_speech`（6875471） |
+`#17843` 把 TTS provider 改成 *pluggable* —— `tts.providers.<name>` 注册表，第三方可以新增 provider 而不改 hermes 核心。Piper 是第一个 native local provider 走这套机制。
 
 ### STT Provider 扩展（v2026.4.18+）
 

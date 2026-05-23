@@ -1,27 +1,27 @@
 ---
 title: Hermes 多 Agent 架构
 created: 2026-04-08
-updated: 2026-05-12
+updated: 2026-05-14
 type: concept
 tags: [architecture, module, agent, delegation, concurrency, kanban]
-sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, tools/kanban_tools.py, hermes_cli/kanban.py, hermes_cli/kanban_db.py, hermes_cli/kanban_diagnostics.py, hermes_cli/goals.py, run_agent.py]
+sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, tools/kanban_tools.py, hermes_cli/kanban.py, run_agent.py]
 ---
 
 # Hermes 多 Agent 架构
 
 ## 概述
 
-Hermes 的多 Agent 能力分为**五种运行时机制**，覆盖从单进程协作到跨 profile 持久看板的全部场景：
+Hermes 的多 Agent 能力分为**五种运行时机制**，触发面 / lifetime / 持久性各不相同：
 
-| 机制                    | 触发方式                  | 用途                   |
-| --------------------- | --------------------- | -------------------- |
-| **Delegate Task**     | LLM tool call（模型自主决定） | 并行子任务，最多 3 路         |
-| **Mixture of Agents** | LLM tool call（模型自主决定） | 多模型协同推理              |
-| **Background Review / Curator** | 系统计数器 / Cron tick    | 后台提炼经验 → 创建/改进 skill |
-| **Kanban（v0.13+）**   | `hermes kanban` CLI / dashboard / `/kanban` 斜杠 | 跨 profile 的持久任务板，多 worker 自动认领、心跳、僵尸检测、重试 |
-| **`/goal` Ralph loop（v0.13+）** | 用户 `/goal` 斜杠 | 跨 turn 的目标守护：每轮后由 judge 模型判断是否完成，未完成则自动继续 |
+| 机制                    | 触发方式                  | 用途                   | 持久性 |
+| --------------------- | --------------------- | -------------------- | --- |
+| **Delegate Task**     | LLM tool call（模型自主决定） | 并行子任务，最多 3 路         | 单 turn |
+| **Mixture of Agents** | LLM tool call（模型自主决定） | 多模型协同推理              | 单 turn |
+| **Background Review** | 系统计数器自动触发             | 后台提炼经验 → 创建/改进 skill | 单 turn fork |
+| **Goal Loop / Ralph** | 用户 `/goal` + judge 循环 | 跨 turn 自动续转直到达成      | 单 session（`state_meta` 持久化） |
+| **Kanban 看板**         | dispatcher + worker 协议 | 跨 profile 共享任务队列，可靠性栈 | **跨 session、跨 profile、SQLite 持久** |
 
-前 3 种沿用之前的「单进程 / 同 session」语义；后 2 种把多 Agent 协作扩展到**跨 turn**（goal）和**跨 profile**（kanban）。
+详见各专题：[[goal-loop-architecture]] · [[kanban-architecture]]。
 
 ## 触发机制
 
@@ -468,11 +468,42 @@ def interrupt(self, message):
 | Mixture of Agents | `asyncio.gather`（异步协程收集） | 单线程异步 | 不落盘，内存 list |
 | Background Review | 守护线程 fire-and-forget | 单独守护线程 | 直接写 skill/memory 文件 |
 
-**一句话：全部在单进程内完成，没有任何进程间通信。**
+**一句话：上述三种全部在单进程内完成，没有进程间通信。** Goal Loop 同样在单进程内但跨多个 turn；Kanban 则是**跨进程 / 跨 profile**，靠 SQLite + WAL 锁 + CAS 协调，详见 [[kanban-architecture]]。
 
 ---
 
-## 五、迭代预算系统
+## 五、Goal Loop —— Ralph 循环
+
+`/goal <text>` 进入 *持续目标* 模式：每个 turn 结束后辅助模型判官评判是否完成，未完成则注入续转 prompt（普通 user message），直到 done / budget / pause / cleared / 新用户消息抢占。
+
+要点（**不**同于 Delegate / MoA / Background Review）：
+
+- **不 fork**：全程在主 session 里跑，prompt cache 持续命中
+- **不改 system prompt / toolset**：续转 prompt 是 user message 追加
+- **跨 turn 持久**：`state_meta` 表 `goal:<session_id>`，`/resume` 接续
+- **fail-OPEN**：judge 出错 = continue，turn budget (默认 20) 是最后保险
+
+详见 [[goal-loop-architecture]]。
+
+---
+
+## 六、Kanban —— 持久协作看板
+
+v0.13.0 引入的 **durable multi-profile board**（`hermes_cli/kanban*.py` + `tools/kanban_tools.py`，~10.9k 行）。
+
+唯一**跨 session、跨 profile**的协作机制：
+
+- SQLite 存储 (`<root>/kanban.db`)
+- dispatcher 守护进程从 `ready` 队列 spawn worker 子进程（独立 hermes 进程）
+- worker 通过 9 个 `kanban_*` tool 把状态写回 DB
+- 心跳 + reclaim + zombie detection + per-task `max_retries` + hallucination gate
+- dashboard / `/kanban` 斜杠 / `hermes kanban` CLI 三个面绕过 agent 直接操作
+
+详见 [[kanban-architecture]]。
+
+---
+
+## 七、迭代预算系统
 
 所有多 Agent 机制共享的资源管理层。
 

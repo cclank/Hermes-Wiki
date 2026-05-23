@@ -1,10 +1,10 @@
 ---
 title: CLI 架构与终端交互设计
 created: 2026-04-07
-updated: 2026-05-10
+updated: 2026-05-14
 type: concept
-tags: [architecture, cli, terminal, ux, slash-commands, oneshot]
-sources: [cli.py, hermes_cli/main.py, hermes_cli/commands.py, hermes_cli/goals.py, hermes_cli/kanban.py, hermes_cli/curator.py, ui-tui/]
+tags: [architecture, cli, terminal, ux]
+sources: [hermes_cli/commands.py, hermes_cli/goals.py, hermes_cli/kanban.py, hermes_cli/curator.py, cli.py]
 ---
 
 > **v2026.4.30 ~ v2026.5.7 增量**：
@@ -46,6 +46,38 @@ class HermesCLI:
             else:
                 self._handle_message(user_input)
 ```
+
+## 斜杠命令清单（v0.13.0）
+
+`hermes_cli/commands.py` 列举所有斜杠命令；CLI / 网关共享同一表面。重点新增：
+
+| 命令 | 类别 | 说明 |
+|------|------|------|
+| `/goal <text\|pause\|resume\|clear\|status>` | Session | 持久目标 + Ralph 循环；详见 [[goal-loop-architecture]] |
+| `/subgoal <text\|remove N\|clear>` | Session | 给活动 `/goal` 追加验收标准 |
+| `/queue <prompt>` / `/q` | Session | 把 prompt 排到当前 turn 之后跑，不抢占 |
+| `/steer <prompt>` | Session | 注入 guidance 到正在跑的 turn，下一个 tool call 之后呈现 |
+| `/kanban <subcommand>` | Tools & Skills | 看板操作（15+ verb，详见 [[kanban-architecture]]） |
+| `/curator archive\|prune\|list-archived` | Tools & Skills | v0.13.0 子命令扩张 |
+| `/reload-skills` | Tools & Skills | rescan `~/.hermes/skills/`，不失效 prompt cache（v2026.4.23+） |
+| `/reload-mcp` | Tools & Skills | rescan MCP server；会失效 cache，所以加确认 |
+| `/reload` | Tools & Skills | 把 `.env` 热加载进当前 session |
+| `/mouse` | Configuration | 关掉 ConPTY 的 phantom mouse 注入（@kevin-ho） |
+| `/indicator <kaomoji\|emoji\|unicode\|ascii>` | Configuration | busy-indicator 风格 |
+
+`/queue` 与 `/steer` 在 ACP transport (`acp_adapter/server.py:1618` `_cmd_steer` / `1637` `_cmd_queue`) 同名生效，让 Zed / VS Code / JetBrains 接入后直接可用。
+
+## `hermes -z` 一次性模式（v0.12.0）
+
+非交互式 CLI：
+
+```bash
+hermes -z "find largest file in /var/log"
+hermes -z --model claude-sonnet-4.6 "summarise PR #123"
+HERMES_INFERENCE_MODEL=gpt-5.5 hermes -z "..."
+```
+
+`#15702-#15704`、`#15841`、`#16539`、`#16566`。`hermes update --check` 是 preflight；opt-in pre-update HERMES_HOME 备份。
 
 ## 输入系统
 
