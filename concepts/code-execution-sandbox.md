@@ -69,6 +69,26 @@ MAX_STDERR_BYTES = 10_000     # 错误输出上限 10KB
 
 execute_code 的脚本**在当前 terminal backend 中执行**。如果 backend 是 Docker，脚本就跑在 Docker 里，通过 file-based RPC 回调本机的工具。
 
+## Post-Write 校验链 —— Delta Lint → LSP 诊断 → File-Mutation Footer
+
+Hermes 在 v0.13.0 → v0.14.0 三步加固了"agent 写完文件就立即知道有没有翻车"：
+
+### 1. Delta Lint（v0.13.0+）
+
+`tools/file_tools.py:1045,1061,1171`：`write_file` + `patch` 写完后自动跑 Python / JSON / YAML / TOML 语法检查，**只回报新增的错误**给 agent（旧错误不打扰）。
+
+### 2. LSP 语义诊断（v0.14.0+）
+
+`agent/lsp/`（11 modules，~4400 行：`cli.py / protocol.py / client.py:930 / manager.py:644 / eventlog.py / install.py / servers.py:1040 / range_shift.py / workspace.py / reporter.py`）：
+
+写完后跑**真正的 language server**做**语义分析**——类型错误、未定义符号、缺 import、不可达代码——立即 surface 给 agent。LSP server 由 `agent/lsp/install.py` 按需安装，`agent/lsp/servers.py` 维护 Python/TypeScript/Go/Rust 等 server 清单。
+
+比单纯 syntax check 升级一大截。
+
+### 3. File-Mutation Verifier Footer（v0.14.0+）
+
+`tools/file_state.py` + `agent/file_safety.py`：每轮如果写/改了文件，**给 agent 一段 footer**总结磁盘上具体变了什么（路径、行数、delta）。Agent 立刻发现"我以为写进去了但实际没保存"的失败，不再自信地报 success。
+
 ## 相关页面
 
 - [[terminal-backends]] — 脚本在哪个后端执行
@@ -76,4 +96,7 @@ execute_code 的脚本**在当前 terminal backend 中执行**。如果 backend 
 
 ## 关键源码
 
-- `tools/code_execution_tool.py`（约 1783 行）— 沙箱完整实现
+- `tools/code_execution_tool.py`（1347 行）— 沙箱完整实现
+- `tools/file_tools.py:1045,1061,1171` — Delta lint（v0.13.0+）
+- `agent/lsp/` — LSP 语义诊断（v0.14.0+，11 modules）
+- `tools/file_state.py` + `agent/file_safety.py` — File-mutation footer（v0.14.0+）

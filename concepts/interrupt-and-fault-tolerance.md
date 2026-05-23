@@ -443,6 +443,26 @@ HERMES_STREAM_READ_TIMEOUT=60.0       # 流式读取超时（秒）
 HERMES_API_TIMEOUT=1800.0             # API 总超时（秒）
 ```
 
+## Checkpoints v2（v0.13.0+）
+
+`tools/checkpoint_manager.py`（**1638 行**）：state 持久化重写为 v2 layout（line 30, 213, 340-362）：
+
+- **真正的 pruning** —— `max_snapshots` 配置（`tools/checkpoint_manager.py:966`），旧快照被剔除而不只是标记
+- **Disk guardrails** —— "Checkpoint store exceeded...MB" 检测（`tools/checkpoint_manager.py:1097`），超阈值立即停止积累
+- **No more orphan shadow repos** —— 之前 v1 留下的"幽灵 shadow git repo"在 v2 被完整收回
+
+加上 v0.13.0 同步引入的 **gateway auto-resume**（`gateway/run.py:3543,3565` "Scheduled auto-resume"、`:5620 mark_resume_pending`），整体故障恢复链路更紧：
+
+```
+gateway 进程被 SIGKILL
+  ↓
+checkpoint v2 已保存当前 agent state
+  ↓
+gateway 重启
+  ↓
+auto-resume 检测到 pending session → 加载 checkpoint → 续跑
+```
+
 ## 相关页面
 
 - [[credential-pool-and-isolation]] — 凭证池与轮换机制
@@ -455,3 +475,5 @@ HERMES_API_TIMEOUT=1800.0             # API 总超时（秒）
 - `run_agent.py` — 中断机制、重试循环
 - `agent/credential_pool.py` — 凭证池
 - `tools/interrupt.py` — 中断工具
+- `tools/checkpoint_manager.py` — Checkpoints v2（state 持久化 + pruning + disk guardrails）
+- `gateway/run.py` — Auto-resume（lines 3543, 3565, 5620）

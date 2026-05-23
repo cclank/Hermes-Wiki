@@ -326,25 +326,29 @@ skills:
 | 质量 | 用户控制 | agent 自主判断，可能创建也可能跳过 |
 | LLM 消耗 | 主对话的一部分 | 额外消耗（后台 agent 最多 8 轮迭代） |
 
-## Curator — 后台技能维护（v2026.4.23+，v0.12.0 大幅扩展）
+## Curator — 后台技能维护（v2026.4.23 → v0.13.0）
 
-新增**辅助模型驱动的后台维护机制**（`agent/curator.py` + `hermes_cli/curator.py` + `tools/skill_usage.py`）。定期审查**agent 创建的**技能，跟踪使用情况，并把闲置 skill 经过状态机转换归档。
+**v0.12.0 Curator Release 把这一机制升格为真正的后台 agent**。源码扩到：`agent/curator.py`（**1781 行**）+ `hermes_cli/curator.py`（**598 行**）+ `tools/skill_usage.py`。定期审查**agent 创建的**技能，跟踪使用情况，按状态机转换归档；并能用模型 + 启发式把已归档技能区分为 **consolidated（被合并）** vs **pruned（无用淘汰）**（`agent/curator.py:498-611` `split_archive_decisions()`）。
+
+### 统一在 `auxiliary.curator` 配置下（v0.12.0+）
+
+`agent/curator.py:1606-1614`、`hermes_cli/config.py:3895`：从 `hermes model` 里挑 Curator 用的模型，从 dashboard 里管。和 `auxiliary.review` / `auxiliary.compression` 同级。
 
 ### 不变量（load-bearing invariants）
 
 - **永不触碰** bundled 或 hub-installed 技能（`.bundled_manifest` + `.hub/lock.json` 双过滤；v0.12.0 进一步加入 **frontmatter name 保护**——68e4664，避免重命名后绕过 hub 检查）
 - **永不自动删除** —— 只归档，可通过 `hermes curator restore <skill>` 恢复
-- **Pinned skills 跳过所有自动转换**：curator 永不对 pinned 技能做自动归档或 LLM review（`agent/curator.py`）。`skill_manage` 侧，`tools/skill_manager_tool.py:_pinned_guard()` 仅拦截 **delete**（见下文「pinned skill 的删除保护」）
+- **Pinned skills 跳过所有自动转换**：`tools/skill_manager_tool.py:137 _pinned_guard()` 在 `skill_manage` 写入路径上拦截
 - 使用 aux client，**永不污染主 session 的 prompt cache**
 - `.archive/` 在 skill index walk 和 skills_tool 中**全部跳过**（eda1d51 + a845177），不再误把归档当作活跃 skill 推给 agent
 
 ### 触发逻辑
 
 默认开启，**inactivity-triggered**（无 cron 守护进程）：CLI 启动 + gateway 启动时检查，满足两条件才跑：
-1. 上次运行 > `interval_hours`（默认 `24 * 7 = 168`，即 7 天，`agent/curator.py:39 DEFAULT_INTERVAL_HOURS`）
-2. agent 已闲置 > `min_idle_hours`（默认 `2`，`agent/curator.py:40`）
+1. 上次运行 > `interval_hours`（默认 `24 * 7 = 168`，即 7 天，`agent/curator.py:56` `DEFAULT_INTERVAL_HOURS = 24 * 7`）
+2. agent 已闲置 > `min_idle_hours`（默认 `2`）
 
-Gateway 模式下也 hook 进 cron-ticker 线程定期检查。
+Gateway 模式下也 hook 进 cron-ticker 线程定期检查。每轮跑完写 `logs/curator/run.json` + `REPORT.md`。
 
 ### v2026.4.30 自治化升级
 
@@ -364,32 +368,29 @@ active ──不用 N 天──> stale ──继续不用──> archived
 
 纯函数式（`agent/curator.py` 内的 state-machine 转换），无 LLM 调用。Forked AIAgent 仅在需要**整合重叠 + 修补漂移**时才介入。
 
-### sidecar telemetry
+### sidecar telemetry —— `bump_use()`
 
-`tools/skill_usage.py`（506 行）给每个 skill 维护 `.usage.json` sidecar 文件：
+`tools/skill_usage.py:416` `bump_use()` 给每个 skill 维护 `.usage.json` sidecar 文件：
 - 原子写入 + provenance filter
-- 记录使用次数（`bump_use()` 在 `skill_view`、preload、显式调用路径都触发）和最近使用时间
-- 是状态机的输入信号，也是 `hermes curator status` 排名依据
+- 记录使用次数和最近使用时间
+- **被接进多条调用路径**（v0.12.0 修复）：`cron/scheduler.py:1080`、`agent/skill_commands.py:457,504`、`agent/skill_bundles.py:300`、`tools/skills_tool.py:1554`。`hermes curator status` 因此能拿到真实活跃度数据排序。
 
-### CLI 子命令（hermes_cli/curator.py 的 `_cmd_*` 函数）
+### CLI（v0.12.0 起 12 个子命令）
 
-Curator CLI（`hermes_cli/curator.py`）共有 12 个子命令：
+`hermes_cli/curator.py:487-565` 完整子命令表：
 
 ```bash
-hermes curator status              # 当前状态、待处理 skill
-hermes curator run                 # 立即跑一轮（--sync / --background / --dry-run）
-hermes curator pause/resume        # 暂停/恢复
-hermes curator pin <skill>         # 钉住某个 skill（跳过自动转换）
+hermes curator status        # 排序的 skill 使用度（最多用 / 最少用）
+hermes curator run           # 立即同步跑一轮（v0.13.0 起同步，直接看结果）
+hermes curator pause/resume  # 暂停/恢复自治调度
+hermes curator pin <skill>   # 钉住（跳过自动转换 + 拒任何写）
 hermes curator unpin <skill>
-hermes curator restore <skill>     # 从归档恢复
-hermes curator list-archived       # 列出已归档的 skill
-hermes curator archive <skill>     # 手动归档某个 skill（移入 .archive/）
-hermes curator prune               # 批量归档闲置 >= N 天的 agent skill
-                                   #   --days（默认 90）、-y/--yes、--dry-run
-hermes curator backup              # 手动 tar.gz 快照 ~/.hermes/skills/
-                                   #   --reason 写入 manifest.json
-hermes curator rollback            # 从 curator 快照恢复 ~/.hermes/skills/
-                                   #   --list、--id、-y
+hermes curator restore <skill>  # 从归档恢复（v0.12.0 起扫描嵌套 archive 子目录）
+hermes curator archive <skill>  # 手动归档（v0.13.0+）
+hermes curator prune <skill>    # 手动剔除（v0.13.0+）
+hermes curator list-archived    # 列出已归档（v0.13.0+，`_cmd_list_archived` line 464）
+hermes curator backup            # 全库备份
+hermes curator rollback          # 备份回滚
 ```
 
 `/curator` 斜杠命令暴露相同子命令。`status` 计算「最近不活跃」（按 `last_activity_at`）、「最活跃 / 最不活跃」（按 `activity_count` = use+view+patch）各 top-5。

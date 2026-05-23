@@ -123,56 +123,32 @@
   - 核心内容: Gateway Hooks 事件驱动(8种事件+通配符)，Plugin System 三级来源(用户/项目/pip)，PluginContext API(工具注册/消息注入/CLI命令/钩子)，缓存友好上下文注入
 - index.md 更新为 37 页
 
-## [2026-05-20] ingest+update | 同步 v0.12.0/v0.13.0/v0.14.0 三大版本（~2480 commits）
-
-Wiki 之前停在 2026-04-29，对应 v0.11.0 (v2026.4.23)。本期同步到 hermes-agent HEAD = `31a010010 feat(state.db): persist platform_message_id; restore yuanbao exact-id recall` (2026-05-20)，跨过三个发布：
-
-- v0.12.0 (v2026.4.30) — Curator Release，1096 commits
-- v0.13.0 (v2026.5.7)  — Tenacity Release（Kanban / `/goal` / 安全潮 8 P0），864 commits
-- v0.14.0 (v2026.5.16) — Foundation Release（PyPI / 减肥 / 冷启动 −19s / Grok 1M），808 commits
-
-**新增 6 个概念页**（源码全部 grep 确认）：
-
-- concepts/multi-agent-kanban.md
-  - 源码: hermes_cli/kanban*.py (~11200 行) + tools/kanban_tools.py (1297 行)
-  - 核心内容: SQLite 板 6 张表 / 9 个 worker tool (HERMES_KANBAN_TASK + orchestrator 双门控) / 自动分解 / Swarm 拓扑 / 1058 行诊断规则引擎
-- concepts/goal-loop-and-steering.md
-  - 源码: hermes_cli/goals.py (762 行)
-  - 核心内容: Ralph 循环 / continuation = 普通 user message / judge fail-OPEN / 用户消息抢占 / `/steer` next-turn note / `/queue` FIFO / `/handoff` 现场迁移
-- concepts/provider-plugin-system.md
-  - 源码: providers/base.py:39 ProviderProfile / providers/__init__.py / plugins/model-providers/ × 29
-  - 核心内容: 纯数据 dataclass + 5 个钩子 / 用户 last-writer-wins / 与 Transport 的 api_mode 耦合点 / pkgutil 兼容
-- concepts/hermes-proxy.md
-  - 源码: hermes_cli/proxy/{server.py:308, cli.py:142, adapters/{base,nous_portal,xai}.py:436}
-  - 核心内容: 凭证-attach 转发器 / 仅替换 Authorization / 路径白名单 / 每请求 resolve() OAuth refresh / SSE 原样转发
-- concepts/lsp-integration.md
-  - 源码: agent/lsp/* (11 文件) + tools/file_operations.py
-  - 核心内容: git-workspace 门控 / delta-only 诊断 / range_shift / per-workspace daemon / 失败回退原 in-process 语法检查
-- concepts/i18n-and-locales.md
-  - 源码: agent/i18n.py + locales/*.yaml (16 个)
-  - 核心内容: 薄切片设计 / fallback 链 / 不翻译 agent 输出 / 7 个生产语言 + 9 个 best-effort
-
-**更新 12 个现有概念页**：
-- concepts/prompt-caching-optimization.md      — + 5m/1h 双档 TTL + 跨 session 1h cache
-- concepts/messaging-gateway-architecture.md   — + 22 平台清单 + 5 插件平台细节
-- concepts/multi-agent-architecture.md         — + 5 种机制（含 Kanban + goal loop）+ orchestrator/max_spawn_depth/file_state 协调
-- concepts/browser-tool-architecture.md        — + 180× CDP 持久 WS + Chromium 自动启动 + SSRF floor
-- concepts/cli-architecture.md                 — + Ink TUI 双前端 + 新子命令 + 新斜杠命令
-- concepts/cron-scheduling.md                  — + no_agent 模式 + webhook 直送 + 注入扫描
-- concepts/security-defense-system.md          — + 20 个 P0 (v0.13.0 + v0.14.0) + OSV 扫描 + [all] 减肥
-- concepts/session-search-and-sessiondb.md     — + state.db 唯一权威 + JSONL 退役 commit 列表
-- concepts/gateway-session-management.md       — + 自动续约 + X-Hermes-Session-Key
-- concepts/smart-model-routing.md              — + 与 ProviderProfile 协作 + 全部新增 provider 列表
-- concepts/voice-mode-architecture.md          — + TTS provider registry + Piper / xAI custom voices
-- concepts/provider-transport-architecture.md  — + 与 ProviderProfile 分工说明 + HEAD 期 transport 清单
-- concepts/skills-system-architecture.md       — + Background Review v2 + Curator 9 子命令 + 新 bundled skills
-- concepts/web-tools-architecture.md           — + 按 capability 拆 backend + SearXNG + xAI Web Search
-- concepts/terminal-backends.md                — + 自适应 poll −195ms + Windows 修复
-
-**README + log**：
-- README.md：版本 v2026.4.23 → v0.14.0 (v2026.5.16) + 21 post-release commits；页数 37 → 43；最后更新 2026-04-29 → 2026-05-20
-- changelog/2026-05-20-update.md：新增完整更新日志，13 个主题节，每节带源码 path:line 验证
-- log.md：本条目
-
-**验证方式**：源码 clone 到 `/home/user/hermes-agent`，HEAD `31a010010`，每条结论用 grep / 行号 / 头部 docstring 复核；release notes (`RELEASE_v0.11.0.md` ~ `RELEASE_v0.14.0.md`) 用作发布主题索引。
-- index.md 更新为 43 页
+## [2026-05-21] update | 同步 hermes-agent v0.12.0 / v0.13.0 / v0.14.0（~2700 commits 增量）
+- 对比基准: 上次跟踪 v2026.4.23（v0.11.0），最新 main 跑到 v2026.5.16（v0.14.0）+ 5 天补丁
+- 新建 3 个 changelog（按 release 切分，所有引用 file:line 经源码核对）:
+  - **changelog/2026-04-30-update.md** — v0.12.0 Curator Release（1096 commits）
+    - 验证: agent/curator.py(1781行), hermes_cli/curator.py(598行), tools/lazy_deps.py, plugins/platforms/teams, gateway/platforms/yuanbao*.py, agent/lmstudio_reasoning.py, tools/environments/vercel_sandbox.py(654行)
+  - **changelog/2026-05-07-update.md** — v0.13.0 Tenacity Release（864 commits, 13 P0/36 P1 closures）
+    - 验证: hermes_cli/kanban.py(2677行)+kanban_db.py(6286行), tools/kanban_tools.py:547-580, hermes_cli/goals.py(762行), agent/system_prompt.py:34,120 KANBAN_GUIDANCE, providers/base.py:39 ProviderProfile ABC, plugins/model-providers/, plugins/platforms/google_chat/, tools/checkpoint_manager.py:340-362 v2 layout, gateway/run.py:3543,3565 auto-resume, tools/cronjob_tools.py:322-372 no_agent mode, hermes_cli/config.py:4439,4482 redaction ON, gateway/platforms/discord.py:508 dm_role_auth_guild
+  - **changelog/2026-05-16-update.md** — v0.14.0 Foundation Release（808 commits, 12 P0/50 P1 closures）
+    - 验证: pyproject.toml:6 hermes-agent PyPI, tools/lazy_deps.py(613行), hermes_cli/auth.py:201 SuperGrok OAuth, agent/model_metadata.py:217 grok-4.3 1M, hermes_cli/proxy/, tools/x_search_tool.py, tools/microsoft_graph_*.py, plugins/platforms/{teams,line,simplex}, agent/lsp/(11 modules), tools/clarify_gateway.py, gateway/platforms/discord.py:3683 history backfill
+- 更新 14 个核心 concept 页面（按影响度排序）:
+  - messaging-gateway-architecture: 22 平台（+Teams/Google Chat/LINE/SimpleX）, allowlist 全平台, Discord guild-scoped, WhatsApp dm_policy, [[as_document]], clarify 按钮
+  - multi-agent-architecture: 新增第 4/5 机制 —— 持久化 Kanban + /goal Ralph loop；/handoff/steer/queue 控制面
+  - skills-system-architecture: Curator 升格为后台 agent（12 子命令）+ bump_use 多调用路径 + consolidated vs pruned 分类
+  - smart-model-routing: GMI/Azure Foundry/LM Studio/Tencent Tokenhub/MiniMax OAuth(v0.12) + xAI SuperGrok OAuth/grok-4.3 1M/NovitaAI/Codex app-server/Qwen Cloud rename(v0.14) + hermes proxy + Pareto min_coding_score
+  - prompt-caching-optimization: prompt_caching.cache_ttl 配置, 跨 session 1h Claude prefix cache
+  - security-defense-system: v0.13 8 P0 closures + v0.14 sudo brute-force/dangerous-command bypass/tool error sanitization
+  - web-tools-architecture: SearXNG, Brave free, DDGS, 按能力拆分 backend, x_search, video_analyze, vision_analyze pixel passthrough, video_generate 可插拔
+  - browser-tool-architecture: 180x CDP 持久 WebSocket, cloud metadata SSRF 硬拒
+  - voice-mode-architecture: TTS provider registry + Piper 本地, xAI Custom Voices voice cloning
+  - mcp-and-plugins: MCP SSE transport + OAuth forwarding, transform_llm_output hook, ctx.llm + tool_override
+  - cron-scheduling: no_agent watchdog 模式, prompt-injection 扫描
+  - interrupt-and-fault-tolerance: Checkpoints v2 (1638行, max_snapshots pruning, disk guardrails), gateway auto-resume
+  - cli-architecture: hermes -z / proxy / acp / curator{archive,prune,list-archived} / kanban 子命令，/goal /subgoal /handoff /steer /queue /reload /reload-skills /mouse 斜杠，PyPI + Windows beta + OSC8 + 16 locale i18n
+  - terminal-backends: lazy-install Modal/Daytona/Vercel SDK
+  - code-execution-sandbox: Delta lint(v0.13) → LSP 语义诊断(v0.14, agent/lsp/ 11 modules) → file-mutation footer 三层后写校验
+  - provider-transport-architecture: ProviderProfile ABC + plugins/model-providers/ 20+ provider 插件化
+  - auxiliary-client-architecture: auxiliary.curator 统一配置, auxiliary.prompt_caching.cache_ttl
+- README.md: badge 升级 v2026.5.16, changelog 索引 5→8, 跟踪版本 v2026.4.23→v2026.5.16, 最后更新日期 2026-04-29→2026-05-21
+- 验证基线: /tmp/hermes-agent clone at 2026-05-21（HEAD 0ce12a9），git tag v2026.5.16 / v2026.5.7 / v2026.4.30 三个 release notes 全文核对

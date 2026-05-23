@@ -419,6 +419,23 @@ Lightpanda 'click' failed (timeout); retried with Chrome.
 - `48bf0ea24` — config 读失败时 fall-through 到 autodetect（不再硬错）
 - `3170c8d44` — cloud provider 解析为 None 时**不 cache 这个 transient 状态**（避免错误 None 被永久缓存）
 
+## 持久 CDP 连接 —— 180x 加速 `browser_console`（v0.14.0+）
+
+`tools/browser_cdp_tool.py:301` `browser_cdp`：所有 `browser_console` 调用现在**共享一条到 Chrome 的 WebSocket 连接**，而不是每次起新 DevTools session。
+
+| 模式 | 之前 | 现在 |
+|------|------|------|
+| 单次 `browser_console` | ~2 秒（建立 DevTools session） | ~10 ms |
+| 加速倍数 | — | **~180×** |
+
+实际页面交互从"卡顿"变"丝滑"。
+
+## Cloud Metadata SSRF 底线（v0.13.0+）
+
+`tools/url_safety.py:37-45`、`tools/browser_tool.py:2325,2334,2399-2411`：浏览器工具**硬拒**访问 cloud metadata endpoint（`169.254.169.254`、`metadata.google.internal` 等），即使用户配置 `allow_private_urls=true` 也无法绕过。返回："Blocked: URL targets a cloud metadata endpoint"。
+
+闭合 v0.13.0 P0 之一。
+
 ## 与其他系统的关系
 
 - [[auxiliary-client-architecture]] — browser_vision 通过 call_llm(task="vision") 调用

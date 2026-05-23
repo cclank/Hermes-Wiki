@@ -182,6 +182,14 @@ terminal:
     image: "ubuntu:22.04"
 ```
 
+## Lazy-Install 终端后端（v0.14.0+）
+
+`tools/lazy_deps.py`（613 行）列出 `terminal.modal` / `terminal.daytona` / `terminal.vercel` 等 entry：**只在第一次使用时**才装 SDK。`pip install hermes-agent` 默认仅含 local + docker + singularity，云端后端按需 lazy install。`pyproject.toml:174-207` 的 `[all]` extras 也对应 drop 掉这些已 lazy 覆盖的依赖。
+
+效果：
+- **更轻安装** —— 不用 cloud terminal 的用户不下载 Modal/Daytona/Vercel SDK
+- **更少传递漏洞面** —— 攻击面随实际使用而扩展，不一次性全暴露
+
 ## 相关页面
 
 - [[credential-pool-and-isolation]] — 凭证池与环境隔离（终端后端环境）
@@ -191,5 +199,6 @@ terminal:
 ## 相关文件
 
 - `tools/terminal_tool.py` — 终端工具
-- `tools/environments/` — 7 种后端实现
+- `tools/environments/` — 7 种后端实现（含 vercel_sandbox.py）
+- `tools/lazy_deps.py` — Lazy 安装清单（v0.14.0+，line 77-173 含 terminal.modal/daytona/vercel）
 - `environments/tool_context.py` — 工具执行上下文

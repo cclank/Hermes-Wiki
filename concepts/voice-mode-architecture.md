@@ -103,6 +103,18 @@ v0.12.0 引入 `tts.providers.<name>` 插件 registry（PR #17843，关 #8508）
 
 这些 provider 也可通过 Nous Tool Gateway 统一访问（无需自备 API key）。
 
+### TTS Provider 注册表 + Piper（v0.12.0+）
+
+`tools/tts_tool.py:203,349,1475-1607` 引入**可插拔 TTS provider registry**（`tts.providers.<name>` 配置 namespace），并把 **Piper** 作为原生本地 TTS provider：
+
+- 完全本地，无网络、无 API key
+- 5000 字符输出 cap（`tools/tts_tool.py:203`）
+- 注册为 builtin（`tools/tts_tool.py:349`）
+
+### xAI Custom Voices —— 语音克隆（v0.13.0+）
+
+`tools/tts_tool.py:73,196,969-991`（`DEFAULT_XAI_VOICE_ID` 在 line 986）：xAI Custom Voices 加入 TTS provider，支持**克隆任意声音样本**生成。订阅用户可上传声音样本并复用。
+
 ### STT Provider 扩展（v2026.4.18+）
 
 | Provider | 说明 |

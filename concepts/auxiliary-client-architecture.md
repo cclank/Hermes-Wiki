@@ -285,7 +285,20 @@ auxiliary:
     model: google/gemini-3-flash-preview
     api_key: sk-xxx
     base_url: https://custom-endpoint.com/v1
+  curator:                # v0.12.0 起：Curator 统一归在 auxiliary 之下
+    provider: auto
+    model: claude-haiku-4-5
+  prompt_caching:         # v0.12.0+
+    cache_ttl: 5m         # 或 1h（cost-vs-warmth tradeoff）
 ```
+
+### Curator 统一归在 `auxiliary.curator`（v0.12.0+）
+
+`agent/curator.py:1606-1614`、`hermes_cli/config.py:3895`：Curator 不再是独立配置 namespace，而是和 compression/vision/web_extract 平级的 auxiliary 任务。从 `hermes model` 里挑 Curator 用的模型、从 dashboard 里管。详见 [[skills-system-architecture]]。
+
+### prompt_caching 也归在 auxiliary 之下（v0.12.0+）
+
+`auxiliary.prompt_caching.cache_ttl` 默认 `"5m"`，可选 `"1h"`（`agent/prompt_caching.py:51`、`agent/agent_init.py:475-485`）。详见 [[prompt-caching-optimization]]。
 
 ### 环境变量覆盖
 

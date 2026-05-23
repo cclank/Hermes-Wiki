@@ -270,13 +270,42 @@ export AUXILIARY_WEB_EXTRACT_MODEL=google/gemini-3-flash-preview
 content = await web_extract_tool(["https://example.com"], use_llm_processing=False)
 ```
 
-## 设计优越性
+## 新搜索后端与按能力拆分（v0.13.0+）
 
-- **可插拔后端**：新增 provider 只需在 `plugins/web/` 下放一个实现 `WebSearchProvider` ABC 的插件，无需改动 `web_tools.py`。
-- **按能力分路由**：search / extract / crawl 可分别配置不同后端。
-- **内容压缩**：自动 LLM 摘要 + 大内容分块合成，节省上下文窗口。
-- **安全防护**：SSRF + 密钥注入 + 网站策略 + 重定向重检。
-- **格式统一**：所有 provider 遵守同一响应契约，Agent 永远收到统一格式。
+`tools/web_tools.py:143,156,215,1198` 引入 **SearXNG** 作为 search-only 后端；并允许**按能力（search / extract / browse）分别选 backend**：
+
+```yaml
+# config.yaml
+web:
+  search: searxng        # 仅搜索走 SearXNG（开源、自托管 metasearch）
+  extract: firecrawl     # 提取仍走 Firecrawl
+  browse: exa            # 浏览/crawl 走 Exa
+```
+
+### 免费搜索后端（v0.14.0+）
+
+`tools/web_tools.py`：
+
+- **Brave Search**（free tier）—— 慷慨免费档
+- **DuckDuckGo（DDGS）**—— `_ddgs_package_importable()` 触发 lazy install，无需 API key
+
+加入到 Tavily / SearXNG / Exa 之列，按预算和速率限制需求自选。
+
+## `x_search` —— X / Twitter 一等公民（v0.14.0+）
+
+`tools/x_search_tool.py` + `tools/xai_http.py`：agent 直接搜 X 时间线、找 thread、定位 post。X OAuth 或 API key 鉴权二选一。脱离 skill / 自定义集成，原生工具直出。
+
+## `video_analyze` —— 原生视频理解（v0.13.0+）
+
+`tools/vision_tools.py:1168,1376,1401-1414` `video_analyze_tool`：Gemini 等多模态模型可用，agent 直接"看视频"理解内容。
+
+## `vision_analyze` —— 像素直传 vision 模型（v0.14.0+）
+
+`tools/vision_tools.py:633` `async def vision_analyze_tool`：当模型支持视觉（GPT-5、Claude、Gemini、Grok-vision）时**直接把原始像素**送进模型（`image_data_url` + `type: "image"`），不再先转文字描述再 round-trip，避免降级的"二手视觉"。
+
+## `video_generate` —— 统一可插拔（v0.14.0+）
+
+`tools/video_generation_tool.py`：一个工具、任意视频模型；通过 plugin 接口注册新视频 provider，不必 fork。Pixverse、Camofox 等 SDK 由 `tools/lazy_deps.py` 首次使用时安装。
 
 ## 与其他系统的关系
 

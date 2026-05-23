@@ -295,50 +295,29 @@ cron:
   output_dir: "~/.hermes/cron/output"
 ```
 
-## `no_agent` 模式（v0.13.0）
+## `no_agent` 模式 —— script-only watchdog（v0.13.0+）
 
-`cron/jobs.py:498`：
+`hermes_cli/cron.py:96,181` + `tools/cronjob_tools.py:322-372`：cron 任务可以**完全跳过 agent**，只跑脚本。
 
-```python
-def create_job(
-    ...,
-    no_agent: bool = False,
-    ...,
-):
-    """When True, skip the agent entirely — run ``script`` on schedule.
-    Empty stdout is silent, non-empty gets delivered verbatim."""
+```yaml
+cron:
+  jobs:
+    - name: heartbeat-check
+      schedule: "*/5 * * * *"
+      command: "curl -fsS https://api.example.com/health || echo 'DOWN'"
+      mode: no_agent           # 不调 LLM，纯脚本执行
+      deliver_to: telegram     # 仅非空 stdout 才投递
 ```
 
-**当 `no_agent=True`**，LLM 完全不介入：
+- **空 stdout 静默** —— 健康时不打扰
+- **非空 stdout 原样投递** —— 异常立即推送
+- **零 LLM 成本** —— 适合监控/轮询/状态检查
 
-| 字段 | 行为 |
-|---|---|
-| `script` | **必填**（否则报 "no_agent=True requires a script — with no agent and no script ..."）。脚本路径 / 命令 |
-| `prompt` | 忽略，只作为可选名字提示 |
-| `workdir` | subprocess cwd（不是 agent shell workdir） |
-| stdout 空 | 静默——不投递 |
-| stdout 非空 | 原文投递到目标平台（不经 LLM rewrite） |
+`tools/cronjob_tools.py:44,133-139` **同时**对 prompt-injection 进行**预扫描**（v0.13.0 安全 wave 之一）：cron 组装好的 prompt（含已加载 skill 内容）走 injection 正则，命中返回 `"Blocked: prompt contains injection"` 阻止执行。
 
-`cron/scheduler.py:1040`：
+### Watchers Skill（v0.14.0+）
 
-```python
-if job.get("no_agent"):
-    err = "no_agent=True but no script is set for this job"
-    # ... 短路逻辑：直接 spawn subprocess，不 fork agent
-```
-
-**用途**：
-- 运行 bash watchdog（disk usage、健康检查）
-- 把 `kubectl get pods` 这种命令的输出直接推到 chat
-- 跳过 LLM 的延迟和成本
-
-scheduler.py:711 注释：
-
-> Shell support lets `no_agent=True` jobs ship classic bash watchdogs ...
-
-## Cron Prompt-Injection 扫描覆盖装配后的技能（v0.13.0）
-
-v0.13.0 安全 wave：cron 启动时扫的是**装配好的 skill content**（assembled skill content），不是 prompt 字面量。避免动态加载的 skill 在 cron 触发时走私 injection。详见 [[security-defense-system]]。
+`optional-skills/watchers/` 利用 `no_agent` cron 模式轮询 RSS / HTTP JSON / GitHub，实现变更检测：检测到新条目时再投递给 agent 处理。
 
 ## 相关页面
 

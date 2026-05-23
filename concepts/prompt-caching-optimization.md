@@ -176,6 +176,29 @@ Hermes 不变量：**系统提示在一个会话内必须字节级静态（byte-
 
 v2026.5.x：`cache_ttl` 从 `config.yaml` 的 `prompt_caching.cache_ttl` 读取（`run_agent.py`），传给 `apply_anthropic_cache_control`；`_build_marker(ttl)` 抽出为辅助函数。Claude 在 Anthropic / OpenRouter / Nous Portal 上支持跨 session 的 1h prefix cache。OpenRouter 另有独立的响应缓存——`agent/auxiliary_client.py:build_or_headers()` 从 `openrouter.{response_cache, response_cache_ttl}`（默认开启，300s）发出 `X-OpenRouter-Cache*` 头。
 
+### `prompt_caching.cache_ttl` 配置（v0.12.0+）
+
+`agent/prompt_caching.py:51` 引入 `cache_ttl` 配置项，默认 `"5m"`：
+
+```yaml
+# config.yaml
+auxiliary:
+  prompt_caching:
+    cache_ttl: 1h         # opt-in 1h tier (Anthropic 多 2x 价格但 12x 寿命)
+```
+
+加载位置：`agent/agent_init.py:475-485` 从 `auxiliary.prompt_caching.cache_ttl` 取值；config stub 在 `hermes_cli/config.py:820-822`。Bursty session 保持 cache 暖时省钱。
+
+### 跨 Session 1h Claude Prefix Cache（v0.14.0+）
+
+`agent/model_metadata.py:1268` `_CODEX_OAUTH_CONTEXT_CACHE_TTL = 3600  # 1 hour`：
+
+用 Claude 走 Anthropic / OpenRouter / Nous Portal 时，**system prompt + skills + memory 的 prefix 在 session 之间复用 1 小时**：
+- `/new` session 第一次回复又快又便宜，因为上次 cache 仍然热
+- 后台 memory review 也吃 cache，不再每轮全价
+
+> 等同于 v0.10.0 引入的 "冻结快照"机制扩展到跨 session 维度：之前一个 session 内多轮 turn 共享前缀；现在多个 session 共享同一前缀。
+
 ## 成本效益
 
 `config.yaml` 中 `prompt_caching.cache_ttl: "1h"` 开启 1 小时 TTL，让 system prompt 的 cache prefix 可以**跨 session 命中**。覆盖 Anthropic 原生、OpenRouter、Nous Portal 三条 Claude 路径。

@@ -284,54 +284,50 @@ plugins:
 | 自定义工具 | ✅ 注册表 | ❌ | ❌ |
 | 插件 CLI | ✅ | N/A | N/A |
 
-## Bundled Plugins（v2026.4.30 现状）
+## MCP SSE Transport（v0.13.0+）
 
-`plugins/` 目录下打包了下列 plugin（按 `plugins.enabled` 显式开启）：
+`tools/mcp_tool.py:5,35,52,203-208`：MCP 服务器现在支持三种 transport：
 
-| 插件目录 | 类型 | 简介 |
-|------|------|------|
-| `plugins/spotify/` | standalone | **7 工具**：`spotify_playback / devices / queue / search / playlists / albums / library`，PKCE OAuth + 交互式 wizard（v2026.4.30+） |
-| `plugins/google_meet/` | standalone | 加入 Google Meet 会议、转录、语音回应；OpenAI Realtime + Node bot server（v2026.4.30+） |
-| `plugins/observability/langfuse/` | standalone | 全链路 tracing（salvage #16845，v2026.4.30+） |
-| `plugins/hermes-achievements/` | standalone | 扫描 session 历史，颁发 "成就"（v2026.4.30+） |
-| `plugins/disk-cleanup/` | standalone | 磁盘清理 reference 实现（opt-in by default，v0.11.0+） |
-| `plugins/kanban/` | standalone | Kanban 协作板（v0.11.0；多 profile 协作版本 #16081 已 revert） |
-| `plugins/memory/` | backend | Honcho memory provider 集成 |
-| `plugins/image_gen/` | backend | 可插拔 image_gen 后端（OpenAI、`openai-codex` gpt-image-2 over Codex OAuth） |
-| `plugins/context_engine/` | backend | Context engine 可插拔实现 |
-| `plugins/example-dashboard/` | standalone | Dashboard plugin 参考实现 |
-| `plugins/strike-freedom-cockpit/` | standalone | 第三方 dashboard 参考 |
-| `plugins/platforms/irc/` | platform | IRC 平台适配器（参考实现，v2026.4.23+） |
-| `plugins/platforms/teams/` | platform | Microsoft Teams 平台适配器（v2026.4.30+，第 19 个平台） |
-
-### Spotify 插件（v2026.4.30+）
-
-`plugins/spotify/__init__.py:46-52` 静态注册 7 个工具：
-
-```python
-_TOOLS = [
-    ("spotify_playback",  SPOTIFY_PLAYBACK_SCHEMA,  _handle_spotify_playback,  "🎵"),
-    ("spotify_devices",   SPOTIFY_DEVICES_SCHEMA,   _handle_spotify_devices,   "🔈"),
-    ("spotify_queue",     SPOTIFY_QUEUE_SCHEMA,     _handle_spotify_queue,     "📻"),
-    ("spotify_search",    SPOTIFY_SEARCH_SCHEMA,    _handle_spotify_search,    "🔎"),
-    ("spotify_playlists", SPOTIFY_PLAYLISTS_SCHEMA, _handle_spotify_playlists, "📚"),
-    ("spotify_albums",    SPOTIFY_ALBUMS_SCHEMA,    _handle_spotify_albums,    "💿"),
-    ("spotify_library",   SPOTIFY_LIBRARY_SCHEMA,   _handle_spotify_library,   "❤️"),
-]
+```yaml
+# config.yaml
+mcp:
+  servers:
+    my-sse-server:
+      url: http://localhost:8000/sse
+      transport: sse       # 替代默认 Streamable HTTP
 ```
 
-`hermes auth spotify` 完成 PKCE 后所有工具自动可用，`_check_spotify_available()` 在没有有效 token 时让工具优雅失败。
+- **SSE transport** 配 `transport: sse`
+- **OAuth forwarding** for SSE：MCP server 后端的 OAuth 流可直接转发
+- **Stale-pipe retries**：连接断开后自动重连
+- **Image result 改作 MEDIA tag**（之前被直接丢弃）
+- **Lifecycle keepalive** for 长 lived waits
 
-### Google Meet 插件（v2026.4.30+）
+## `transform_llm_output` 插件 lifecycle Hook（v0.13.0+）
 
-`plugins/google_meet/` 包含：
-- `meet_bot.py` —— 控制浏览器加入 Meet
-- `realtime/` —— OpenAI Realtime API 桥接（语音输入 / 语音回应）
-- `node/` —— Node.js bot server（处理 Meet 协议）
-- `audio_bridge.py` + `process_manager.py` —— 进程管理
-- `cli.py` —— `hermes google-meet preflight / install / start` 命令
+`agent/conversation_loop.py:3936,3944` + `hermes_cli/plugins.py:136`：新增 lifecycle hook，让插件在 LLM 输出**回到对话之前**重塑/过滤。Context-window reducer 和内容过滤器用得上：
 
-完整流水线作为 plugin 打包，按需 opt-in。
+```python
+def register(ctx):
+    @ctx.transform_llm_output
+    def shrink_excess(output: str) -> str:
+        # 例如：截掉超过 10KB 的部分，加 [truncated] 标记
+        return output[:10240] + "\n[...truncated]" if len(output) > 10240 else output
+```
+
+## Plugin `ctx.llm` + `tool_override`（v0.14.0+）
+
+插件可走 active provider + credentials **直接发 LLM call**，无需手动 client wiring：
+
+```python
+def register(ctx):
+    @ctx.register_tool("my_custom_search")
+    async def search(query: str) -> str:
+        # 走主 agent 同款 provider/model 路由 + 凭证
+        return await ctx.llm.complete(f"Search: {query}", model="auto")
+```
+
+**`tool_override=True`** flag 允许插件**干净替换**一个 built-in 工具的实现，旧实现自动让位。
 
 ## 相关页面
 
@@ -342,7 +338,8 @@ _TOOLS = [
 
 ## 相关文件
 
-- `tools/mcp_tool.py` — MCP 服务器任务
+- `tools/mcp_tool.py` — MCP 服务器任务（SSE transport: lines 5,35,52,203-208）
 - `tools/mcp_oauth.py` — MCP OAuth
-- `hermes_cli/plugins.py` — 插件系统（VALID_HOOKS / `_VALID_PLUGIN_KINDS`）
+- `hermes_cli/plugins.py` — 插件系统（transform_llm_output: line 136）
+- `agent/conversation_loop.py` — transform_llm_output dispatch（lines 3936, 3944）
 - `plugins/` — 插件目录

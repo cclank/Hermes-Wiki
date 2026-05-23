@@ -1,7 +1,7 @@
 ---
 title: 安全防御体系 — 多层注入检测
 created: 2026-04-07
-updated: 2026-05-20
+updated: 2026-05-21
 type: concept
 tags: [architecture, security, injection-defense, skills-guard, p0, supply-chain]
 sources: [tools/skills_guard.py, tools/tirith_security.py, tools/url_safety.py, agent/redact.py, agent/file_safety.py, tools/osv_check.py, cron/scheduler.py]
@@ -646,6 +646,34 @@ CLI 现在显式展示该状态（commit `b6e0741`）：
   `⚠ YOLO mode — all approval prompts bypassed` 一行；默认情况静默。
 - **状态栏**：在三种宽度档（<52、<76、≥76）的纯文本回退与 fragments
   构建器中都追加红色 `⚠ YOLO` 片段。
+
+## v0.13.0 Tenacity 安全 Wave —— 8 个 P0 关闭（2026-05-07）
+
+| 修复 | 验证位置 |
+|------|---------|
+| **Secret redaction 翻回 ON by default**（撤回 v0.12.0 的 OFF 翻转） | `hermes_cli/config.py:4439,4482` 注释 "Secret redaction is ON by default" |
+| **Discord 角色 allowlist Guild-scoped** —— 闭合 CVSS 8.1 跨-guild DM 绕过 | `gateway/platforms/discord.py:508 dm_role_auth_guild`、`:2206-2235` |
+| **WhatsApp 默认拒陌生人** —— `dm_policy: open/allowlist/disabled` + `group_policy` | `gateway/platforms/whatsapp.py:236-239` |
+| **`auth.json` + MCP OAuth TOCTOU 窗口关闭** | 多处文件锁 + 原子重命名 |
+| **Browser 强制 cloud-metadata SSRF 底线** | `tools/url_safety.py:37-45`、`tools/browser_tool.py:2325,2334,2399-2411` "Blocked: URL targets a cloud metadata endpoint" |
+| **Cron prompt-injection scan**（扫已组装的 skill 内容） | `tools/cronjob_tools.py:44,133-139` "Blocked: prompt contains injection" |
+| **`hermes debug share` 上传前 redact** | `hermes_cli/debug.py:34,627` |
+
+### 平台 allowlist 全覆盖
+
+`allowed_channels` / `allowed_chats` / `allowed_rooms` 配置覆盖 Slack、Telegram、Mattermost、Matrix、钉钉（`gateway/platforms/dingtalk.py:392-496`）—— 统一的硬 gate ACL，集中化 ACL 管理。
+
+## v0.14.0 Foundation 安全增强（2026-05-16）
+
+| 修复 | 验证位置 |
+|------|---------|
+| **`sudo -S` 暴力枚举 block** | `tools/approval.py`（注释 "brute-force attack vector"，警告 "Do not pipe passwords to 'sudo -S'"） |
+| **askpass-stripped sudo** 归类 DANGEROUS | `tools/approval.py` |
+| **3 个 dangerous-command bypass 关闭**（受 Claude Code 启发） | `tools/approval.py` |
+| **Tool error string sanitization** —— 报错文本回灌 context 前清洗，防止恶意文件/远程服务通过 stderr 给 agent 下指令 | `tools/schema_sanitizer.py` |
+| **供应链 advisory 扫描** —— `hermes install` 时扫所有 lazy-deps 安装 | `tools/lazy_deps.py`、`tools/osv_check.py` 集成 |
+
+总计 v0.13 → v0.14 关闭 **20 个 P0 + 86 个 P1** 安全/可靠性问题。
 
 ## 相关页面
 

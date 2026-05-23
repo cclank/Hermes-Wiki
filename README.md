@@ -3,8 +3,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown" alt="Wiki" height="28">
   <img src="https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github" alt="Source" height="28">
-  <img src="https://img.shields.io/badge/Knowledge_Base-43_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
-  <img src="https://img.shields.io/badge/Version-v0.14.0_(v2026.5.16)-purple?style=for-the-badge" alt="Version" height="28">
+  <img src="https://img.shields.io/badge/Knowledge_Base-37_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
+  <img src="https://img.shields.io/badge/Version-v2026.5.16-purple?style=for-the-badge" alt="Version" height="28">
   <img src="https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge" alt="Verified" height="28">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" height="28">
 </p>
@@ -88,18 +88,20 @@
 - [2026-04-10-update](changelog/2026-04-10-update.md): 293 commits，Context Engine 插件化、watch_patterns、WeChat、xAI、Discord/Slack 增强
 - [2026-04-17-update](changelog/2026-04-17-update.md): 641 commits (v0.10.0)，压缩 v3、Bedrock/Gemini/Ollama 新 Provider、Tool Gateway、插件命名空间技能、钉钉 QR 认证、Dashboard 插件
 - [2026-04-18-update](changelog/2026-04-18-update.md): 410 commits post-v0.10.0，Transport ABC 重构、Shell Hooks、Delegate Orchestrator、Step Plan/AI Gateway/xAI STT/KittenTTS、WeCom QR、Subagent 观测性
-- [2026-04-29-update](changelog/2026-04-29-update.md): 182 commits (v2026.4.23 / v0.11.0)，平台适配器插件化（PlatformRegistry + IRC 参考实现）、Curator 后台技能维护、MiniMax OAuth、Vercel Sandbox、腾讯元宝、`on_session_switch`、`/reload-skills`
-- [2026-05-20-update](changelog/2026-05-20-update.md): **~2480 commits 跨 v0.12.0/v0.13.0/v0.14.0** —— Kanban 多 Agent、`/goal` Ralph 循环、ProviderProfile 插件 ABC、`hermes proxy`、LSP 语义诊断、Checkpoints v2、Teams/LINE/SimpleX/Google Chat、SuperGrok OAuth(1M)、`pip install hermes-agent`、180× browser_console、跨 session 1h Claude cache、20 P0 安全潮、22 平台
+- [2026-04-29-update](changelog/2026-04-29-update.md): 182 commits (v2026.4.23)，平台适配器插件化（PlatformRegistry + IRC 参考实现）、Curator 后台技能维护、MiniMax OAuth、Vercel Sandbox、腾讯元宝、`on_session_switch`、`/reload-skills`
+- [2026-04-30-update](changelog/2026-04-30-update.md): 1096 commits (**v0.12.0 Curator Release**)，自治 Curator（7 天周期、12 个子命令、`bump_use()`/`_pinned_guard()`）、self-improvement loop class-first 重写、GMI Cloud / Azure AI Foundry / LM Studio / MiniMax OAuth / Tencent Tokenhub、Spotify + Google Meet、TTS provider registry + Piper、`hermes -z`、冷启动 ~57%↓、prompt cache TTL 可配
+- [2026-05-07-update](changelog/2026-05-07-update.md): 864 commits (**v0.13.0 Tenacity Release**)，**多 Agent Kanban 持久协作板**（heartbeat/reclaim/zombie/max_retries）、`/goal` Ralph Loop + `/subgoal`、`/handoff` `/steer` `/queue`、Checkpoints v2、Gateway auto-resume、`no_agent` cron 模式、ProviderProfile ABC 插件化、MCP SSE transport、`transform_llm_output` hook、Google Chat（20 平台）、7+ i18n locale、8 P0 closures
+- [2026-05-16-update](changelog/2026-05-16-update.md): 808 commits (**v0.14.0 Foundation Release**)，PyPI wheel、Native Windows beta、lazy-deps debloat、xAI SuperGrok OAuth + grok-4.3 1M context、`hermes proxy` OpenAI-compatible 本地代理、`x_search` / `vision_analyze` 像素直传 / `video_generate` 可插拔、LSP 语义诊断、file-mutation verifier footer、180x CDP、Microsoft Teams 端到端、LINE + SimpleX（22 平台）、Codex app-server、Pareto router `min_coding_score`、12 P0 + 50 P1 closures
 
 ---
 
 ## 统计信息
 
-- **概念页面**: 43 个（37 + 6 新增：multi-agent-kanban / goal-loop-and-steering / provider-plugin-system / hermes-proxy / lsp-integration / i18n-and-locales）
-- **更新日志**: 6 个
+- **概念页面**: 37 个
+- **更新日志**: 8 个
 - **源码覆盖**: 关键模块逐行验证
-- **跟踪版本**: **v0.14.0 (v2026.5.16) + 21 post-release commits to 2026-05-20**
-- **最后更新**: 2026-05-20
+- **跟踪版本**: v2026.5.16
+- **最后更新**: 2026-05-21
 
 
 ## 使用方式

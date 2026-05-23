@@ -309,26 +309,35 @@ plugins/model-providers/
 | Provider 声明 | `ProviderProfile` 插件（29 个 bundled，~33 个 provider） | 完成 |
 | Auxiliary Client（压缩/记忆） | 已迁移到 Transport | 完成 |
 
-## 与 ProviderProfile 协作（v0.13.0+）
+## ProviderProfile ABC —— Provider 完全插件化（v0.13.0+）
 
-`providers/base.py` 的 `ProviderProfile` 是**声明式 dataclass**，描述每个 provider 的 auth / endpoints / quirks；Transport 是**数据路径执行器**。两者职责完全分离：
+ProviderTransport 抽掉了**数据路径**；v0.13.0 进一步抽出了**Provider 元数据 + 集成生命周期**，让任何人能把第三方 provider 当**插件**接入，无需改 core。
+
+`providers/base.py:39` 定义 `ProviderProfile` ABC；`plugins/model-providers/` 收纳 **20+ provider 子目录**作为可拔插件（每个含 `plugin.yaml` + 注册函数）。
 
 ```
-ProviderProfile         →  api_mode 决定走哪个 Transport
-ProviderProfile.fetch_models()  →  /model picker 拉 live 列表
-ProviderProfile.prepare_messages()  →  Transport.convert_messages 调用前
-ProviderProfile.build_extra_body()  →  Transport.build_kwargs 合并到 extra_body
-ProviderProfile.build_api_kwargs_extras()  →  Transport.build_kwargs 合并到 api_kwargs
+providers/
+├── base.py          # ProviderProfile ABC (line 39)
+└── __init__.py      # 注册入口
+
+plugins/
+└── model-providers/
+    ├── arcee/
+    ├── azure-foundry/
+    ├── gmi-cloud/
+    ├── lm-studio/
+    ├── minimax-oauth/
+    ├── novita-ai/        # v0.14.0
+    ├── tencent-tokenhub/
+    └── ...
 ```
 
-`get_provider_profile(name).api_mode` → `get_transport(api_mode)` —— Profile 给 transport 提供数据，transport 给 Profile 提供数据路径。28 个 bundled provider 插件（`plugins/model-providers/`）都通过这个组合接入。
-
-详见 [[smart-model-routing]] 中的 ProviderProfile 章节。
+Provider 元数据（auth 方式、`hermes doctor` 检查项、模型发现 endpoint、定价 manifest 等）从 core 代码中迁出，模型目录现在是**纯数据 + 插件**驱动。
 
 ## 与其他系统的关系
 
-- [[auxiliary-client-architecture]] — auxiliary_client 已迁移到 Transport，并读 `profile.default_aux_model`
-- [[smart-model-routing]] — transport 基于 api_mode 派发，与模型路由配合
+- [[auxiliary-client-architecture]] — auxiliary_client 已迁移到 Transport
+- [[smart-model-routing]] — transport 基于 api_mode 派发，与模型路由配合；ProviderProfile 提供模型元数据
 - [[interrupt-and-fault-tolerance]] — 中断、retry 仍在 AIAgent 层，不属于 transport 职责
 - [[prompt-caching-optimization]] — cache 统计通过 `extract_cache_stats` 钩子暴露
 
