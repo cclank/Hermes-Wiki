@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/Wiki-Hermes_Agent-blue?style=for-the-badge&logo=markdown" alt="Wiki" height="28">
   <img src="https://img.shields.io/badge/Source-hermes--agent-green?style=for-the-badge&logo=github" alt="Source" height="28">
   <img src="https://img.shields.io/badge/Knowledge_Base-37_pages-orange?style=for-the-badge&logo=obsidian" alt="Knowledge Base" height="28">
-  <img src="https://img.shields.io/badge/Version-v2026.5.16-purple?style=for-the-badge" alt="Version" height="28">
+  <img src="https://img.shields.io/badge/Version-v0.14.0-purple?style=for-the-badge" alt="Version" height="28">
   <img src="https://img.shields.io/badge/Verified-Source_Code-brightgreen?style=for-the-badge" alt="Verified" height="28">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" height="28">
 </p>
@@ -85,7 +85,7 @@
 - [2026-04-17-update](changelog/2026-04-17-update.md): 641 commits (v0.10.0)，压缩 v3、Bedrock/Gemini/Ollama 新 Provider、Tool Gateway、插件命名空间技能、钉钉 QR 认证、Dashboard 插件
 - [2026-04-18-update](changelog/2026-04-18-update.md): 410 commits post-v0.10.0，Transport ABC 重构、Shell Hooks、Delegate Orchestrator、Step Plan/AI Gateway/xAI STT/KittenTTS、WeCom QR、Subagent 观测性
 - [2026-04-29-update](changelog/2026-04-29-update.md): 182 commits (v2026.4.23)，平台适配器插件化（PlatformRegistry + IRC 参考实现）、Curator 后台技能维护、MiniMax OAuth、Vercel Sandbox、腾讯元宝、`on_session_switch`、`/reload-skills`
-- [2026-05-17-update](changelog/2026-05-17-update.md): 988 commits (v2026.5.16)，`run_agent.py` 巨型重构（拆为 15+ 子模块）、Web/Browser Provider 全面插件化、Kanban 跨进程编排器、xAI Grok OAuth/NovitaAI/Codex app-server、`video_generate`、LSP 语义诊断、SimpleX/LINE 平台
+- [2026-05-18-update](changelog/2026-05-18-update.md): 285 commits (v0.14.0)，`run_agent.py` 大重构（12 模块抽取）、session_search 单形态无 LLM 重写、浏览器 Provider 插件化、辅助客户端分层 fallback ladder、xAI Grok OAuth/Azure Foundry/NVIDIA NIM、压缩 abort-on-summary-failure、Gateway deliverable 模式、`hermes send`、Cron job profile、Atropos RL 移除
 
 ---
 
@@ -94,8 +94,8 @@
 - **概念页面**: 37 个
 - **更新日志**: 6 个
 - **源码覆盖**: 关键模块逐行验证
-- **跟踪版本**: v2026.5.16
-- **最后更新**: 2026-05-17
+- **跟踪版本**: v0.14.0
+- **最后更新**: 2026-05-18
 
 
 ## 使用方式

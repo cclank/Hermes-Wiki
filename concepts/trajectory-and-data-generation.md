@@ -1,7 +1,7 @@
 ---
 title: 轨迹保存与训练数据生成
 created: 2026-04-07
-updated: 2026-05-15
+updated: 2026-05-18
 type: concept
 tags: [architecture, data-generation, training, trajectory, batch-runner]
 sources: [agent/trajectory.py, batch_runner.py, toolset_distributions.py, run_agent.py]
@@ -20,7 +20,7 @@ AIAgent 真实执行每个任务
     ↓ save_trajectories=True
 对话轨迹格式转换（ShareGPT 格式）
     ↓ trajectory.py
-JSONL 训练数据（SFT）
+JSONL 训练数据
 ```
 
 > **重要变更（2026-05-15）**：仓库在 commit `5af672c`（"chore: remove Atropos RL environments and tinker-atropos integration"，#26106）中**彻底移除了 RL 强化学习相关基础设施**。被删除的内容包括：整个 `environments/` 目录（43 个文件，含 `hermes_base_env.py`、`agent_loop.py`、各类 `tool_call_parsers/`、benchmark 环境）、`rl_cli.py`、`tools/rl_training_tool.py`（全部 10 个 `rl_*` 工具）、`tinker-atropos` git submodule，以及 `pyproject.toml` 中的 `rl` / `yc-bench` extras。因此本系统**当前只剩 SFT 数据生成**（轨迹保存 + 批量运行器），不再包含 RL 训练环境。
@@ -161,9 +161,8 @@ python batch_runner.py --dataset_file=your_tasks.jsonl --batch_size=10 --run_nam
 
 ## 相关文件
 
-- `agent/trajectory.py` — 轨迹文件写入和静态辅助函数（56 行）
-- `run_agent.py:4785` — `_convert_to_trajectory_format()`
-- `run_agent.py:4954` — `_save_trajectory()`
-- `batch_runner.py` — 批量运行器（1302 行）
-- `toolset_distributions.py` — 工具集概率分布定义（364 行）
+- `agent/trajectory.py` — 轨迹文件写入和格式转换工具函数
+- `run_agent.py:2193-2371` — `_convert_to_trajectory_format()` + `_save_trajectory()`
+- `batch_runner.py` — 批量运行器（1287 行）
+- `toolset_distributions.py` — 工具集概率分布定义
 - `datagen-config-examples/` — 数据生成配置示例

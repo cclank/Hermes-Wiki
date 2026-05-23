@@ -1,7 +1,7 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-05-17
+updated: 2026-05-18
 type: concept
 tags: [architecture, module, model-routing, performance, caching, anthropic, plugins]
 sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py, providers/base.py, plugins/model-providers/]
@@ -557,48 +557,19 @@ browser:
 - `hermes model` 交互流程：Nous 登录后展示可用工具列表，用户选择启用全部 / 仅未配置的 / 跳过
 - 免费层用户看到升级提示
 
-## Provider 插件化（v2026.5.x — 重大架构）
+## 新增 Provider（2026-05）
 
-v2026.5.x 把全部 **33 个 provider 改造成插件**。在 v2026.4.23 时 `providers/` 包和 `plugins/model-providers/` 目录**都还不存在**——整个系统是这一窗口期内新增的。
+### xAI Grok OAuth
 
-### ProviderProfile — `providers/base.py`（184 行）
+新增 provider id `xai-oauth`，显示名 "xAI Grok OAuth (SuperGrok Subscription)"。通过 issuer `https://auth.x.ai` 进行 OAuth 认证，采用 PKCE loopback 回调 `127.0.0.1:56121/callback`。别名：`grok-oauth`、`x-ai-oauth`、`xai-grok-oauth`。与基于 API Key 的 `xai` provider 相互独立（`hermes_cli/auth.py:115-133,199-203`）。SuperGrok / X Premium+ 订阅者凭订阅直接调用 Grok 模型。
 
-一个声明式 `@dataclass`（不是经典 ABC），描述一个 provider 的全部特征：
+### Azure Foundry — Microsoft Entra ID 认证
 
-| 分组 | 字段 |
-|---|---|
-| 标识 | `name`、`api_mode`（默认 `chat_completions`）、`aliases` |
-| 元数据 | `display_name`、`description`、`signup_url` |
-| 认证/端点 | `env_vars`、`base_url`、`models_url`、`auth_type`（`api_key`/`oauth_device_code`/`oauth_external`/`copilot`/`aws_sdk`）、`supports_health_check` |
-| 目录 | `fallback_models`、`hostname` |
-| 怪癖 | `default_headers`、`fixed_temperature`、`default_max_tokens`、`default_aux_model` |
+新增 `agent/azure_identity_adapter.py`，提供 Azure Foundry 的**无密钥（keyless）认证**。通过 `azure-identity` SDK 的 `DefaultAzureCredential` 链获取 token，由 `model.auth_mode = entra_id` 激活。`build_token_provider()` 返回一个零参数 callable，OpenAI SDK 每次请求时调用它（透明刷新），不会把 JWT 持久化到 `auth.json`。scope 默认使用 Microsoft 文档化的 Foundry 推理 audience，可通过 `model.entra.scope` 覆盖。`azure-identity` 只在选用 `entra_id` 时才惰性导入。
 
-可覆盖钩子：`get_hostname()`、`prepare_messages()`、`build_extra_body()`、`build_api_kwargs_extras()`、`fetch_models(api_key, timeout=8.0)`（默认对 `models_url` 做 Bearer 认证 GET）。
+### NVIDIA NIM 计费来源头
 
-**"transport 单路径"**：transport 读取 ProviderProfile，而不再接收 20+ 个布尔 flag——一个声明式 profile 驱动认证/端点/请求怪癖。profile 仅声明，客户端构造、凭证轮换、流式仍留在 [[provider-transport-architecture|AIAgent / transport]] 层。
-
-### 发现与注册 — `providers/__init__.py`（191 行）
-
-`_discover_providers()` 惰性执行（首次 `get_provider_profile()` / `list_providers()` 时），按顺序导入：
-
-1. bundled `<repo>/plugins/model-providers/<name>/`
-2. 用户 `$HERMES_HOME/plugins/model-providers/<name>/`（覆盖，last-writer-wins）
-3. 旧式 `providers/<name>.py` 单文件模块（向后兼容）
-
-每个 `__init__.py` 在导入时调用 `register_provider(profile)`；`plugin.yaml` 标 `kind: model-provider`。
-
-**33 个 profile 分布在 29 个插件目录**——多 profile 目录：`gemini`、`kimi-coding`、`minimax`、`opencode-zen`。
-
-### v2026.5.x 新增 provider
-
-| Provider | 目录 / key | 说明 |
-|---|---|---|
-| **NovitaAI** | `novita/`，key `novita` | `base_url=https://api.novita.ai/openai/v1` |
-| **GMI Cloud** | `gmi/`，key `gmi` | `base_url=https://api.gmi-serving.com/v1` |
-| **Azure Foundry** | `azure-foundry/`，key `azure-foundry` | 空 `base_url`，setup 时按 resource 填 |
-| **xAI** | `xai/`，key `xai` | `api_mode=codex_responses`，别名 `grok`/`x-ai`/`x.ai` |
-
-> **xAI Grok OAuth（SuperGrok 订阅）** 是独立的 `xai-oauth` provider，定义在 `hermes_cli/auth.py` 的 `ProviderConfig`（loopback PKCE），**不是** model-provider 插件；`xai/` 插件本身只走 `api_key` 认证。
+`build_nvidia_nim_headers()`（`agent/auxiliary_client.py:380-384`）为 `integrate.api.nvidia.com` 流量附加云端归因头（`X-BILLING-INVOKE-ORIGIN: HermesAgent`），用于 NVIDIA NIM 调用的计费来源标记。
 
 ## 与其他系统的关系
 

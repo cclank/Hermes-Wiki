@@ -1,10 +1,10 @@
 ---
 title: Context Compressor 上下文压缩架构
 created: 2026-04-08
-updated: 2026-05-17
+updated: 2026-05-18
 type: concept
 tags: [architecture, module, component, agent, context-compression]
-sources: [agent/context_engine.py, agent/context_compressor.py, agent/conversation_compression.py, agent/conversation_loop.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
+sources: [agent/context_engine.py, agent/context_compressor.py, agent/conversation_compression.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
 ---
 
 # Context Compressor — 上下文压缩架构
@@ -47,6 +47,10 @@ context:
 **只允许一个引擎活跃**，同 MemoryProvider 的 "至多一个外部" 约束。
 
 核心理念：**长对话不需要丢弃上下文——用结构化摘要替代旧轮次，保留关键信息。**
+
+### 压缩编排模块（agent/conversation_compression.py）
+
+压缩的编排逻辑已从 `run_agent.py` 抽取到独立模块 `agent/conversation_compression.py`。该模块负责在 agent 循环中决定何时触发压缩、调用 `ContextCompressor`、处理压缩中止与冷却，并向用户呈现警告（如 `⚠ Compression aborted`）。
 
 ## 架构原理
 
@@ -140,6 +144,10 @@ class ContextCompressor:
 **Pass 3 — tool_call 参数截断**:assistant 消息里如果有 `tool_calls.function.arguments` 长度 > 500,截断到前 200 字符 + `...[truncated]`。修复场景:`write_file(content=50KB)` 这种调用即使工具结果被修剪,参数本身仍然占上下文。
 
 **多模态保护**:所有三个 Pass 都检测 `isinstance(content, list)` 跳过多模态消息,避免破坏图像/音频内容。
+
+#### 剥离历史媒体（_strip_historical_media，#27189）
+
+新增 `_strip_historical_media()`（`context_compressor.py:275-329`），作为 `compress()` 的**最后一步**执行。它以**最新一条带图像的 user 消息**为锚点，把所有更早消息中的图像 part 替换为简短占位文本，使多 MB 的 base64 图像 blob 不必每轮都重新发送。若没有 user 消息带图像，或唯一带图像的是首条消息（前面没有可剥离的内容），则原样返回。仅对被修改的消息做浅拷贝，输入永不被改动。
 
 ### 3. 摘要预算计算
 
@@ -322,6 +330,15 @@ def _generate_summary(self, turns):
 ```
 
 **设计考量**(2026-04-14 改进):区分两类失败,`RuntimeError` 表示配置问题走 10 分钟长冷却,其他异常默认是瞬态问题走 60 秒短冷却,让压缩能更快从短暂故障中恢复。
+
+#### 摘要失败时中止压缩（abort-on-summary-failure，#28102/#28117）
+
+`ContextCompressor` 构造函数新增 `abort_on_summary_failure` 标志（默认 `False`，`context_compressor.py:526`）：
+
+- **`True`** — 当摘要生成失败时，压缩**整体中止**：返回原始消息不做改动，并设置 `_last_compress_aborted=True`。对话被**冻结**，直到下一次 `/compress` 或 `/new`。
+- **`False`（legacy 默认）** — 插入一条静态的 "summary unavailable" 占位符，并丢弃中间窗口。
+
+配置标志为 `compression.abort_on_summary_failure`（默认 `False`）。调用方 `agent/conversation_compression.py` 会呈现 `⚠ Compression aborted` 警告；`force` 标志会清除冷却，使得自动压缩中止后用户的 `/compress` 重试能立即生效。
 
 ### 6b. 反颠簸保护（Anti-Thrashing，2026-04-14）
 

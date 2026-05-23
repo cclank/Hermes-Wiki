@@ -1,7 +1,7 @@
 ---
 title: Cron 调度与自动化工作流
 created: 2026-04-07
-updated: 2026-05-15
+updated: 2026-05-18
 type: concept
 tags: [architecture, cron, automation, scheduling, watchdog, no-agent]
 sources: [cron/jobs.py, cron/scheduler.py, hermes_cli/cron.py, tools/cronjob_tools.py]
@@ -50,6 +50,7 @@ def cronjob(
     name: str = None,      # 任务名称
     deliver: str = None,   # 投递目标
     job_id: str = None,    # 任务 ID
+    profile: str = None,   # 可选：运行该任务的 Hermes profile
 ) -> dict:
     """管理定时任务"""
     
@@ -123,6 +124,7 @@ job = {
     "deliver": "telegram",
     "model": "gpt-4",
     "toolsets": ["terminal", "web", "file"],
+    "profile": None,                # 可选：运行该任务的 Hermes profile（未设则用调度器自身 profile）
     "is_paused": False,
     "created_at": "2026-04-07T10:00:00",
     "last_run": None,
@@ -222,34 +224,28 @@ cronjob(
 )
 ```
 
-## v0.12.0 新增能力
+## 任务 Profile 支持
 
-### `no_agent` 模式（脚本即任务）
+Cron 任务支持可选的 `profile` 字段，让单个任务在与调度器自身不同的 Hermes profile 下运行（隔离 config、`.env`、记忆、技能、session store）。
+
+- **任务字段**：`cron/jobs.py:131-132` 解析 `profile` 字段，并通过 `_normalize_profile()`（`cron/jobs.py:485-505`）归一化与校验——名称按 `hermes -p` 同样规则规范化，命名 profile 必须在创建/更新时已存在；`default` 始终有效；空字符串清除该字段。
+- **工具参数**：`cronjob()` 工具新增 `profile` 参数（`tools/cronjob_tools.py`），可在创建/更新任务时指定。
+- **运行时切换**：调度器通过 `_job_profile_context()`（`cron/scheduler.py:150-199`）为每个任务施加一个 context-local 的 Hermes-home override，使 `_get_hermes_home()`、`.env`/config 加载、脚本解析、`AIAgent` 构造等都指向该 profile 目录。
+- **顺序执行**：带 `profile` 的任务**串行执行**（非并行），以保持 profile 作用域的运行时状态相互隔离。
+- **环境恢复**：profile `.env` 加载对进程环境造成的临时改动会在任务退出后还原。
+- **优雅降级**：若任务配置的 profile 已被删除，调度器记录告警并回退到调度器默认 profile，不会中断其他任务。
 
 ```python
+# 在指定 profile 下运行的任务
 cronjob(
     action="create",
-    name="watchdog-disk",
-    schedule="*/5 * * * *",
-    no_agent=True,
-    script="/usr/local/bin/check_disk.sh",
-    workdir="/var/log",
+    name="work-report",
+    prompt="生成今日工作总结报告",
+    schedule="0 18 * * *",
     deliver="telegram",
+    profile="work",
 )
 ```
-
-- 源：`cron/jobs.py:438`、`cron/scheduler.py:857`
-- `no_agent=True` 时**完全跳过 LLM**：脚本就是任务，stdout 原样投递；空 stdout 视为静默成功（不打扰用户）。
-- `no_agent` 必须搭配 `script`（无脚本会拒绝）；`prompt` 字段被忽略。
-- 模块顶层延迟导入，让 watchdog tick 不为 AIAgent / SessionDB 付出冷启动开销。
-- 可选 `wakeAgent` 字段决定是否在投递时唤醒目标平台的 agent 会话。
-
-### 其他变更
-
-- `croniter` 提升为核心依赖（v0.12.0 #17577），不再需要 extras
-- 每个 job 支持 `workdir`（项目级 cron）、`context_from`（链式输出）
-- `${VAR}` 在 cron 任务运行时从 `config.yaml` 展开（v0.12.0 #15890）
-- 并发跑同一 job 时单独写状态，规避 race（v0.12.0 #1c7f47a 新增回归测试）
 
 ## 网关集成
 
@@ -340,7 +336,7 @@ v0.13.0 安全 wave：cron 启动时扫的是**装配好的 skill content**（as
 
 ## 相关文件
 
-- `tools/cronjob_tools.py` — Cron 工具
-- `cron/scheduler.py:1040` — `no_agent` 短路；`tick()` 由 Gateway 驱动
-- `cron/jobs.py:498` — `no_agent` 参数定义
+- `tools/cronjob_tools.py` — Cron 工具（含 `profile` 参数）
+- `cron/scheduler.py` — 调度器（`_job_profile_context()` 见 line 150-199）
+- `cron/jobs.py` — 任务定义（`profile` 字段见 line 131-132，`_normalize_profile()` 见 line 485-505）
 - `gateway/run.py` — 网关集成

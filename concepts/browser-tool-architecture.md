@@ -1,7 +1,7 @@
 ---
 title: Browser Tool 浏览器自动化架构
 created: 2026-04-08
-updated: 2026-05-17
+updated: 2026-05-18
 type: concept
 tags: [tool, toolset, architecture, component, browser]
 sources: [tools/browser_tool.py, agent/browser_provider.py, agent/browser_registry.py, plugins/browser/]
@@ -11,7 +11,7 @@ sources: [tools/browser_tool.py, agent/browser_provider.py, agent/browser_regist
 
 ## 概述
 
-Browser Tool 位于 `tools/browser_tool.py`（~3789行），提供**多后端浏览器自动化**能力。支持 4 种运行模式，所有模式对 Agent 暴露完全相同的工具接口（navigate/click/type/scroll/vision 等）。
+Browser Tool 位于 `tools/browser_tool.py`（3796 行），提供**多后端浏览器自动化**能力。支持 4 种运行模式，所有模式对 Agent 暴露完全相同的工具接口（navigate/click/type/scroll/vision 等）。
 
 核心理念：**基于 accessibility tree（ariaSnapshot）的文本化页面表示**，使 LLM Agent 无需视觉能力即可操作网页。
 
@@ -50,7 +50,7 @@ browser:
 
 ```python
 def _get_cloud_provider():
-    """通过 agent.browser_registry 解析,优先级:
+    """解析优先级 (tools/browser_tool.py:489-591):
     1. config.yaml browser.cloud_provider (显式指定)
     2. Legacy 自动检测顺序 _LEGACY_PREFERENCE = ("browser-use", "browserbase")
        —— 按可用性过滤(Browser Use 优先,因其覆盖 managed Nous gateway
@@ -59,7 +59,9 @@ def _get_cloud_provider():
     """
 ```
 
-**关键设计**：如果 `cloud_provider` 设为 `local`，完全禁用云端回退，强制使用本地 Chromium。
+`_get_cloud_provider` 通过 `agent.browser_registry` 解析，调用前先执行 `_ensure_browser_plugins_loaded()` 加载浏览器插件。`_LEGACY_PREFERENCE = ("browser-use", "browserbase")` 是自动检测顺序。
+
+**关键设计**：如果 `cloud_provider` 设为 `local`，完全禁用云端回退，强制使用本地 Chromium。显式 `cloud_provider` 指向未注册的插件时 → 记录 WARNING 并回退到自动检测。**Firecrawl 永不参与自动检测** — 只能通过显式 `browser.cloud_provider: firecrawl` 启用。
 
 **Firecrawl 被有意排除在自动检测之外**：`_LEGACY_PREFERENCE` 不含 `firecrawl`，用户只有显式设置 `browser.cloud_provider: firecrawl` 才会获得 Firecrawl 云端浏览器，避免简单的 web 抓取被静默路由到付费云端浏览器。
 
@@ -67,25 +69,43 @@ def _get_cloud_provider():
 
 ### 1. 统一 Provider 接口
 
-真正的抽象基类是 `agent/browser_provider.py:49` 的 **`BrowserProvider`**：
+浏览器 Provider 已从 in-tree 的 `tools/browser_providers/` 目录迁移到**插件系统**。抽象基类是 `agent/browser_provider.py:49` 的 `BrowserProvider(abc.ABC)`：
 
 ```python
 class BrowserProvider(abc.ABC):
-    """所有云端浏览器后端的抽象基类"""
-    name: str                                  # property,稳定短标识符
-    def is_available() -> bool                 # 廉价检查,不做网络调用
-    def create_session(task_id) -> Dict        # 见下方返回契约
-    def close_session(session_id) -> None
-    def emergency_cleanup(session_id) -> None
+    """所有云端浏览器后端的抽象基类 (agent/browser_provider.py:61-125)"""
+    @property
+    @abc.abstractmethod
+    def name() -> str            # 稳定短标识 (config 用)
+    @property
+    def display_name() -> str    # 非抽象，默认返回 name；hermes tools 展示用
+
+    @abc.abstractmethod
+    def is_available() -> bool   # 替代旧的 is_configured()
+    @abc.abstractmethod
+    def create_session(task_id) -> Dict
+    @abc.abstractmethod
+    def close_session(session_id) -> bool
+    @abc.abstractmethod
+    def emergency_cleanup(session_id) -> None   # 新增
+
+    def get_setup_schema() -> Dict  # 可选，供 hermes tools 选择器
+
+# 具体实现 (plugins/browser/*/provider.py)
+class BrowserbaseBrowserProvider(BrowserProvider)
+class BrowserUseBrowserProvider(BrowserProvider)
+class FirecrawlBrowserProvider(BrowserProvider)
 ```
 
-`create_session()` 返回契约要求至少包含 `session_name`、`bb_session_id`、`cdp_url`、`features`，可选 `external_call_id`（managed-gateway 计费 key）。`bb_session_id` 为遗留 key 名，保存任意 provider 的会话 ID。
+**优越性**：新增后端只需实现 5 个抽象成员（`name`、`is_available`、`create_session`、`close_session`、`emergency_cleanup`），工具逻辑完全不变。`is_configured()` / `provider_name()` 仅保留为向后兼容 shim。
 
-> 旧的 `CloudBrowserProvider`（含 `is_configured()`/`provider_name()`）已不再是真正的 ABC，仅作为 `tools/browser_tool.py` 中的遗留导入别名保留。
+`create_session` 返回契约：必须包含 `bb_session_id`（provider 会话 ID，所有 provider 都沿用此 legacy 键名）以及可选的 `external_call_id`。
 
-**插件化后端**：browserbase、browser-use、firecrawl 三个后端现在是 `plugins/browser/{browserbase,browser_use,firecrawl}/provider.py` 下的插件类。每个插件的 `plugin.yaml` 声明 `kind: backend` 与 `provides_browser_providers:`，通过 `ctx.register_browser_provider()` 注册到 `agent.browser_registry`。
+### 1b. 插件系统与注册表
 
-**优越性**：新增后端只需实现 `BrowserProvider` 抽象方法并打包为插件，工具逻辑完全不变。
+浏览器 Provider 现在是位于 `plugins/browser/{browser_use,browserbase,firecrawl}/` 的**插件**，每个插件包含 `__init__.py`（暴露 `register(ctx)`）、`plugin.yaml`、`provider.py`。内置插件以 `kind: backend` 自动加载；用户插件放在 `~/.hermes/plugins/browser/<name>/`。
+
+新文件 `agent/browser_registry.py` 维护一个线程安全的 `_providers` dict。插件通过 `ctx.register_browser_provider(...)` 注册。注册表提供 `register_provider`、`list_providers`、`get_provider`、`get_active_browser_provider`、`_resolve` 等接口。`_LEGACY_PREFERENCE = ("browser-use", "browserbase")` 定义自动检测顺序。
 
 ### 2. 会话管理（线程安全）
 
@@ -161,8 +181,14 @@ def _socket_safe_tmpdir():
 ### Bot 检测预警
 
 ```python
-blocked_patterns = ["access denied", "bot detected", "cloudflare", 
-                    "captcha", "just a moment", "checking your browser"]
+# tools/browser_tool.py:2435-2441
+blocked_patterns = [
+    "access denied", "access to this page has been denied",
+    "blocked", "bot detected", "verification required",
+    "please verify", "are you a robot", "captcha",
+    "cloudflare", "ddos protection", "checking your browser",
+    "just a moment", "attention required"
+]
 if any(pattern in title_lower for pattern in blocked_patterns):
     response["bot_detection_warning"] = "..."
 ```

@@ -1,10 +1,10 @@
 ---
 title: 中断传播与容错机制
 created: 2026-04-07
-updated: 2026-05-02
+updated: 2026-05-18
 type: concept
-tags: [architecture, reliability, fault-tolerance, interrupt, guardrails]
-sources: [run_agent.py, gateway/run.py, agent/error_classifier.py, tools/credential_pool.py, agent/tool_guardrails.py]
+tags: [architecture, reliability, fault-tolerance, interrupt]
+sources: [run_agent.py, gateway/run.py, agent/error_classifier.py, agent/credential_pool.py]
 ---
 
 # 中断传播与容错机制
@@ -216,20 +216,26 @@ def _try_activate_fallback(self):
 
 ### 结构化错误分类（error_classifier.py）
 
-2026-04-09 引入的集中式错误分类器，替代了 `run_agent.py` 中分散的字符串匹配。所有 API 错误被分类为 13 种 `FailoverReason`，每种对应不同的恢复策略：
+2026-04-09 引入的集中式错误分类器，替代了 `run_agent.py` 中分散的字符串匹配。所有 API 错误被分类为 19 种 `FailoverReason`（`agent/error_classifier.py:24-61`），每种对应不同的恢复策略：
 
 | 错误类型 | 恢复策略 |
 |---------|---------|
 | `auth` | 刷新/轮换凭证 |
+| `auth_permanent` | 刷新后仍失败 — 终止 |
 | `billing` | 立即切换 Provider |
 | `rate_limit` | 退避等待后轮换 |
 | `context_overflow` | 压缩上下文 |
 | `payload_too_large` | 压缩 payload |
+| `image_too_large` | 缩小原生图片后重试 |
 | `timeout` | 重建客户端 + 重试 |
 | `model_not_found` | fallback 到其他模型 |
+| `provider_policy_blocked` | 聚合器因账户隐私策略屏蔽唯一端点 |
+| `format_error` | 400 请求 — 终止或剥离后重试 |
 | `server_error` / `overloaded` | 重试 / 退避 |
 | `thinking_signature` | Anthropic thinking block 签名无效 |
 | `long_context_tier` | 降级到 200K 标准层级 |
+| `oauth_long_context_beta_forbidden` | Anthropic OAuth 订阅拒绝 1M 上下文 beta — 关闭 beta 后重试 |
+| `llama_cpp_grammar_pattern` | llama.cpp 拒绝 `pattern`/`format` 正则 — 从 tools 剥离后重试 |
 
 分类结果是结构化的 `ClassifiedError`，包含恢复提示：
 
@@ -244,6 +250,10 @@ class ClassifiedError:
 ```
 
 重试循环直接读取这些字段决策，不再重复解析错误消息。
+
+#### xAI Grok 订阅 SSE 错误的优先匹配（`agent/error_classifier.py:510-541`）
+
+`classify_api_error` 在 `status_code` 分支**之前**新增了一个最高优先级的模式块，专门匹配 xAI Grok 订阅权限错误。xAI 通过 SSE `type=error` 帧（`status_code=None`）返回 "do not have an active grok subscription" 或 "out of available resources"+"grok" 时，由于跳过了状态码分类，过去会落到 `unknown`（`retryable=True`），白白耗尽 `max_retries`。现在这类帧被直接归类为 `FailoverReason.auth, retryable=False, should_fallback=True`，立即走 fallback 而不重试。
 
 ### 连接健康检查
 
@@ -441,7 +451,7 @@ HERMES_API_TIMEOUT=1800.0             # API 总超时（秒）
 
 ### 相关文件
 
-- `agent/error_classifier.py` — 结构化 API 错误分类（13 种 FailoverReason）
+- `agent/error_classifier.py` — 结构化 API 错误分类（19 种 FailoverReason）
 - `run_agent.py` — 中断机制、重试循环
-- `tools/credential_pool.py` — 凭证池
+- `agent/credential_pool.py` — 凭证池
 - `tools/interrupt.py` — 中断工具

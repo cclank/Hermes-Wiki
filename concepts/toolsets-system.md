@@ -1,7 +1,7 @@
 ---
 title: Toolsets System
 created: 2026-04-07
-updated: 2026-05-17
+updated: 2026-05-18
 type: concept
 tags: [toolset, tool, tool-registry, architecture]
 sources: [hermes-agent 源码分析 2026-04-07]
@@ -249,8 +249,16 @@ tools/*.py  (每个在导入时调用 registry.register())
        ↑
 model_tools.py  (导入 tools/registry + 触发工具发现)
        ↑
-run_agent.py, cli.py, batch_runner.py, environments/
+run_agent.py, cli.py, batch_runner.py
 ```
+
+## x_search 工具集的凭证自动启用
+
+`x_search`（X/Twitter 搜索）工具集默认关闭，但当检测到 xAI 凭证时会**自动启用**。
+
+- **判定逻辑**：`hermes_cli/tools_config.py` 的 `_xai_credentials_present()` 是一个**无副作用**的本地检查——只检查是否存在 xAI OAuth 令牌（SuperGrok）或 `XAI_API_KEY`，不发起任何网络请求。
+- **注入位置**：仅在 `_get_platform_tools()` 的「无已保存配置」分支注入。也就是说，如果用户通过 `hermes tools` 显式保存过工具集列表，自动启用**不会触发**。
+- **优先级**：`agent.disabled_toolsets: [x_search]` 仍然可以覆盖自动启用，强制关闭该工具集。
 
 ## 相关页面
 

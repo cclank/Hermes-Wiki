@@ -1,7 +1,7 @@
 ---
 title: CLI 架构与终端交互设计
 created: 2026-04-07
-updated: 2026-05-17
+updated: 2026-05-18
 type: concept
 tags: [architecture, cli, terminal, ux]
 sources: [hermes_cli/commands.py, hermes_cli/goals.py, hermes_cli/kanban.py, hermes_cli/curator.py, cli.py]
@@ -231,15 +231,22 @@ display:
   skin: "default"  # 或自定义皮肤名称
 ```
 
-## CLI 子命令
+## hermes send 子命令
 
-入口点 `hermes_cli/main.py` 通过 `argparse` 子命令分发，内置子命令名集中在 `_BUILTIN_SUBCOMMANDS` frozenset（现已包含 `lsp`）。新增子命令：
+`hermes send` 把脚本输出 / stdin 管道转发到任意已配置的消息平台。命令在 `hermes_cli/main.py` 注册（`register_send_subparser`），实现于 `hermes_cli/send_cmd.py`，是 `tools.send_message_tool.send_message_tool` 的一层薄封装。
 
-| 子命令 | 描述 |
-|------|------|
-| `hermes send` | 把 shell 脚本输出通过管道发送到任意已配置的消息平台（`hermes_cli/send_cmd.py` `register_send_subparser`） |
-| `hermes postinstall` | pip 安装用户的安装后依赖引导（`cmd_postinstall`，运行可选依赖的 postinstall 脚本，如 `agent-browser`） |
-| `hermes acp --setup-browser` | 为 registry 安装引导浏览器工具（`--setup-browser` 标志透传给 acp 子进程） |
+```bash
+# 把脚本输出管道发送给某个目标
+./build.sh 2>&1 | hermes send --to telegram
+
+# 发送文件、带主题
+hermes send --to email --file report.pdf --subject "每日报告"
+
+# 列出可用目标
+hermes send --list
+```
+
+支持 `--to`、`--file`、`--subject`、`--list`、管道 stdin、线程化目标、以及 `#channel` 频道名解析。
 
 ## 优越性分析
 
@@ -310,8 +317,9 @@ HERMES_INFERENCE_MODEL=gpt-5.5 hermes -z "..."
 
 ## 相关文件
 
-- `cli.py` — Classic CLI 主类
-- `hermes_cli/main.py` — 入口点和子命令（含 `-z` 短路）
+- `cli.py` — CLI 主类（`_handle_sessions_command()` 处理经典 CLI 的 `/sessions` 斜杠命令）
+- `hermes_cli/main.py` — 入口点和子命令（注册 `hermes send`）
+- `hermes_cli/send_cmd.py` — `hermes send` 实现（`send_message_tool` 薄封装）
 - `hermes_cli/commands.py` — 斜杠命令定义
 - `hermes_cli/goals.py` — `/goal` Ralph 循环
 - `hermes_cli/kanban.py` — `/kanban` argparse 树

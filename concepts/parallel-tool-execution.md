@@ -1,7 +1,7 @@
 ---
 title: 并行工具执行系统
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-05-18
 type: concept
 tags: [architecture, tool, performance, concurrency]
 sources: [hermes-agent 源码分析 2026-04-07]
@@ -69,10 +69,24 @@ def _should_parallelize_tool_batch(tool_calls) -> bool:
             continue
         
         if tool_name not in _PARALLEL_SAFE_TOOLS:
-            return False  # 未知工具 → 保守降级串行
+            # 未知工具 → 再给一次机会：检查是否为可并行的 MCP 工具
+            if not _is_mcp_tool_parallel_safe(tool_name):
+                return False  # 仍不安全 → 保守降级串行
     
     return True  # 所有检查通过 → 安全并行
 ```
+
+并发安全检测算法在 `agent/tool_dispatch_helpers.py` 中实现，`_should_parallelize_tool_batch()` 定义于 line 103。
+
+### 2.1 MCP 工具的并行豁免
+
+不在 `_PARALLEL_SAFE_TOOLS` 列表里的工具未必立即降级。`agent/tool_dispatch_helpers.py:141-143` 会调用 `_is_mcp_tool_parallel_safe()`，后者委托 `tools/mcp_tool.py` 的 `is_mcp_tool_parallel_safe()`：
+
+- 若该工具来自一个配置了 `supports_parallel_tool_calls: true` 的 MCP 服务器，则**视为可并行**。
+- 此类服务器在 `tools/mcp_tool.py` 的 `_parallel_safe_servers` 集合中登记。
+- 其余 MCP 工具仍按保守策略降级为串行。
+
+详见 [[mcp-and-plugins]]。
 
 ### 3. 路径冲突检测
 
@@ -124,7 +138,7 @@ Hermes 采用**保守默认**策略：任何不确定都降级为串行。
 | 永不并行工具 | 包含 `clarify` | 用户交互必须串行 |
 | 路径解析失败 | 无法解析 JSON 参数 | 无法验证安全性 |
 | 路径重叠 | 文件路径有共同前缀 | 避免竞态条件 |
-| 未知工具 | 不在安全列表中 | 保守默认 |
+| 未知工具 | 不在安全列表中，且非可并行 MCP 工具 | 保守默认 |
 | 非字典参数 | 参数不是 dict | 无法分析作用域 |
 
 ## 优越性分析
@@ -190,5 +204,8 @@ _PATH_SCOPED_TOOLS = frozenset({
 
 ## 相关文件
 
-- `run_agent.py` — 并行检测算法和执行逻辑
+- `agent/tool_dispatch_helpers.py:103` — `_should_parallelize_tool_batch()` 并发安全检测算法（从 `run_agent.py` 抽出）
+- `agent/tool_dispatch_helpers.py:141-143` — `_is_mcp_tool_parallel_safe()` MCP 工具并行豁免检查
+- `run_agent.py:209` — `_MAX_TOOL_WORKERS = 8` 常量与并行执行逻辑
+- `tools/mcp_tool.py` — `is_mcp_tool_parallel_safe()` 与 `_parallel_safe_servers`
 - `tools/registry.py` — 工具注册和元数据

@@ -123,18 +123,26 @@
   - 核心内容: Gateway Hooks 事件驱动(8种事件+通配符)，Plugin System 三级来源(用户/项目/pip)，PluginContext API(工具注册/消息注入/CLI命令/钩子)，缓存友好上下文注入
 - index.md 更新为 37 页
 
-## [2026-05-17] update | 同步 hermes-agent v2026.5.16（988 commits，2026-04-30 ~ 2026-05-17）
-拉取 hermes-agent 最新源码，逐项源码验证后更新 wiki：
+## [2026-05-18] update | 同步 hermes-agent v0.14.0（285 commits，2026-04-30 ~ 2026-05-18）
+拉取 NousResearch/hermes-agent 最新源码（HEAD 2026-05-18），与 wiki 逐项对照，所有结论经 5 个并行子代理逐行源码验证：
 
-**新增 changelog:**
-- changelog/2026-05-17-update.md — 988 commits，v2026.5.16
+**新建更新日志:**
+- changelog/2026-05-18-update.md — 285 commits (v0.14.0)
 
-**更新概念页（18 个，均经源码验证）:**
-- agent-loop-and-prompt-assembly / prompt-builder-architecture / context-compressor-architecture / aiagent-class — run_agent.py 巨型重构，拆为 agent/ 下 15+ 子模块（agent_init/conversation_loop/system_prompt/...），系统提示三层装配（stable/context/volatile）
-- browser-tool-architecture / web-tools-architecture — Web/Browser Provider 插件化，tools/{web,browser}_providers/ 删除，新增 WebSearchProvider/BrowserProvider ABC + 注册表，provider 迁为 plugins/{web,browser}/
-- mcp-and-plugins / hook-system-architecture — 新增插件 facade（register_tool override/ctx.llm/register_web_search_provider/register_browser_provider）
-- messaging-gateway-architecture / gateway-session-management / cli-architecture — 23+ 平台（SimpleX/LINE/Google Chat/Teams）、/handoff、admin/user 命令拆分、hermes send/postinstall
-- smart-model-routing / auxiliary-client-architecture / provider-transport-architecture / prompt-caching-optimization — xAI Grok OAuth、NovitaAI、Codex app-server runtime、Qwen Cloud 改名、跨会话 prefix cache 回滚
-- skills-system-architecture / multi-agent-architecture / toolsets-system / tool-registry-architecture / terminal-backends / code-execution-sandbox — Curator 12 子命令、optional-skills 树、Kanban 跨进程编排器、x_search/video_gen toolset、7 种终端后端
+**更新页面 (16):**
+- agent-loop-and-prompt-assembly / aiagent-class — `run_agent.py` 大重构（12 模块抽取到 agent/），系统提示三层模型（stable/context/volatile），日期精度时间戳，grok 纳入 OpenAI 执行指导
+- session-search-and-sessiondb — session_search 单形态无 LLM 重写（#27590），三模式 DISCOVERY/SCROLL/BROWSE
+- browser-tool-architecture — 浏览器 Provider 插件化，BrowserProvider ABC（5 抽象成员），agent/browser_registry.py
+- context-compressor-architecture — abort-on-summary-failure（#28102/#28117），_strip_historical_media（#27189），conversation_compression.py 模块
+- auxiliary-client-architecture — 分层 fallback ladder，配额耗尽视为 payment error，文件 5286 行
+- smart-model-routing — xAI Grok OAuth / Azure Foundry Entra ID / NVIDIA NIM
+- credential-pool-and-isolation — OAuth 死 token 隔离，Nous invoke JWT
+- interrupt-and-fault-tolerance — FailoverReason 13→19，xAI entitlement SSE 分类，credential_pool 路径修正
+- cron-scheduling — cron job profile 支持
+- mcp-and-plugins / parallel-tool-execution — MCP supports_parallel_tool_calls
+- cli-architecture — `hermes send` 子命令，`/sessions` 接线
+- messaging-gateway-architecture — deliverable 模式，SUPPORTED_DOCUMENT_TYPES
+- toolsets-system — x_search 凭证自动启用
+- trajectory-and-data-generation — 移除 Atropos RL（environments/ 已删除，#26106）
 
-**其他:** README.md（版本 v2026.5.16）、index.md 同步
+- README.md / index.md 同步版本号 v0.14.0、changelog 计数 6、日期 2026-05-18

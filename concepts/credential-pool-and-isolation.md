@@ -1,7 +1,7 @@
 ---
 title: 凭证池与环境隔离系统
 created: 2026-04-07
-updated: 2026-04-11
+updated: 2026-05-18
 type: concept
 tags: [architecture, credentials, security, isolation]
 sources: [agent/credential_pool.py, hermes_cli/auth.py]
@@ -105,6 +105,14 @@ def _swap_credential(self, entry) -> None:
     self._replace_primary_openai_client(reason="credential_rotation")
 ```
 
+## OAuth 死 token 隔离（quarantine）
+
+MiniMax / Codex / xAI OAuth 现在会在**终止性刷新失败**时隔离死 token：当刷新触发需要重新登录的 `AuthError`（`relogin_required`）时，`access_token`、`refresh_token`、`expires_at` 会从 `auth.json` 中剥离，并写入一条 `last_auth_error` 记录。这样后续调用会**快速失败**，不再发起网络重试（`hermes_cli/auth.py:6795-6811`，沿用既有的 Nous 隔离模式）。
+
+## Nous Invoke JWT 优先
+
+Nous 推理认证现在优先使用一个**作用域受限的 invoke JWT**（`auth.json` 中的 `invoke_jwt`），直接作为推理的 `access_token`。当 JWT 认证不可用或失败时，回退到旧的不透明 24 小时会话密钥（`hermes_cli/auth.py:16-17,89-94`）。设置 `HERMES_AGENT_USE_LEGACY_SESSION_KEYS` 可强制使用旧路径用于调试或回滚。
+
 ## 环境隔离
 
 ```python
@@ -167,5 +175,5 @@ singularity.py # Singularity 容器隔离
 ## 相关文件
 
 - `agent/credential_pool.py` — 凭证池（4 种策略 + 耗尽恢复）
-- `hermes_cli/auth.py` — 凭证解析
+- `hermes_cli/auth.py` — 凭证解析、OAuth 死 token 隔离、Nous invoke JWT
 - `tools/environments/` — 终端后端环境

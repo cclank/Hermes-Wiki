@@ -1,7 +1,7 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-05-17
+updated: 2026-05-18
 type: concept
 tags: [gateway, architecture, module, telegram, discord, messaging, qq, proxy, i18n]
 sources: [gateway/run.py, gateway/platforms/, plugins/platforms/, gateway/slash_access.py, hermes_cli/config.py]
@@ -325,6 +325,16 @@ Agent 响应包含 MEDIA: 路径
 通过平台原生方式发送
 ```
 
+## Deliverable 模式（可投递制品）
+
+Gateway 不再只把图片/视频内嵌发送，而是按文件类型智能路由（"deliverable mode"）。
+
+- **文件分区**：`extract_local_files`（`gateway/platforms/base.py:2158`）会从 Agent 响应文本中识别裸的本地文件路径。路由分区位于 `gateway/platforms/base.py:3258-3333`：
+  - **内嵌发送**：仅图片、视频（在平台支持时内嵌展示）。
+  - **原生上传**：PDF、docx/xlsx/pptx、压缩包、音频、html 等一律走 `send_document` 作为文件附件发送。
+- **支持的文档类型**：`SUPPORTED_DOCUMENT_TYPES` 现为一个 dict（`gateway/platforms/base.py:815-836`），映射扩展名到 MIME 类型，包含 pdf/md/txt/csv/log/json/xml/yaml/yml/toml/ini/cfg/zip/docx/xlsx/pptx，并新增了 `.ts`、`.py`、`.sh`（均为 `text/plain`）。
+- **Kanban 制品投递**：`kanban_complete` 工具新增 `artifacts` 参数（文件路径列表），Gateway 通过 `_deliver_kanban_artifacts`（`gateway/run.py`）将这些制品上传给用户。
+
 ## 网关服务管理
 
 ### Linux (systemd)
@@ -634,7 +644,7 @@ _run_agent_via_proxy():
 
 - `gateway/run.py` — 主循环和消息分发
 - `gateway/session.py` — SessionStore
-- `gateway/platforms/base.py` — 平台基类
+- `gateway/platforms/base.py` — 平台基类（`extract_local_files`、`SUPPORTED_DOCUMENT_TYPES`、`send_document`）
 - `gateway/delivery.py` — 消息投递
 - `gateway/config.py` — 网关配置
 - `gateway/platforms/` — 平台适配器目录

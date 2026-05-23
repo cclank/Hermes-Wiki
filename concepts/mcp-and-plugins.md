@@ -1,7 +1,7 @@
 ---
 title: MCP 集成与插件系统
 created: 2026-04-07
-updated: 2026-05-17
+updated: 2026-05-18
 type: concept
 tags: [architecture, mcp, plugins, extensibility]
 sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py]
@@ -92,6 +92,10 @@ class MCPServerTask:
         elif server["transport"] == "http":
             return await self._call_http_tool(server, tool_name, args)
 ```
+
+### 并行工具调用 opt-in
+
+每个 MCP 服务器可配置 `supports_parallel_tool_calls` 标志（`tools/mcp_tool.py:3219`）。当设为 `true` 时，该服务器的工具在批量工具调用中**可参与并行执行**；opt-in 的服务器登记在 `_parallel_safe_servers` 集合中，由 `is_mcp_tool_parallel_safe()` 在并行安全检测时查询。默认为 `false`（保守串行）。详见 [[parallel-tool-execution]]。
 
 ### MCP OAuth 支持
 
@@ -256,6 +260,7 @@ hermes plugins update <name>  # 更新插件
 mcp_servers:
   filesystem:
       command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/root/work"]
+      supports_parallel_tool_calls: true  # 该服务器的工具可并行执行
     github:
       command: ["npx", "-y", "@modelcontextprotocol/server-github"]
       env:

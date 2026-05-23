@@ -1,7 +1,7 @@
 ---
 title: Agent Loop and Prompt Assembly
 created: 2026-04-07
-updated: 2026-05-17
+updated: 2026-05-18
 type: concept
 tags: [agent-loop, prompt-builder, architecture, component]
 sources: [hermes-agent 源码分析 2026-04-07, 2026-05-15 增量验证]
@@ -14,10 +14,10 @@ sources: [hermes-agent 源码分析 2026-04-07, 2026-05-15 增量验证]
 `AIAgent` 类仍定义在 `run_agent.py:326`，但 `run_agent.py`（约 4096 行）已不再是单块实现：核心逻辑已抽到 `agent/` 子模块。`__init__`（`run_agent.py:349`）是一个 5 行转发器，委派给 `agent/agent_init.py` 的 `init_agent()`（1469 行）；`run_conversation`（`run_agent.py:3840`）同样是转发器，委派给 `agent/conversation_loop.py` 的 `run_conversation()`（4018 行）。
 
 ```python
-# run_agent.py — 类定义；__init__/run_conversation 为转发器
+# run_agent.py — AIAgent 类（对话循环本体已抽取到 agent/conversation_loop.py）
 class AIAgent:
     def __init__(self,
-        model: str = "anthropic/claude-opus-4.6",
+        model: str = "",  # 默认空字符串，运行时解析（run_agent.py:358）
         max_iterations: int = 90,
         enabled_toolsets: list = None,
         disabled_toolsets: list = None,
@@ -40,10 +40,11 @@ class AIAgent:
 
 ## 对话循环
 
-对话循环本身现在实现在 `agent/conversation_loop.py`，`run_agent.py` 仅保留转发入口。
+对话循环本体位于 `agent/conversation_loop.py:598`：
 
 ```python
-while api_call_count < self.max_iterations and self.iteration_budget.remaining > 0:
+while (api_call_count < agent.max_iterations and agent.iteration_budget.remaining > 0) or agent._budget_grace_call:
+    # 预算耗尽后仍允许一次性 grace 迭代（_budget_grace_call）
     response = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -57,6 +58,9 @@ while api_call_count < self.max_iterations and self.iteration_budget.remaining >
     else:
         return response.content  # 最终响应
 ```
+
+- `_budget_grace_call` 是一次性的宽限迭代：预算耗尽后仍允许模型再调用一次，之后循环退出
+- `iteration_budget.consume()` 在循环体**内部**单独调用（`conversation_loop.py:619`），用于原子地检查并递减剩余预算——而非在 while 条件里
 
 - 完全同步执行
 - 消息格式遵循 OpenAI 标准：`{"role": "system/user/assistant/tool", ...}`
@@ -107,26 +111,17 @@ any wording above that may suggest otherwise. Run `git status` or
 
 ## 系统提示构建
 
-`AIAgent._build_system_prompt()` 现在是一个转发器，委派给 `agent/system_prompt.py` 的 `build_system_prompt()`。系统提示不再是单一 `prompt_parts` 列表，而是由 `build_system_prompt_parts()`（`agent/system_prompt.py:60`）产出**三个命名层级**，最后用 `"\n\n"` 连接成完整 system prompt。实测结构见 [[prompt-builder-architecture]]：
+`AIAgent._build_system_prompt()`（`run_agent.py:2156`）现在只是转发器 → `agent/system_prompt.py` 的 `build_system_prompt`。真正的组装由 `build_system_prompt_parts`（`agent/system_prompt.py:60`）完成：它返回一个含**三个有序层级**的 dict，在 `system_prompt.py:299` 用 `"\n\n".join(...)` 拼成完整 system prompt。三层的顺序是为最大化上游 prefix cache 命中率刻意设计的——越稳定的内容越靠前。
 
-1. **stable（稳定层）** — Agent 身份（`~/.hermes/SOUL.md`，不存在则用 `DEFAULT_AGENT_IDENTITY`）、工具使用强制指导、技能索引、环境提示、平台提示、模型族执行指导。此层会话内不变，最大化 prefix cache 命中。
-2. **context（上下文层）** — 项目上下文文件（`.hermes.md → AGENTS.md → CLAUDE.md → .cursorrules`，first match wins）+ 调用方传入的 `system_message`。
-3. **volatile（易变层）** — MEMORY 快照、USER PROFILE 快照、外部 Memory Provider 块、时间戳/Session/Model/Provider 行。
+1. **`stable` 层**（进程/会话内不变）— SOUL.md / `DEFAULT_AGENT_IDENTITY` → `HERMES_AGENT_HELP_GUIDANCE`（指向 hermes-agent skill 与文档的指针）→ 工具指导（memory / session_search / skills / kanban）→ computer-use 指导 → nous 订阅块 → 工具使用强制指导 + Google/OpenAI 模型操作指导 → Skills 索引 → alibaba 模型身份补丁 → 环境提示 → 平台提示
+2. **`context` 层**（随 cwd 变化）— 调用方传入的 `system_message` → 项目上下文文件（`.hermes.md → AGENTS.md → CLAUDE.md → .cursorrules`，first match wins）
+3. **`volatile` 层**（每会话/每轮变化，从不缓存）— MEMORY 快照 → USER PROFILE 快照 → 外部 Memory Provider 块 → 时间戳行（含 Session ID / Model / Provider）
 
-具体组件来源：
-- **SOUL.md** — Agent 身份（`~/.hermes/SOUL.md`，不存在则用 `DEFAULT_AGENT_IDENTITY`），属 stable 层
-- **工具使用强制指导 / 模型特定执行指导** — 按模型族过滤，属 stable 层
-- **Skills 索引** — 扫描 `~/.hermes/skills/` 生成，属 stable 层
-- **平台提示** — `PLATFORM_HINTS[platform]`，属 stable 层
-- **用户/Gateway 系统消息** — 若 `run_conversation` 传入 `system_message`，属 context 层
-- **项目上下文文件** — `.hermes.md → AGENTS.md → CLAUDE.md → .cursorrules`（first match wins），属 context 层
-- **MEMORY / USER PROFILE 快照** — `~/.hermes/memories/`（冻结），属 volatile 层
-- **外部 Memory Provider 块** — mem0/honcho/holographic 等，若启用，属 volatile 层
-- **会话元数据** — 时间戳、Model、Provider、Session ID，属 volatile 层
+**缓存机制**：系统提示在会话内只构建一次（`self._cached_system_prompt`），只在上下文压缩后才重建（`invalidate_system_prompt`，`system_prompt.py:302`，重建时会从磁盘重新加载 memory），确保每轮对话复用同一份 → LLM prefix cache 命中率最大化。
 
-**缓存机制**：系统提示在会话内只构建一次（`self._cached_system_prompt`），只在上下文压缩后才重建，确保每轮对话复用同一份 → LLM prefix cache 命中率最大化。
+**时间戳为日期精度**：时间戳行使用 `now.strftime('%A, %B %d, %Y')`（`system_prompt.py:267`），只精确到**日期**而非分钟。这是为 prefix-cache 稳定性的刻意改动（commit 4a3f13b）——分钟级精度会在每次重建时使 prefix-cache KV 失效；模型需要精确时间时可通过工具查询。
 
-**记忆冻结模式**：MEMORY.md / USER.md 在第 6-7 层的内容是**加载时的快照**，即使对话中模型写入新记忆也不会反映到当前会话的 system prompt 里——下次会话才生效。这是为保护 prefix cache 的刻意设计。
+**记忆冻结模式**：`volatile` 层的 MEMORY.md / USER.md 内容是**加载时的快照**，即使对话中模型写入新记忆也不会反映到当前会话的 system prompt 里——下次会话（或压缩后重建）才生效。这是为保护 prefix cache 的刻意设计。
 
 ## 平台提示 (PLATFORM_HINTS)
 
@@ -164,6 +159,8 @@ or plan to do without actually doing it.
 > 触发 "protocol violation"。把 `glm` 加入强制列表后即注入工具使用强制指导。
 
 ### OpenAI 模型额外指导
+
+`OPENAI_MODEL_EXECUTION_GUIDANCE` 适用于 `gpt` / `codex` 模型，**同样也应用于 xAI `grok` 模型**（`system_prompt.py:162`）——grok 表现出相同的失败模式（未调用工具就声称完成、用替代方案而非现有工具、回复计划而非执行）。
 
 ```xml
 <tool_persistence>
@@ -226,7 +223,7 @@ _CONTEXT_THREAT_PATTERNS = [
 
 ## 技能索引注入
 
-技能索引是**系统提示的一部分**，由 `build_skills_system_prompt()` 生成并归入 stable 层，与身份、平台提示等一起组成完整系统提示。
+技能索引是**系统提示的一部分**，由 `build_system_prompt_parts()` 调用 `build_skills_system_prompt()` 拼入 `stable` 层，与身份、工具指导、平台提示等一起组成完整系统提示。
 
 系统提示在会话内只构建一次（缓存在 `self._cached_system_prompt`），仅在上下文压缩后才重建，保证每轮对话复用同一份 → LLM prefix cache 命中率最大化。
 
@@ -291,14 +288,11 @@ DEVELOPER_ROLE_MODELS = ("gpt-5", "codex")
 
 ## 相关文件
 
-- `run_agent.py` — AIAgent 类定义（约 4096 行；`__init__`/`run_conversation` 为转发器）
-- `agent/agent_init.py` — `init_agent()`，AIAgent 初始化逻辑
-- `agent/conversation_loop.py` — `run_conversation()`，对话循环实现
-- `agent/system_prompt.py` — 系统提示三层组装编排
-- `agent/prompt_builder.py` — 系统提示组件构建器
-- `agent/chat_completion_helpers.py` — Chat completion 辅助
+- `run_agent.py` — AIAgent 类与转发器
+- `agent/conversation_loop.py` — 对话循环本体
 - `agent/tool_executor.py` — 工具执行
-- `agent/conversation_compression.py` — 上下文压缩驱动逻辑
+- `agent/system_prompt.py` — 系统提示三层组装（`build_system_prompt_parts`）
+- `agent/prompt_builder.py` — 系统提示构建块（`load_soul_md`、`build_skills_system_prompt`、`build_context_files_prompt`、`build_environment_hints` 等），不再负责整体组装
 - `model_tools.py` — 工具编排
 - `agent/context_compressor.py` — 上下文压缩算法
 - `agent/prompt_caching.py` — Anthropic prompt 缓存

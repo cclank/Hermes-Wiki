@@ -1,7 +1,7 @@
 ---
 title: AIAgent Class
 created: 2026-04-07
-updated: 2026-05-17
+updated: 2026-05-18
 type: entity
 tags: [component, agent, module]
 sources: [hermes-agent 源码分析 2026-04-07]
@@ -11,11 +11,13 @@ sources: [hermes-agent 源码分析 2026-04-07]
 
 ## 位置
 
-`AIAgent` 类仍定义在 `run_agent.py:326`，但 `run_agent.py` 不再是单块实现：核心逻辑已抽到 `agent/` 子模块。`__init__`（`run_agent.py:349`）是一个转发器，委派给 `agent/agent_init.py` 的 `init_agent()`；`run_conversation`（`run_agent.py:3840`）同样是转发器，委派给 `agent/conversation_loop.py` 的 `run_conversation()`。
+`run_agent.py:326`
 
 ## 概述
 
 AIAgent 是 Hermes Agent 的核心对话循环类，负责管理 LLM 交互、工具调用和会话状态。
+
+`run_agent.py` 经过重构：约 12 个辅助模块被抽取到 `agent/` 包中，AIAgent 上的许多方法现在只是薄转发器（thin forwarder），真正的实现位于 `agent/` 下的模块里。
 
 ## 构造函数
 
@@ -46,12 +48,14 @@ class AIAgent:
 
 完整接口，返回 `{final_response, messages}` 字典。
 
+`AIAgent.run_conversation` 本身只是 `run_agent.py:3859` 的转发器，真正的实现是 `agent/conversation_loop.py:187` 的 `run_conversation`（带一个前导 `agent` 参数）。`_build_system_prompt`（`run_agent.py:2156`）同样是转发器 → `agent/system_prompt.py` 的 `build_system_prompt`。
+
 ## 对话循环
 
-对话循环本身现在实现在 `agent/conversation_loop.py`，`run_agent.py` 仅保留转发入口。下面的代码现已位于 `agent/conversation_loop.py`：
+对话循环本体位于 `agent/conversation_loop.py:598`：
 
 ```python
-while api_call_count < self.max_iterations and self.iteration_budget.consume():  # consume() 原子地检查并递减剩余预算
+while (api_call_count < agent.max_iterations and agent.iteration_budget.remaining > 0) or agent._budget_grace_call:
     response = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -85,11 +89,9 @@ while api_call_count < self.max_iterations and self.iteration_budget.consume(): 
 
 ## 相关文件
 
-- `run_agent.py` — `AIAgent` 类定义（`run_agent.py:326`）；`__init__`/`run_conversation`/`_compress_context` 等为转发器
-- `agent/agent_init.py` — `init_agent()`，AIAgent 初始化逻辑
-- `agent/conversation_loop.py` — `run_conversation()`，对话循环实现
-- `agent/system_prompt.py` — 系统提示三层组装编排
+- `run_agent.py` — AIAgent 类与转发器（line 326）
+- `agent/conversation_loop.py` — 对话循环
 - `agent/tool_executor.py` — 工具执行
-- `agent/conversation_compression.py` — 上下文压缩驱动逻辑
+- `agent/system_prompt.py` — 系统提示组装
 - `model_tools.py` — 工具编排
-- `agent/prompt_builder.py` — 系统提示组件构建器
+- `agent/prompt_builder.py` — 系统提示构建块
