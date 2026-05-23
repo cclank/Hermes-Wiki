@@ -1,10 +1,10 @@
 ---
 title: Memory System Architecture
 created: 2026-04-07
-updated: 2026-04-29
+updated: 2026-05-06
 type: concept
 tags: [memory, architecture, module]
-sources: [tools/memory_tool.py, agent/memory_manager.py, agent/memory_provider.py, agent/builtin_memory_provider.py, run_agent.py, agent/prompt_builder.py, plugins/memory/__init__.py]
+sources: [tools/memory_tool.py, agent/memory_manager.py, agent/memory_provider.py, agent/builtin_memory_provider.py, run_agent.py, agent/prompt_builder.py, plugins/memory/, plugins/memory/hindsight/__init__.py]
 ---
 
 # 记忆系统架构
@@ -223,7 +223,7 @@ class MemoryProvider(ABC):
 | ----------- | -------------------------------------------- |
 | honcho      | `plugins/memory/honcho/` — Honcho AI 辩证式用户建模 |
 | mem0        | `plugins/memory/mem0/`                       |
-| hindsight   | `plugins/memory/hindsight/`                  |
+| hindsight   | `plugins/memory/hindsight/` — long-term memory + knowledge graph + entity resolution |
 | holographic | `plugins/memory/holographic/`                |
 | openviking  | `plugins/memory/openviking/`                 |
 | retaindb    | `plugins/memory/retaindb/`                   |
@@ -231,6 +231,33 @@ class MemoryProvider(ABC):
 | byterover   | `plugins/memory/byterover/`                  |
 
 插件发现机制：扫描 `plugins/memory/` 目录，找到含 `__init__.py` 的子目录，调用 `is_available()` 快速检查。
+
+### Hindsight Provider（v2026.5+ 增强）
+
+`plugins/memory/hindsight/__init__.py`：长期记忆 with 知识图谱、实体消歧、多策略检索。**Cloud + Local 两种模式**。
+
+| Env Var | 默认 | 说明 |
+|---------|------|------|
+| `HINDSIGHT_API_KEY` | — | Cloud API key |
+| `HINDSIGHT_BANK_ID` | `hermes` | memory bank id |
+| `HINDSIGHT_BUDGET` | `mid` | recall 预算: `low`/`mid`/`high` |
+| `HINDSIGHT_API_URL` | `https://api.hindsight.vectorize.io` | API endpoint |
+| `HINDSIGHT_MODE` | `cloud` | `cloud` / `local` |
+| `HINDSIGHT_TIMEOUT` | 120s | API 请求超时 |
+| `HINDSIGHT_IDLE_TIMEOUT` | 300s | local daemon 空闲关闭（0 = 不关）|
+| `HINDSIGHT_RETAIN_TAGS` | — | 逗号分隔的 retain 标签 |
+
+Config fallback 链：`$HERMES_HOME/hindsight/config.json` (profile-scoped) → `~/.hindsight/config.json` (legacy shared)。
+
+**`update_mode='append'` 探测**（`feat(hindsight): probe API for update_mode='append' support, dedupe across processes` / 3082fa0）：
+
+启动时 probe `<api_url>/version`，gate 在 Hindsight ≥ 0.5.0：
+- **支持时**：稳定 session-scoped `document_id = session_id` + `update_mode='append'`，跨进程对同一 session 的 retain 合并到一条文档（不再产生 N 条 process-stamped 重复）
+- **不支持时**：`f"{session_id}-{start_ts}"` 唯一 document_id（resume-overwrite 修复 #6654 仍生效）
+
+`_append_capability_cache: Dict[str, bool]` 按 API URL 缓存能力，进程内 probe 一次。
+
+Plugin manifest hook：`on_session_end`。
 
 ---
 

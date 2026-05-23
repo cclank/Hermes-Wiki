@@ -1,10 +1,10 @@
 ---
 title: Gateway Session 会话管理架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-05-06
 type: concept
-tags: [architecture, module, component, gateway, session-store, multi-platform]
-sources: [gateway/session.py, gateway/config.py]
+tags: [architecture, module, component, gateway, session-store, multi-platform, api-server]
+sources: [gateway/session.py, gateway/config.py, gateway/platforms/api_server.py]
 ---
 
 # Gateway Session — 网关会话管理架构
@@ -245,6 +245,39 @@ gateway:
 # 通过 gateway 内部 API
 store._entries  # Dict[session_key, SessionEntry]
 ```
+
+## API Server — X-Hermes-Session-Key（v2026.5+）
+
+`gateway/platforms/api_server.py` 提供 OpenAI 兼容端点（`/v1/chat/completions`、`/v1/responses`、`/v1/runs`）。OpenAI 协议**默认无状态**——同一 channel 的多次请求互不关联，长期记忆 provider（Honcho、Hindsight）无法把它们归到同一个用户。
+
+为此引入 **`X-Hermes-Session-Key`** header，提供**稳定 per-channel 标识**，scope 长期记忆，独立于 transcript-scoped `X-Hermes-Session-Id`：
+
+```text
+            X-Hermes-Session-Id      X-Hermes-Session-Key
+            (transcript)             (channel)
+            ┌───────────────┐        ┌───────────────┐
+/new ──>    │  rotates      │        │   stable      │
+            │  per /new     │        │   per channel │
+            │  per agent    │        │   per user    │
+            └───────────────┘        └───────────────┘
+              ↓                        ↓
+       run_agent / SessionDB      Honcho.resolve_session_name
+                                  Hindsight document_id
+```
+
+匹配原生 gateway 的 `session_key` / `session_id` 拆分语义：**一个 channel 一个稳定 key，多个 transcript 在 `/new` 时旋转**。
+
+### `_parse_session_key_header`（line 714）
+
+| 验证 | 限制 |
+|------|------|
+| 需 API-key 启用 | 否则 `X-Hermes-Session-Key` 被 reject |
+| 控制字符 sanitize | 拒非可打印字符 |
+| 长度上限 | 256 chars |
+
+### 端点 honor
+
+`/v1/chat/completions`、`/v1/responses`、`/v1/runs` 三处 `_create_agent` / `_run_agent` 接受 `gateway_session_key` 参数并 pass 给 `AIAgent(gateway_session_key=...)`；JSON / SSE 响应 echo header；`/v1/capabilities` 通告 `session_key_header: "X-Hermes-Session-Key"` 让 client feature-detect。
 
 ## Agent 运行中收到新消息的处理（gateway/run.py line 1920+）
 

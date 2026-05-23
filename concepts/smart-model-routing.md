@@ -1,10 +1,10 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-05-05
+updated: 2026-05-06
 type: concept
-tags: [architecture, module, model-routing, performance, caching, anthropic]
-sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py, providers/__init__.py, providers/base.py]
+tags: [architecture, module, model-routing, performance, caching, anthropic, plugin]
+sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py, providers/, plugins/model-providers/]
 ---
 
 # Smart Model Routing — 智能模型路由
@@ -186,6 +186,8 @@ MODEL_ALIASES = {
 别名解析是**动态的**——通过查询 models.dev 目录找到匹配的最新模型版本，而非硬编码。
 
 ### 5. Provider 前缀处理
+
+> **注**：自 v2026.5+ provider 身份/auth/endpoint/quirks 全部声明在 `ProviderProfile`（`providers/base.py` ABC）+ `plugins/model-providers/<name>/__init__.py` 插件中。前缀解析仍走本节逻辑，但元数据查询如 `default_aux_model` / `fallback_models` / `aliases` / `hostname` → provider 反向映射 都从 profile 读取。详见 [[provider-transport-architecture]]。
 
 ```python
 _PROVIDER_PREFIXES = frozenset({

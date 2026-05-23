@@ -1,23 +1,25 @@
 ---
 title: Web Tools 搜索/提取架构
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-05-06
 type: concept
 tags: [tool, toolset, architecture, component]
-sources: [tools/web_tools.py]
+sources: [tools/web_tools.py, tools/web_providers/]
 ---
 
 # Web Tools — 搜索/提取架构
 
 ## 概述
 
-Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 搜索/提取/爬取**能力。支持 4 种后端提供商，所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口。
+Web Tools 位于 `tools/web_tools.py`，提供**多后端 Web 搜索/提取/爬取**能力。支持 5 种后端提供商，所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口。
 
 核心理念：**内容获取优先于浏览器自动化**——简单信息检索使用 web_search/web_extract（更快、更便宜），仅在需要交互时才使用 browser 工具。
 
+> **2026-05 重构**：search 与 extract 拆为**按能力独立选择 backend**（`tools/web_providers/` ABC + `web.search_backend` / `web.extract_backend`），便于"SearXNG 搜索 + Firecrawl 提取"等组合。
+
 ## 架构原理
 
-### 四大后端
+### 五大后端
 
 | 后端 | Search | Extract | Crawl | 认证 |
 |---|---|---|---|---|
@@ -25,20 +27,54 @@ Web Tools 位于 `tools/web_tools.py`（88KB/2099行），提供**多后端 Web 
 | **Exa** | ✅ | ✅ | ❌ | EXA_API_KEY |
 | **Parallel** | ✅ | ✅ | ❌ | PARALLEL_API_KEY |
 | **Tavily** | ✅ | ✅ | ✅ | TAVILY_API_KEY |
+| **SearXNG** | ✅ | ❌ | ❌ | 无 API Key（仅 SEARXNG_URL） |
 
-### 后端选择链
+### Per-Capability 后端选择
+
+```yaml
+# ~/.hermes/config.yaml
+web:
+  backend: "firecrawl"          # 共享 fallback
+  search_backend: "searxng"     # 单独覆盖 search
+  extract_backend: "firecrawl"  # 单独覆盖 extract
+```
+
+**优先级（每能力独立）**：
+1. `web.search_backend` / `web.extract_backend`（per-capability，且该 backend 可用）
+2. `web.backend`（共享 fallback）
+3. 自动检测 env vars
 
 ```python
-def _get_backend():
-    """解析优先级:
-    1. config.yaml web.backend (显式指定: parallel/firecrawl/tavily/exa)
-    2. FIRECRAWL_API_KEY / FIRECRAWL_API_URL / tool-gateway
-    3. PARALLEL_API_KEY
-    4. TAVILY_API_KEY
-    5. EXA_API_KEY
-    6. 默认: firecrawl (向后兼容)
-    """
+# tools/web_tools.py:_get_backend() 自动检测候选顺序：
+candidates = [
+    ("firecrawl", _has_env("FIRECRAWL_API_KEY") or _has_env("FIRECRAWL_API_URL")),
+    ("parallel",  _has_env("PARALLEL_API_KEY")),
+    ("tavily",    _has_env("TAVILY_API_KEY")),
+    ("exa",       _has_env("EXA_API_KEY")),
+    ("searxng",   _has_env("SEARXNG_URL")),  # 优先级最低（自托管/无 key）
+]
 ```
+
+**SearXNG 调用 search-only 接口**：`web_extract` / `web_crawl` 命中 SearXNG 时返回明确错误（`"SearXNG is a search-only backend and cannot extract URL content"`），调用方需配 extract_backend。
+
+### Provider ABC（`tools/web_providers/`）
+
+```python
+# tools/web_providers/base.py
+class WebSearchProvider(ABC):
+    @abstractmethod
+    def provider_name(self) -> str: ...
+    @abstractmethod
+    def is_configured(self) -> bool: ...
+    @abstractmethod
+    def search(self, query: str, limit: int = 5) -> Dict[str, Any]: ...
+
+class WebExtractProvider(ABC):
+    @abstractmethod
+    def extract(self, urls: List[str], **kwargs) -> Dict[str, Any]: ...
+```
+
+新 provider 流程：实现 ABC → 加 `_is_backend_available()` 分支 → 加 `web_search_tool()` / `web_extract_tool()` 分发分支 → 加 `tools_config.py` 选择器条目。
 
 ### Firecrawl 双路径架构
 

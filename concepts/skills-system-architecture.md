@@ -1,10 +1,10 @@
 ---
 title: Skills System Architecture
 created: 2026-04-07
-updated: 2026-05-04
+updated: 2026-05-06
 type: concept
 tags: [skill, architecture, module, prompt-builder]
-sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, tools/skill_usage.py, run_agent.py, agent/prompt_builder.py, agent/curator.py, hermes_cli/curator.py, hermes_cli/plugins.py, agent/skill_utils.py]
+sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, run_agent.py, agent/prompt_builder.py, hermes_cli/plugins.py, agent/skill_utils.py, hermes_cli/curator.py, agent/curator.py, tools/skill_usage.py]
 ---
 
 # 技能系统架构
@@ -287,31 +287,24 @@ active ──不用 N 天──> stale ──继续不用──> archived
 - 记录使用次数（`bump_use()` 在 `skill_view`、preload、显式调用路径都触发）和最近使用时间
 - 是状态机的输入信号，也是 `hermes curator status` 排名依据
 
-### CLI（v2026.4.30 全套）
+### CLI（11 个子命令，2026-05 扩展）
 
 ```bash
-hermes curator status         # 按使用频次排序：most-used vs least-used
-hermes curator run            # 立即跑一轮
-hermes curator pause/resume   # 暂停/恢复
-hermes curator pin <skill>    # 钉住某个 skill（跳过自动转换）
+hermes curator status              # 当前状态、待处理 skill
+hermes curator run                 # 立即跑一轮
+hermes curator pause/resume        # 暂停/恢复
+hermes curator pin <skill>         # 钉住某个 skill（跳过自动归档）
 hermes curator unpin <skill>
-hermes curator restore <skill>  # 从归档恢复（处理嵌套 archive 子目录）
-hermes curator backup         # 手动备份
-hermes curator rollback       # 回滚到上次备份（修复 cron 链接）
+hermes curator restore <skill>     # 从归档恢复
+hermes curator archive <skill>     # 立即手动 archive（不等周期）
+hermes curator prune --days 90     # 批量 archive >= N 天未用 skill（pinned 跳过）
+hermes curator backup              # 整 skills 目录 backup
+hermes curator rollback            # 回滚到上一次 backup
 ```
 
 `/curator` 斜杠命令暴露相同子命令。
 
-### 自我改进闭环（Background Review Fork，v2026.4.30 重做）
-
-后台审查 fork（每轮决定保存/更新哪些 memory/skill）做了全栈升级：
-
-- **rubric-based 评分**（class-first）替换以往的"should this update" 自由问答
-- **active-update bias** —— 优先更新刚被 agent 加载的 skill；理解 `references/` + `templates/` 子文件
-- **fork 继承父 runtime**（provider/model/credentials 真正传递）—— 之前 fork 会回落到默认配置
-- **toolsets 限定到 memory + skills** —— fork 不能调 web/shell（防止越权）
-- 后台 memory provider clean shutdown
-- review summary **排除上一轮 tool messages** —— fork 看到干净的对话上下文
+`fix(curator): protect hub skills by frontmatter name` (68c1a08) —— 除路径过滤（`.hub/lock.json`）外，按 frontmatter `name` 字段二次过滤，避免 hub-installed skill 被改名后绕过保护。
 
 ## /reload-skills 和 /reload-mcp（v2026.4.23+）
 
@@ -321,16 +314,38 @@ hermes curator rollback       # 回滚到上次备份（修复 cron 链接）
 
 **`/reload-mcp` 加确认提示**：MCP 重载会失效 prompt cache，gateway 现在弹出确认对话框（包含"未来不再询问"的 opt-out 选项），避免误操作清掉昂贵的缓存。
 
-## 拒绝写 pinned skills（v2026.4.23+）
+## Pin 语义：仅保护删除（v2026.5.5 收窄）
 
-`tools/skill_manager_tool.py:134` 新增 `_pinned_guard(name)`，在 `skill_manage` 的 create/update/archive/delete 路径上拦截 pinned skill 修改：
+### 当前行为（2026-05-05 之后，#20220）
+
+`tools/skill_manager_tool.py:_pinned_guard()` **仅在 `skill_manage(action='delete')` 路径触发**。Patch、edit、supporting-file write 在 pinned skill 上**全部放行**。
 
 ```python
-if rec.get("pinned"):
-    return f"Skill '{name}' is pinned and cannot be modified by skill_manage..."
+def _pinned_guard(name: str) -> Optional[str]:
+    """Return a refusal message if *name* is pinned, else None.
+
+    Only applies to delete; the agent can still patch/edit pinned skills;
+    pin only guards against deletion."""
+    rec = _index_record(name)
+    if rec.get("pinned"):
+        return (
+            f"Skill '{name}' is pinned and cannot be deleted by "
+            f"skill_manage(action='delete'). Patches and edits are allowed "
+            f"on pinned skills; only delete is blocked."
+        )
+    return None
 ```
 
-这是 Curator 不变量的延伸——pinned 状态对 agent 也是禁区，只能通过 `hermes curator unpin` 显式解锁。
+调用位点（`tools/skill_manager_tool.py:571`）只剩 delete handler。
+
+### 为什么收窄
+
+之前 `_pinned_guard` 是 hard fence，**任何写操作（edit/patch/delete/write_file/remove_file）都拒**。设计混淆了两件事：
+
+1. **Pin as deletion protection**——保护 skill 不被 curator/agent 删（用户实际想要的）
+2. **Pin as content freeze**——禁止 agent 改 skill（造成 unpin → patch → re-pin 麻烦舞步，鼓励 skill 失修）
+
+现在分开处理：**Curator 自身的 pinned-skip 不变**（`agent/curator.py:271` 自动归档 + `:349` LLM review prompt 都仍跳过 pinned），所以 pin 仍然防自动删除/归档；agent 仍可改 pinned skill 维护它。
 
 ## v0.12.0 新增/晋升的技能
 

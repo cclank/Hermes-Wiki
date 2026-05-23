@@ -1,10 +1,10 @@
 ---
 title: Provider Transport 架构
 created: 2026-04-18
-updated: 2026-05-05
+updated: 2026-05-06
 type: concept
-tags: [architecture, module, provider, transport, api-dispatch]
-sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, run_agent.py, providers/__init__.py, providers/base.py]
+tags: [architecture, module, provider, transport, api-dispatch, plugin]
+sources: [agent/transports/base.py, agent/transports/anthropic.py, agent/transports/chat_completions.py, agent/transports/bedrock.py, agent/transports/codex.py, agent/transports/types.py, agent/transports/__init__.py, providers/base.py, providers/__init__.py, plugins/model-providers/, run_agent.py]
 ---
 
 # Provider Transport — API 路径统一抽象
@@ -15,7 +15,7 @@ Provider Transport 是 **v2026.4.17+** 引入的架构级重构，用统一的 A
 
 **核心理念**：**一个 provider 的消息转换、工具转换、参数构建、响应规范化，应该聚合在一个类里，而不是散落在调用点。**
 
-> **v0.12.0（2026-05-05）增强**：新 `providers/` 包引入 `ProviderProfile` ABC（`providers/base.py`），把 provider 的**声明式数据**（base_url、env_vars、auth_type、default_aux_model、default_headers、fixed_temperature 等）从 transport 中拆出。Transport 仍负责数据路径，profile 通过 `prepare_messages` / `build_extra_body` / `build_api_kwargs_extras` 三个钩子注入 provider 特定 quirks。`chat_completions.py::_build_kwargs_from_profile()` 是 profile 路径入口；`run_agent.py` 现在传 `provider_profile=<ProviderProfile>` 让 transport 走 profile 路径，仅 `lmstudio` 和 `tencent-tokenhub`（带 session-aware reasoning probing）保留 legacy flag 路径。详见下文「ProviderProfile 与 Transport 的职责切分」。
+> **2026-05 二阶重构**：`providers/` 模块（`ProviderProfile` ABC）补全了"哪个 provider"那一半。Transport 管 `api_mode`（数据路径），Provider Profile 管 provider 身份/auth/endpoint/quirks/aux defaults，**两者正交**。33 个 provider profile 全部以 `plugins/model-providers/<name>/` 形式发布。详见下方"Provider Profile 插件系统"。
 
 ## 架构原理
 
@@ -133,10 +133,99 @@ def register_transport(api_mode: str, transport_cls: type) -> None:
 | AWS Bedrock | BedrockTransport | 全路径完成 |
 | Auxiliary Client（压缩/记忆） | 已迁移到 Transport | 完成 |
 
+## Provider Profile 插件系统（v2026.5+）
+
+### 关注点拆分
+
+| 维度 | Transport | Provider Profile |
+|------|-----------|------------------|
+| 抽象 | API **数据路径**（消息/工具/响应转换） | Provider **身份与配置**（auth/endpoint/quirks/aux defaults） |
+| 数量 | 4 个（Anthropic / Chat Completions / Responses / Bedrock） | 33 个（每个真实 provider 一个） |
+| 复用 | 多个 provider 共享同一 transport | 每个 provider 一个 profile，独立 |
+| 位置 | `agent/transports/` | `providers/` + `plugins/model-providers/` |
+
+### `ProviderProfile` 声明式 dataclass
+
+```python
+# providers/base.py
+@dataclass
+class ProviderProfile:
+    name: str                              # 'openrouter'
+    api_mode: str = "chat_completions"     # 决定用哪个 Transport
+    aliases: tuple = ()                    # ('claude', 'claude-oauth')
+    display_name: str = ""                 # 'GMI Cloud'
+    description: str = ""                  # picker subtitle
+    signup_url: str = ""
+
+    # auth + endpoints
+    env_vars: tuple = ()
+    base_url: str = ""
+    models_url: str = ""                   # default {base_url}/models
+    auth_type: str = "api_key"             # api_key|oauth_device_code|oauth_external|copilot|aws_sdk
+
+    fallback_models: tuple = ()
+    hostname: str = ""                     # for URL → provider reverse mapping
+
+    default_headers: dict = field(default_factory=dict)
+    fixed_temperature: Any = None          # OMIT_TEMPERATURE 哨兵 = 不发送
+    default_max_tokens: int | None = None
+    default_aux_model: str = ""            # cheap aux 模型
+
+    # 子类可覆盖 hooks：
+    def fetch_models(self, *, api_key, timeout) -> list[str] | None: ...
+    def prepare_messages(self, messages) -> list[dict]: ...
+    def build_extra_body(self, *, session_id, **context) -> dict: ...
+```
+
+### 插件发现链（`providers/__init__.py:_discover_providers()`）
+
+```
+1. <repo>/plugins/model-providers/<name>/__init__.py    # bundled
+2. $HERMES_HOME/plugins/model-providers/<name>/         # user (last-writer-wins)
+3. providers/<name>.py                                  # legacy 单文件兼容
+```
+
+每个 `__init__.py` 调用 `register_provider(profile)` 即注册；用户 plugin **覆盖同名 bundled**——任何人 monkey-patch 或替换内置 profile 不必改 repo 源码。
+
+### 33 个 Profile 在 28 个目录下
+
+| 多 profile 目录 | 包含 profiles |
+|---|---|
+| `gemini/` | gemini + 1 其他 |
+| `kimi-coding/` | kimi-coding + kimi |
+| `opencode-zen/` | opencode-go + opencode-zen |
+| `minimax/` | minimax + minimax-oauth + 1 其他 |
+
+**24 个一目录一 profile**：anthropic、openrouter、bedrock、deepseek、xai、nous、nvidia、arcee、stepfun、ollama-cloud、azure-foundry、ai-gateway、alibaba、alibaba-coding-plan、copilot、copilot-acp、custom、gmi、huggingface、kilocode、openai-codex、qwen-oauth、xiaomi、zai。
+
+### 实例：anthropic profile（plugins/model-providers/anthropic/__init__.py）
+
+```python
+from providers import register_provider
+from providers.base import ProviderProfile
+
+class AnthropicProfile(ProviderProfile):
+    def fetch_models(self, *, api_key, timeout=8.0):
+        # x-api-key header (not Bearer)
+        ...
+
+anthropic = AnthropicProfile(
+    name="anthropic",
+    aliases=("claude", "claude-oauth", "claude-code"),
+    api_mode="anthropic_messages",
+    env_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"),
+    base_url="https://api.anthropic.com",
+    auth_type="api_key",
+    default_aux_model="claude-haiku-4-5-20251001",
+)
+```
+
+`register_provider(anthropic)` 由 module-level 调用执行；`get_provider_profile("claude")` 经 alias 解析返回该 profile；`AIAgent` 读 `profile.api_mode` 选 transport，读其余字段构 client + 请求。
+
 ## 与其他系统的关系
 
 - [[auxiliary-client-architecture]] — auxiliary_client 已迁移到 Transport
-- [[smart-model-routing]] — transport 基于 api_mode 派发，与模型路由配合
+- [[smart-model-routing]] — transport 基于 api_mode 派发，provider profile 提供 fallback_models / aliases / hostname → provider 反向映射
 - [[interrupt-and-fault-tolerance]] — 中断、retry 仍在 AIAgent 层，不属于 transport 职责
 - [[prompt-caching-optimization]] — cache 统计通过 `extract_cache_stats` 钩子暴露
 
@@ -149,5 +238,8 @@ def register_transport(api_mode: str, transport_cls: type) -> None:
 - `agent/transports/chat_completions.py`（387 行） — Chat Completions
 - `agent/transports/codex.py`（217 行） — OpenAI Responses API
 - `agent/transports/bedrock.py`（154 行） — AWS Bedrock Converse
+- `providers/base.py`（165 行） — `ProviderProfile` ABC
+- `providers/__init__.py`（191 行） — Plugin 发现 + register_provider/get_provider_profile/list_providers
+- `plugins/model-providers/<name>/__init__.py` × 28 — 各 provider 的声明式 profile
 - `run_agent.py` — 10+ 接入点
 - `agent/auxiliary_client.py` — 辅助路径已迁移
