@@ -123,22 +123,37 @@
   - 核心内容: Gateway Hooks 事件驱动(8种事件+通配符)，Plugin System 三级来源(用户/项目/pip)，PluginContext API(工具注册/消息注入/CLI命令/钩子)，缓存友好上下文注入
 - index.md 更新为 37 页
 
-## [2026-05-02] update | v0.12.0 同步 — 1338 commits 跨 v0.11.0 和 v0.12.0
-- 拉取 hermes-agent 仓库，对比上次 wiki 同步（v2026.4.23）至 HEAD（v2026.4.30, commit 5d3be898）
-- 共 1338 commits，自上次 wiki 更新以来的两次 release：v0.11.0（v2026.4.23）+ v0.12.0（v2026.4.30）+ 之后的 fix/enhancement
-- 新增 changelog/2026-05-02-update.md
-- 更新 README.md（version → v2026.4.30，changelog 数 → 6）
-- 更新 11 个 concept 页面，全部经源码验证：
-  - skills-system-architecture: Curator 自治化（1599 行/430 行；REPORT.md/run.json；consolidated vs pruned 分类；hermes curator status 排名；自我改进闭环 fork 重做）
-  - messaging-gateway-architecture: 平台数 14+ → 19；新增 Microsoft Teams（plugin 平台）；BasePlatform → BasePlatformAdapter；pre_gateway_dispatch hook；native multi-image / 集中音频路由；[SYSTEM:] → [IMPORTANT:] 标记
-  - smart-model-routing: 5 新 Provider（GMI Cloud / Azure AI Foundry / Tencent Tokenhub / MiniMax OAuth / LM Studio first-class）；远端 model catalog manifest；hermes fallback 命令；native multimodal image routing
-  - prompt-caching-optimization: prompt_caching.cache_ttl 配置（5m/1h，仅 Anthropic 支持的 tier）
-  - voice-mode-architecture: 第 6 个内置 TTS Piper（本地 Apache-2）；TTS provider registry（tts.providers.<name>）；TUI Voice Mode parity
-  - session-search-and-sessiondb: messages_fts_trigram 表（CJK/泰语 substring）；tool_name + tool_calls 入 FTS5 索引（schema v11 自动迁移）
-  - security-defense-system: HARDLINE_PATTERNS（12 unconditional）；redaction 默认 OFF（agent/redact.py:64，security.redact_secrets opt-in）；[SYSTEM:] → [IMPORTANT:]；mask_secret helper
-  - hook-system-architecture: VALID_HOOKS 扩展（pre_gateway_dispatch / pre_approval_request / post_approval_response / transform_tool_result / transform_terminal_output / on_session_finalize / subagent_stop）；plugin kind 增加 platform；详细行为说明
-  - mcp-and-plugins: bundled plugins 大列表（Spotify / Google Meet / Langfuse / hermes-achievements / disk-cleanup / kanban / IRC / Teams 等）；Spotify 7 工具
-  - cli-architecture: 新增 hermes -z / hermes update --check / hermes fallback / hermes curator 全套；新斜杠 /steer /busy /btw /reload-skills /reload-mcp /queue /bg /mouse /reload；删除 /provider /plan / flush_memories；TUI 冷启动 -57%（lazy init / lazy import / mtime cache / memoize / precompile）
-  - context-compressor-architecture: aux 失败 retry on main model 再放弃；aux 失败主动通知用户；多模态 token 估算改 text-char 总和；aux 头预算保留 system+tools headroom
-  - memory-system-architecture: flush_memories 工具完全移除（refactor #15696）—— 由 background-review fork 替代
-- log.md 更新条目（本条）
+## [2026-05-04] ingest | 拉取 hermes-agent 最新代码 + 同步 wiki
+- 操作：`git clone --depth 200 https://github.com/NousResearch/hermes-agent.git`
+- 范围：自 2026-04-29 wiki 上次同步以来 **353 个 commit**
+- 提交起止：c2cb6d1 (2026-04-29) → 167b564 (2026-05-04)
+- 上游版本：v0.12.0 / v2026.4.30（April 30, 2026 release）
+
+## [2026-05-04] create | 三个新 wiki 页面（v0.12.0 三大新模块，逐行源码验证）
+- 文件: concepts/persistent-goals.md
+  - 源码: hermes_cli/goals.py (535 行), cli.py:7053-7210, gateway/run.py, tui_gateway/server.py
+  - 核心内容: `/goal` Ralph Loop，judge 驱动跨轮目标循环，fail-OPEN，turn 预算兜底，prompt cache 不失效，state 存 SessionDB state_meta
+  - 验证 PR: #18262 #18275 #19209 #18481
+- 文件: concepts/kanban-collaboration-board.md
+  - 源码: hermes_cli/kanban_db.py (2765 行), hermes_cli/kanban.py (1393 行), tools/kanban_tools.py (726 行), plugins/kanban/
+  - 核心内容: 跨 Profile SQLite 协作板，5 表 schema (tasks/task_runs/task_links/task_comments/task_events/kanban_notify_subs)，WAL+CAS+claim TTL，HERMES_KANBAN_TASK env gating 7 个 worker tool，第 5 种多 Agent 模式
+  - 验证 PR: #17805
+- 文件: concepts/tool-loop-guardrails.md
+  - 源码: agent/tool_guardrails.py (455 行), tests/agent/test_tool_guardrails.py
+  - 核心内容: warning-first 工具循环护栏，三种 loop 模式（exact failure / same-tool failure / idempotent no-progress），ToolCallSignature SHA256 隐藏 raw args，复用 _detect_tool_failure 保证 CLI 标签一致
+
+## [2026-05-04] update | 现有 wiki 页面同步
+- voice-mode-architecture.md: 新增 Piper（v2026.4.30+，44 语种 VITS）+ Custom Command TTS Provider Registry，TTS provider 总数从 5 个扩到 10+
+- messaging-gateway-architecture.md: 新增 Microsoft Teams（第 2 个插件平台）、原生多图发送、集中音频路由（FLAC + Telegram doc fallback）、busy_ack_enabled、自动 restart、平台修复一组
+- mcp-and-plugins.md: 新增 Bundled 插件章节（platforms/irc, platforms/teams, kanban, hermes-achievements 等 12 个 bundled）、Dashboard Plugins page、async plugin command 30s 超时、/reload-mcp 缓存提示
+- skills-system-architecture.md: 新增 v2026.4.30+ 增强（bump_use 命中计数、.archive 排除、Curator 10+ 修复、here.now / Shopify / kanban-* 新 skill、Discord /skill 自动补全修复一组）
+
+## [2026-05-04] create | 新 changelog 条目
+- 文件: changelog/2026-05-04-update.md
+- 范围: 353 commits，按主题分类（架构/Provider/Gateway/TUI/CLI/Skills/Plugins/Provider-Model/Tooling/ACP/Cron/Security/CI/Docs/Reverts）
+- 引用了 ~150 commit hash，所有结论均经源码验证
+
+## [2026-05-04] update | index.md / README.md
+- index.md 总页数 33 → 40，重新分组多 Agent 章节（kanban + persistent-goals + tool-loop-guardrails 加入）
+- README.md badge 升级到 v0.12.0 (2026.4.30)，目录新增 3 个新页面 + 1 个 changelog
+- 跟踪版本：v2026.4.23 → v0.12.0 (v2026.4.30)
