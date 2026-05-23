@@ -1,17 +1,19 @@
 ---
 title: Context Compressor 上下文压缩架构
 created: 2026-04-08
-updated: 2026-05-16
+updated: 2026-05-17
 type: concept
 tags: [architecture, module, component, agent, context-compression]
-sources: [agent/context_engine.py, agent/context_compressor.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
+sources: [agent/context_engine.py, agent/context_compressor.py, agent/conversation_compression.py, agent/conversation_loop.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
 ---
 
 # Context Compressor — 上下文压缩架构
 
 ## 概述
 
-Context Compressor 位于 `agent/context_compressor.py`，是一个**自动上下文窗口压缩**类。当对话接近模型上下文限制时，使用辅助 LLM（廉价/快速模型）对中间轮次进行结构化摘要，同时保护头部和尾部上下文。
+Context Compressor 位于 `agent/context_compressor.py`（1699 行），是一个**自动上下文窗口压缩**类。当对话接近模型上下文限制时，使用辅助 LLM（廉价/快速模型）对中间轮次进行结构化摘要，同时保护头部和尾部上下文。`ContextCompressor` 算法本体保留在此文件。
+
+**分层说明**：驱动压缩的逻辑已从 `run_agent.py` 抽离——`_compress_context`（`run_agent.py:3705`）现在只是转发器，`compress_context`、`check_compression_model_feasibility`、`replay_compression_warning`、`try_shrink_image_parts_in_messages` 等驱动函数被提取到 `agent/conversation_compression.py`（556 行）。`agent/context_compressor.py` 仍持有 `ContextCompressor` 算法本身。
 
 ### Context Engine 插件化（2026-04-10）
 
@@ -393,6 +395,10 @@ def _find_tail_cut_by_tokens(messages, head_end, token_budget):
 
 关键变化（2026-04-09）：从固定消息数保护改为 **token 预算 + 硬底线 min_tail=3**，对长消息和短消息都更合理。
 
+**头部保护可配置**：保护的头部消息数 `protect_first_n` 现在是可配置项（默认 `3`），表示在系统提示之外额外保护的非系统消息条数，可通过 `config.yaml` 的 `compression.protect_first_n` 调整。
+
+**历史媒体剥离**：压缩完成后会调用 `_strip_historical_media()`，把摘要区域之外的历史多模态内容（base64 图片等）剥离，避免旧截图持续占用上下文 token。
+
 ### 10. 摘要角色选择
 
 ```python
@@ -612,6 +618,8 @@ Anthropic 的 prompt caching 对系统提示前缀最有效。压缩策略与缓
 3. **使用相同的系统提示结构** — 缓存键稳定
 
 ## Agent 循环中的触发
+
+驱动压缩的 agent 循环逻辑现在位于 `agent/conversation_loop.py`（不再在 `run_agent.py`）：
 
 ```python
 while api_call_count < max_iterations and iteration_budget.remaining > 0:

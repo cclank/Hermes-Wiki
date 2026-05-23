@@ -1,7 +1,7 @@
 ---
 title: 终端后端与环境抽象层
 created: 2026-04-07
-updated: 2026-05-15
+updated: 2026-05-17
 type: concept
 tags: [architecture, environments, terminal, isolation]
 sources: [hermes-agent 源码分析 2026-04-07]
@@ -67,7 +67,7 @@ def terminal(
 
 ## 统一执行模型：Spawn-per-call
 
-所有 6 种后端共享同一个执行模型——**每次命令独立 spawn `bash -c` 进程**，通过 session snapshot 保持环境一致性：
+所有 7 种后端共享同一个执行模型——**每次命令独立 spawn `bash -c` 进程**，通过 session snapshot 保持环境一致性：
 
 ```text
 初始化时:
@@ -144,7 +144,7 @@ terminal(command="pytest -v", background=True, watch_patterns=["ERROR", "FAIL", 
 
 | 特性 | Hermes | Cursor | Claude Code |
 |------|--------|--------|-------------|
-| 后端数量 | ✅ 6 种 | ❌ 1 | ❌ 1 |
+| 后端数量 | ✅ 7 种 | ❌ 1 | ❌ 1 |
 | 无服务器支持 | ✅ Modal | ❌ | ❌ |
 | 沙箱隔离 | ✅ Daytona | ❌ | ❌ |
 | HPC 支持 | ✅ Singularity | ❌ | ❌ |
@@ -156,7 +156,7 @@ terminal(command="pytest -v", background=True, watch_patterns=["ERROR", "FAIL", 
 ```yaml
 # ~/.hermes/config.yaml
 terminal:
-  backend: "local"  # local/docker/ssh/modal/daytona/singularity
+  backend: "local"  # local/docker/ssh/modal/daytona/singularity/vercel_sandbox
   
   docker:
     image: "ubuntu:22.04"
@@ -185,5 +185,5 @@ terminal:
 ## 相关文件
 
 - `tools/terminal_tool.py` — 终端工具
-- `tools/environments/` — 6 种后端实现
+- `tools/environments/` — 7 种后端实现
 - `environments/tool_context.py` — 工具执行上下文

@@ -1,17 +1,17 @@
 ---
 title: Browser Tool 浏览器自动化架构
 created: 2026-04-08
-updated: 2026-05-09
+updated: 2026-05-17
 type: concept
-tags: [tool, toolset, architecture, component, browser, lightpanda]
-sources: [tools/browser_tool.py, tools/browser_providers/]
+tags: [tool, toolset, architecture, component, browser]
+sources: [tools/browser_tool.py, agent/browser_provider.py, agent/browser_registry.py, plugins/browser/]
 ---
 
 # Browser Tool — 浏览器自动化架构
 
 ## 概述
 
-Browser Tool 位于 `tools/browser_tool.py`（84KB/2202行），提供**多后端浏览器自动化**能力。支持 4 种运行模式，所有模式对 Agent 暴露完全相同的工具接口（navigate/click/type/scroll/vision 等）。**v0.13.0+** 增加 Lightpanda 引擎支持（agent-browser v0.25.3+ 原生 `--engine lightpanda`），navigation 比 Chrome 快 1.3-5.8x。
+Browser Tool 位于 `tools/browser_tool.py`（~3789行），提供**多后端浏览器自动化**能力。支持 4 种运行模式，所有模式对 Agent 暴露完全相同的工具接口（navigate/click/type/scroll/vision 等）。
 
 核心理念：**基于 accessibility tree（ariaSnapshot）的文本化页面表示**，使 LLM Agent 无需视觉能力即可操作网页。
 
@@ -50,35 +50,42 @@ browser:
 
 ```python
 def _get_cloud_provider():
-    """解析优先级:
+    """通过 agent.browser_registry 解析,优先级:
     1. config.yaml browser.cloud_provider (显式指定)
-    2. Browser Use (managed Nous gateway 或直接 API key)
-    3. Browserbase (直接凭证)
-    4. None → 本地模式
+    2. Legacy 自动检测顺序 _LEGACY_PREFERENCE = ("browser-use", "browserbase")
+       —— 按可用性过滤(Browser Use 优先,因其覆盖 managed Nous gateway
+       和直接 API key 两条路径;Browserbase 为更老的直接凭证回退)
+    3. None → 本地模式
     """
 ```
 
 **关键设计**：如果 `cloud_provider` 设为 `local`，完全禁用云端回退，强制使用本地 Chromium。
 
+**Firecrawl 被有意排除在自动检测之外**：`_LEGACY_PREFERENCE` 不含 `firecrawl`，用户只有显式设置 `browser.cloud_provider: firecrawl` 才会获得 Firecrawl 云端浏览器，避免简单的 web 抓取被静默路由到付费云端浏览器。
+
 ## 核心组件
 
 ### 1. 统一 Provider 接口
 
-```python
-class CloudBrowserProvider:
-    """所有云端浏览器提供商的抽象基类"""
-    def is_configured() -> bool
-    def create_session(task_id) -> Dict  # 返回 {session_name, cdp_url, features}
-    def close_session(session_id) -> None
-    def provider_name() -> str
+真正的抽象基类是 `agent/browser_provider.py:49` 的 **`BrowserProvider`**：
 
-# 具体实现
-class BrowserbaseProvider(CloudBrowserProvider)
-class BrowserUseProvider(CloudBrowserProvider)
-class FirecrawlProvider(CloudBrowserProvider)
+```python
+class BrowserProvider(abc.ABC):
+    """所有云端浏览器后端的抽象基类"""
+    name: str                                  # property,稳定短标识符
+    def is_available() -> bool                 # 廉价检查,不做网络调用
+    def create_session(task_id) -> Dict        # 见下方返回契约
+    def close_session(session_id) -> None
+    def emergency_cleanup(session_id) -> None
 ```
 
-**优越性**：新增后端只需实现 4 个方法，工具逻辑完全不变。
+`create_session()` 返回契约要求至少包含 `session_name`、`bb_session_id`、`cdp_url`、`features`，可选 `external_call_id`（managed-gateway 计费 key）。`bb_session_id` 为遗留 key 名，保存任意 provider 的会话 ID。
+
+> 旧的 `CloudBrowserProvider`（含 `is_configured()`/`provider_name()`）已不再是真正的 ABC，仅作为 `tools/browser_tool.py` 中的遗留导入别名保留。
+
+**插件化后端**：browserbase、browser-use、firecrawl 三个后端现在是 `plugins/browser/{browserbase,browser_use,firecrawl}/provider.py` 下的插件类。每个插件的 `plugin.yaml` 声明 `kind: backend` 与 `provides_browser_providers:`，通过 `ctx.register_browser_provider()` 注册到 `agent.browser_registry`。
+
+**优越性**：新增后端只需实现 `BrowserProvider` 抽象方法并打包为插件，工具逻辑完全不变。
 
 ### 2. 会话管理（线程安全）
 

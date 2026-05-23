@@ -1,7 +1,7 @@
 ---
 title: Hook 系统架构
 created: 2026-04-08
-updated: 2026-05-16
+updated: 2026-05-17
 type: concept
 tags: [architecture, module, extensibility, mcp, plugins]
 sources: [gateway/hooks.py, hermes_cli/plugins.py, model_tools.py, run_agent.py, gateway/platform_registry.py]
@@ -138,6 +138,15 @@ class PluginContext:
     def register_hook(hook_name, callback):
         """注册生命周期钩子回调"""
 ```
+
+##### PluginContext 扩展 facade
+
+| Facade | 用途 |
+|---|---|
+| `register_tool(..., override=True)` | `override=True` 可替换已有的内置工具 |
+| `ctx.llm` | property,返回 `agent.plugin_llm.PluginLlm`,供插件做 host 所有的 LLM 调用 |
+| `ctx.register_web_search_provider()` | 注册 web 搜索/提取/爬取 provider |
+| `ctx.register_browser_provider()` | 注册云端浏览器 provider |
 
 #### PluginManager
 

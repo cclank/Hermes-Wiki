@@ -1,7 +1,7 @@
 ---
 title: 代码执行沙箱（execute_code）
 created: 2026-04-10
-updated: 2026-04-10
+updated: 2026-05-17
 type: concept
 tags: [sandbox, code-execution, tools, architecture]
 sources: [tools/code_execution_tool.py]
@@ -76,4 +76,4 @@ execute_code 的脚本**在当前 terminal backend 中执行**。如果 backend 
 
 ## 关键源码
 
-- `tools/code_execution_tool.py`（1347 行）— 沙箱完整实现
+- `tools/code_execution_tool.py`（约 1783 行）— 沙箱完整实现

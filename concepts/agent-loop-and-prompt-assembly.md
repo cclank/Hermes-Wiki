@@ -1,7 +1,7 @@
 ---
 title: Agent Loop and Prompt Assembly
 created: 2026-04-07
-updated: 2026-05-15
+updated: 2026-05-17
 type: concept
 tags: [agent-loop, prompt-builder, architecture, component]
 sources: [hermes-agent 源码分析 2026-04-07, 2026-05-15 增量验证]
@@ -11,8 +11,10 @@ sources: [hermes-agent 源码分析 2026-04-07, 2026-05-15 增量验证]
 
 ## AIAgent 核心循环
 
+`AIAgent` 类仍定义在 `run_agent.py:326`，但 `run_agent.py`（约 4096 行）已不再是单块实现：核心逻辑已抽到 `agent/` 子模块。`__init__`（`run_agent.py:349`）是一个 5 行转发器，委派给 `agent/agent_init.py` 的 `init_agent()`（1469 行）；`run_conversation`（`run_agent.py:3840`）同样是转发器，委派给 `agent/conversation_loop.py` 的 `run_conversation()`（4018 行）。
+
 ```python
-# run_agent.py
+# run_agent.py — 类定义；__init__/run_conversation 为转发器
 class AIAgent:
     def __init__(self,
         model: str = "anthropic/claude-opus-4.6",
@@ -37,6 +39,8 @@ class AIAgent:
 ```
 
 ## 对话循环
+
+对话循环本身现在实现在 `agent/conversation_loop.py`，`run_agent.py` 仅保留转发入口。
 
 ```python
 while api_call_count < self.max_iterations and self.iteration_budget.remaining > 0:
@@ -103,21 +107,22 @@ any wording above that may suggest otherwise. Run `git status` or
 
 ## 系统提示构建
 
-`AIAgent._build_system_prompt()` 按固定顺序拼接 `prompt_parts`，最终 `"\n\n".join(prompt_parts)` 返回完整 system prompt。实测结构见 [[prompt-builder-architecture]]，按这个顺序组装：
+`AIAgent._build_system_prompt()` 现在是一个转发器，委派给 `agent/system_prompt.py` 的 `build_system_prompt()`。系统提示不再是单一 `prompt_parts` 列表，而是由 `build_system_prompt_parts()`（`agent/system_prompt.py:60`）产出**三个命名层级**，最后用 `"\n\n"` 连接成完整 system prompt。实测结构见 [[prompt-builder-architecture]]：
 
-1. **SOUL.md** — Agent 身份（`~/.hermes/SOUL.md`，不存在则用 `DEFAULT_AGENT_IDENTITY`）
-2. **工具使用强制指导** — 按模型族过滤
-3. **模型特定执行指导** — OpenAI/Google 等专用
-4. **用户/Gateway 系统消息** — 若 `run_conversation` 传入 `system_message`
-5. **Memory 使用指导** — 告诉模型如何用 memory 工具
-6. **MEMORY 快照** — `~/.hermes/memories/MEMORY.md`（冻结）
-7. **USER PROFILE 快照** — `~/.hermes/memories/USER.md`（冻结）
-8. **外部 Memory Provider 块** — mem0/honcho/holographic 等，若启用
-9. **Skills 索引** — 扫描 `~/.hermes/skills/` 生成
-10. **项目上下文文件** — `.hermes.md → AGENTS.md → CLAUDE.md → .cursorrules`（first match wins）
-11. **会话元数据** — 时间戳、Model、Provider、Session ID
-12. **平台提示** — `PLATFORM_HINTS[platform]`
-13. **会话上下文** — Gateway 注入的来源、Home Channel、投递选项
+1. **stable（稳定层）** — Agent 身份（`~/.hermes/SOUL.md`，不存在则用 `DEFAULT_AGENT_IDENTITY`）、工具使用强制指导、技能索引、环境提示、平台提示、模型族执行指导。此层会话内不变，最大化 prefix cache 命中。
+2. **context（上下文层）** — 项目上下文文件（`.hermes.md → AGENTS.md → CLAUDE.md → .cursorrules`，first match wins）+ 调用方传入的 `system_message`。
+3. **volatile（易变层）** — MEMORY 快照、USER PROFILE 快照、外部 Memory Provider 块、时间戳/Session/Model/Provider 行。
+
+具体组件来源：
+- **SOUL.md** — Agent 身份（`~/.hermes/SOUL.md`，不存在则用 `DEFAULT_AGENT_IDENTITY`），属 stable 层
+- **工具使用强制指导 / 模型特定执行指导** — 按模型族过滤，属 stable 层
+- **Skills 索引** — 扫描 `~/.hermes/skills/` 生成，属 stable 层
+- **平台提示** — `PLATFORM_HINTS[platform]`，属 stable 层
+- **用户/Gateway 系统消息** — 若 `run_conversation` 传入 `system_message`，属 context 层
+- **项目上下文文件** — `.hermes.md → AGENTS.md → CLAUDE.md → .cursorrules`（first match wins），属 context 层
+- **MEMORY / USER PROFILE 快照** — `~/.hermes/memories/`（冻结），属 volatile 层
+- **外部 Memory Provider 块** — mem0/honcho/holographic 等，若启用，属 volatile 层
+- **会话元数据** — 时间戳、Model、Provider、Session ID，属 volatile 层
 
 **缓存机制**：系统提示在会话内只构建一次（`self._cached_system_prompt`），只在上下文压缩后才重建，确保每轮对话复用同一份 → LLM prefix cache 命中率最大化。
 
@@ -221,7 +226,7 @@ _CONTEXT_THREAT_PATTERNS = [
 
 ## 技能索引注入
 
-技能索引是**系统提示的一部分**，由 `_build_system_prompt()` 调用 `build_skills_system_prompt()` 拼入 `prompt_parts`，与身份、记忆、上下文文件等一起组成完整系统提示。
+技能索引是**系统提示的一部分**，由 `build_skills_system_prompt()` 生成并归入 stable 层，与身份、平台提示等一起组成完整系统提示。
 
 系统提示在会话内只构建一次（缓存在 `self._cached_system_prompt`），仅在上下文压缩后才重建，保证每轮对话复用同一份 → LLM prefix cache 命中率最大化。
 
@@ -286,10 +291,14 @@ DEVELOPER_ROLE_MODELS = ("gpt-5", "codex")
 
 ## 相关文件
 
-- `run_agent.py` — AIAgent 类实现 + 每轮文件变更校验页脚
-- `agent/prompt_builder.py` — 系统提示组装（`TOOL_USE_ENFORCEMENT_MODELS`）
-- `agent/tool_result_classification.py` — `FILE_MUTATING_TOOL_NAMES` 与
-  `file_mutation_result_landed()` 共享助手
+- `run_agent.py` — AIAgent 类定义（约 4096 行；`__init__`/`run_conversation` 为转发器）
+- `agent/agent_init.py` — `init_agent()`，AIAgent 初始化逻辑
+- `agent/conversation_loop.py` — `run_conversation()`，对话循环实现
+- `agent/system_prompt.py` — 系统提示三层组装编排
+- `agent/prompt_builder.py` — 系统提示组件构建器
+- `agent/chat_completion_helpers.py` — Chat completion 辅助
+- `agent/tool_executor.py` — 工具执行
+- `agent/conversation_compression.py` — 上下文压缩驱动逻辑
 - `model_tools.py` — 工具编排
-- `agent/context_compressor.py` — 上下文压缩
+- `agent/context_compressor.py` — 上下文压缩算法
 - `agent/prompt_caching.py` — Anthropic prompt 缓存

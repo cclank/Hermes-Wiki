@@ -123,31 +123,18 @@
   - 核心内容: Gateway Hooks 事件驱动(8种事件+通配符)，Plugin System 三级来源(用户/项目/pip)，PluginContext API(工具注册/消息注入/CLI命令/钩子)，缓存友好上下文注入
 - index.md 更新为 37 页
 
-## [2026-05-16] update | 同步 hermes-agent v2026.5.16（v0.14.0，2890 commits since v2026.4.23）
+## [2026-05-17] update | 同步 hermes-agent v2026.5.16（988 commits，2026-04-30 ~ 2026-05-17）
+拉取 hermes-agent 最新源码，逐项源码验证后更新 wiki：
 
-拉取 hermes-agent 最新源码（commit `fb05f5d4`），对照 wiki 全面更新。窗口跨 v0.12.0/v0.13.0/v0.14.0 三个版本。所有结论经源码验证（6 个并行 research agent 逐文件核对）。
+**新增 changelog:**
+- changelog/2026-05-17-update.md — 988 commits，v2026.5.16
 
-**新建页面 (2):**
-- concepts/kanban-system.md — Kanban 协作看板（源码: tools/kanban_tools.py 1139行, hermes_cli/kanban_db.py ~4839行, hermes_cli/kanban_diagnostics.py ~776行, plugins/kanban/）
-- concepts/goals-and-ralph-loop.md — Goals / Ralph Loop（源码: hermes_cli/goals.py 756行）
+**更新概念页（18 个，均经源码验证）:**
+- agent-loop-and-prompt-assembly / prompt-builder-architecture / context-compressor-architecture / aiagent-class — run_agent.py 巨型重构，拆为 agent/ 下 15+ 子模块（agent_init/conversation_loop/system_prompt/...），系统提示三层装配（stable/context/volatile）
+- browser-tool-architecture / web-tools-architecture — Web/Browser Provider 插件化，tools/{web,browser}_providers/ 删除，新增 WebSearchProvider/BrowserProvider ABC + 注册表，provider 迁为 plugins/{web,browser}/
+- mcp-and-plugins / hook-system-architecture — 新增插件 facade（register_tool override/ctx.llm/register_web_search_provider/register_browser_provider）
+- messaging-gateway-architecture / gateway-session-management / cli-architecture — 23+ 平台（SimpleX/LINE/Google Chat/Teams）、/handoff、admin/user 命令拆分、hermes send/postinstall
+- smart-model-routing / auxiliary-client-architecture / provider-transport-architecture / prompt-caching-optimization — xAI Grok OAuth、NovitaAI、Codex app-server runtime、Qwen Cloud 改名、跨会话 prefix cache 回滚
+- skills-system-architecture / multi-agent-architecture / toolsets-system / tool-registry-architecture / terminal-backends / code-execution-sandbox — Curator 12 子命令、optional-skills 树、Kanban 跨进程编排器、x_search/video_gen toolset、7 种终端后端
 
-**更新页面 (9):**
-- web-tools-architecture.md — Web 搜索后端插件化（agent/web_search_provider.py, web_search_registry.py, plugins/web/ 7 providers）
-- smart-model-routing.md — Model Provider 插件化（providers/base.py ProviderProfile, plugins/model-providers/ 33 providers）+ 新 Provider
-- messaging-gateway-architecture.md — 5 个新平台、/handoff、slash_access 分级、i18n 16 语言、shutdown forensics、自动恢复
-- multi-agent-architecture.md — 第 5 种机制 Kanban、delegate child_timeout=600s
-- skills-system-architecture.md — Skills Hub taps（huggingface/skills）、URL 安装、platforms frontmatter、Curator 新子命令
-- hook-system-architecture.md — 4 个新钩子、ctx.llm、register_tool override、langfuse 插件
-- session-search-and-sessiondb.md — Trigram FTS5 索引（CJK 搜索）
-- context-compressor-architecture.md — compression.protect_first_n 可配置
-- prompt-caching-optimization.md / provider-transport-architecture.md — cache_ttl 配置、Codex app-server runtime
-
-**新建 changelog (1):**
-- changelog/2026-05-16-update.md — 2890 commits（v2026.4.24 ~ 2026-05-16）
-
-**源码验证发现的纠正:**
-- commit 信息提到的「/goal checklist」子命令在 hermes_cli/goals.py 中不存在，未写入 wiki
-- lmstudio / tencent-tokenhub 未作为 model-provider 插件存在，未写入 wiki
-- README/index.md 计数与版本徽章同步至 v2026.5.16
-
-- index.md 更新为 41 页（39 concepts + 2 entities）
+**其他:** README.md（版本 v2026.5.16）、index.md 同步

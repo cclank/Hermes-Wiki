@@ -1,7 +1,7 @@
 ---
 title: AIAgent Class
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-05-17
 type: entity
 tags: [component, agent, module]
 sources: [hermes-agent 源码分析 2026-04-07]
@@ -11,7 +11,7 @@ sources: [hermes-agent 源码分析 2026-04-07]
 
 ## 位置
 
-`run_agent.py`
+`AIAgent` 类仍定义在 `run_agent.py:326`，但 `run_agent.py` 不再是单块实现：核心逻辑已抽到 `agent/` 子模块。`__init__`（`run_agent.py:349`）是一个转发器，委派给 `agent/agent_init.py` 的 `init_agent()`；`run_conversation`（`run_agent.py:3840`）同样是转发器，委派给 `agent/conversation_loop.py` 的 `run_conversation()`。
 
 ## 概述
 
@@ -48,6 +48,8 @@ class AIAgent:
 
 ## 对话循环
 
+对话循环本身现在实现在 `agent/conversation_loop.py`，`run_agent.py` 仅保留转发入口。下面的代码现已位于 `agent/conversation_loop.py`：
+
 ```python
 while api_call_count < self.max_iterations and self.iteration_budget.consume():  # consume() 原子地检查并递减剩余预算
     response = client.chat.completions.create(
@@ -73,6 +75,7 @@ while api_call_count < self.max_iterations and self.iteration_budget.consume(): 
 - **记忆集成** — 自动加载和注入记忆
 - **技能集成** - 构建技能索引
 - **上下文压缩** — 自动管理上下文长度
+- **模块化实现** — 类壳定义在 `run_agent.py`，初始化、对话循环、系统提示、工具执行、上下文压缩等核心逻辑均已抽到 `agent/` 子模块，`run_agent.py` 中的对应方法多为转发器
 
 ## 相关页面
 
@@ -82,6 +85,11 @@ while api_call_count < self.max_iterations and self.iteration_budget.consume(): 
 
 ## 相关文件
 
-- `run_agent.py` — 实现
+- `run_agent.py` — `AIAgent` 类定义（`run_agent.py:326`）；`__init__`/`run_conversation`/`_compress_context` 等为转发器
+- `agent/agent_init.py` — `init_agent()`，AIAgent 初始化逻辑
+- `agent/conversation_loop.py` — `run_conversation()`，对话循环实现
+- `agent/system_prompt.py` — 系统提示三层组装编排
+- `agent/tool_executor.py` — 工具执行
+- `agent/conversation_compression.py` — 上下文压缩驱动逻辑
 - `model_tools.py` — 工具编排
-- `agent/prompt_builder.py` — 系统提示构建
+- `agent/prompt_builder.py` — 系统提示组件构建器

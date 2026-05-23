@@ -1,7 +1,7 @@
 ---
 title: MCP 集成与插件系统
 created: 2026-04-07
-updated: 2026-05-14
+updated: 2026-05-17
 type: concept
 tags: [architecture, mcp, plugins, extensibility]
 sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py]
@@ -195,6 +195,17 @@ class MemoryPlugin(Plugin):
         """会话结束时持久化"""
         self._persist_session(messages)
 ```
+
+### PluginContext 扩展 facade
+
+`PluginContext` 为插件提供了一组扩展 facade（`hermes_cli/plugins.py`）：
+
+| Facade | 位置 | 用途 |
+|---|---|---|
+| `ctx.register_tool(..., override=True)` | plugins.py:328 | 传 `override=True` 可替换已有的内置工具 |
+| `ctx.llm` | plugins.py:298 | property,返回 `agent.plugin_llm.PluginLlm`,供插件做 host 所有的 LLM 调用 |
+| `ctx.register_web_search_provider()` | plugins.py:585 | 注册 web 搜索/提取/爬取 provider |
+| `ctx.register_browser_provider()` | plugins.py:613 | 注册云端浏览器 provider |
 
 ## 插件 CLI
 

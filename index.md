@@ -2,7 +2,7 @@
 
 > 内容目录。每个 wiki 页面按类型列出，附一行摘要。
 > 查询前先读此文件找到相关页面。
-> Last updated: 2026-05-16 | Total pages: 41（39 concepts + 2 entities）
+> Last updated: 2026-05-17 | Total pages: 39
 
 ## Entities
 
@@ -20,7 +20,7 @@
 - [[memory-system-architecture]] — 冻结快照模式、原子写入、安全扫描
 - [[agent-loop-and-prompt-assembly]] — Agent 循环、系统提示构建、平台提示、执行指导
 - [[skills-and-memory-interaction]] — Skills 与 Memory 的互补关系和决策树
-- [[toolsets-system]] — 工具分组系统、递归解析、20+ 平台工具集
+- [[toolsets-system]] — 工具分组系统、递归解析、24 个 hermes-* 工具集
 - [[session-search-and-sessiondb]] — FTS5 搜索 + LLM 摘要的跨会话回忆
 - [[provider-transport-architecture]] — Provider Transport ABC（Anthropic / Chat / Responses / Bedrock）
 - [[provider-profile-plugins]] — **新** ProviderProfile ABC + 30 个 plugin（v0.13.0）
@@ -41,24 +41,18 @@
 - [[goals-and-ralph-loop]] — `/goal` 跨轮次持久目标，judge 模型驱动的 Ralph Loop
 
 ### 平台与扩展
-- [[cli-architecture]] — CLI 架构、斜杠命令（含 /goal、/kanban、/queue、/steer）
-- [[configuration-and-profiles]] — 分层配置、Profile 隔离
-- [[hook-system-architecture]] — Hook 系统（含 `transform_llm_output` v0.13.0 新 hook）
-- [[mcp-and-plugins]] — MCP（SSE OAuth、MEDIA tag 升级）+ 插件系统
-- [[terminal-backends]] — 7 种终端后端
-- [[cron-scheduling]] — 内置调度器（含 `no_agent` 模式）
-- [[trajectory-and-data-generation]] — 轨迹保存、批量运行器
-- [[prompt-builder-architecture]] — 系统提示模块化组装
-- [[context-compressor-architecture]] — 自动上下文压缩 v3
-- [[model-tools-dispatch]] — 工具编排与调度
-- [[gateway-session-management]] — 网关会话管理（含 resume_pending 重启接续）
-- [[messaging-gateway-architecture]] — 20+ 消息平台（Google Chat 为第 20）+ 平台适配器插件化
-- [[skin-engine]] — YAML 驱动的皮肤/主题
-- [[worktree-isolation]] — Git Worktree 并行隔离
-- [[i18n-localization]] — **新** 静态消息本地化（16 个 locale）
-- [[voice-mode-architecture]] — 语音模式（含 xAI Custom Voices + Piper + TTS provider registry）
-- [[context-references]] — @file/@folder/@diff/@url/@git 引用系统
-- [[code-execution-sandbox]] — execute_code 沙箱
+- [[cli-architecture]] — CLI 架构、斜杠命令补全、Skin 引擎
+- [[configuration-and-profiles]] — 分层配置、Profile 隔离、自动迁移
+- [[hook-system-architecture]] — Hook 系统（Gateway Hooks + Plugin System），事件驱动+工具注册+上下文注入
+- [[mcp-and-plugins]] — MCP 集成、插件钩子系统、OAuth 支持
+- [[terminal-backends]] — 7 种终端后端、环境抽象、持久化 Shell
+- [[cron-scheduling]] — 内置调度器、自然语言调度、多平台投递
+- [[trajectory-and-data-generation]] — 轨迹保存、批量运行器、RL 训练环境
+- [[prompt-builder-architecture]] — 系统提示模块化组装，注入防护+技能缓存+模型特定指导
+- [[context-compressor-architecture]] — 自动上下文压缩，结构化摘要+迭代更新+工具对完整性保障
+- [[model-tools-dispatch]] — 工具编排与调度，异步桥接+动态 schema 调整+参数类型强制
+- [[gateway-session-management]] — 网关会话管理，多平台会话隔离+PII 脱敏+重置策略
+- [[messaging-gateway-architecture]] — 消息网关架构、平台适配器、DM 配对
 
 ### 更新日志
 - [[2026-04-09-update]] — 59 commits

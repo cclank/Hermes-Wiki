@@ -1,7 +1,7 @@
 ---
 title: Tool Registry 工具注册系统架构
 created: 2026-04-08
-updated: 2026-05-15
+updated: 2026-05-17
 type: concept
 tags: [tool, toolset, tool-registry, architecture, component, lsp]
 sources: [tools/registry.py, model_tools.py, 2026-05-15 增量验证]
@@ -11,7 +11,7 @@ sources: [tools/registry.py, model_tools.py, 2026-05-15 增量验证]
 
 ## 概述
 
-Tool Registry 是 Hermes Agent 工具系统的**中央骨架**，位于 `tools/registry.py`（275行/10KB）。它实现了**声明式工具注册 + 集中式调度**的设计模式，取代了早期 `model_tools.py` 中分散维护的平行数据结构。
+Tool Registry 是 Hermes Agent 工具系统的**中央骨架**，位于 `tools/registry.py`（约 589 行）。它实现了**声明式工具注册 + 集中式调度**的设计模式，取代了早期 `model_tools.py` 中分散维护的平行数据结构。
 
 所有工具文件（`tools/*.py`）在模块导入时通过 `registry.register()` 自动注册，`model_tools.py` 只负责查询注册表并触发发现流程。
 
@@ -39,6 +39,7 @@ class ToolEntry:
     __slots__ = (
         "name", "toolset", "schema", "handler", "check_fn",
         "requires_env", "is_async", "description", "emoji",
+        "max_result_size_chars", "dynamic_schema_overrides",
     )
 
 class ToolRegistry:
