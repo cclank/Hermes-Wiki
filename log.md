@@ -260,3 +260,46 @@
 - **README.md / index.md** badge & changelog 索引：28 → 29 changelogs，"最后更新" 2026-05-24 → 2026-05-25，跟踪 HEAD 标注 `186bf25` → `b62af47`
 - 验证策略: 每条结论都至少一条 `grep -n` / `Read` 命中源码；功能描述对照对应 PR 标题 + commit body + 实际 hunk 内容
 
+
+## [2026-05-26] ingest | 跨日同步 hermes-agent 37 commits（`b62af47` → `556bf7c5c`）
+- 输入: `git clone NousResearch/hermes-agent` @ `556bf7c5c`（`2026-05-26 23:23 -0700`，msg "test(cron): guard schedule-required description text on CRONJOB_SCHEMA"）
+- 范围: 自 wiki HEAD `c112148` = hermes `b62af47` 起 37 个新 commit（18 `fix`、7 `feat`、6 `chore`、4 `test`、1 `refactor`、1 `harden`），版本仍 v0.14.0；验证基线 `/home/user/hermes-agent` clone @ `556bf7c5c`
+- 新增 1 个 changelog 页面：
+  - changelog/2026-05-26-update.md（约 19 章 + 文件矩阵）—— 主题：**Promptware 防御 — 共享威胁模式库 252 行 + Memory load-time scan + `<untrusted_tool_result>` 工具结果分隔符**（feat #32269）、**Nous-approved MCP 目录 + 交互式选择器**（feat #30870，`optional-mcps/{n8n,linear}` + `hermes_cli/mcp_catalog.py` 776 行 + `mcp_picker.py` 322 行 + `mcp_config.py` 803 行）、**Skills Hub 健康检查 + 新鲜度徽章 + 4h watchdog cron**（feat #32345）、**3 个新可选 skill**（`web-pentest` #32265 / `openhands` #477 / `code-wiki` #486）、**Patch 工具三连**（缩进保留 + CRLF 保留 + per-file 失败升级，feat #507/#32273）、**Cron 扫描器二级分裂**（strict 用户 prompt + loose skill assembled，fix #32339）、**Skill install 拒绝符号链接**（fix）、**Dashboard 插件资源 suffix-allowlist + 子进程影响型 env 变量 denylist**（fix #32277）、**Markdown 链接 scheme 收紧 + WeCom callback defusedxml**（harden）、**AGENTS.md 限定工作目录内载入**（fix）、**Telegram DM topic 投递 6 连**（路由直发 / anchor 要求 / 自动 create / 刷新过期 thread / 简化 refresh / `reply_to_mode=off` 豁免）、**Anthropic API-key 路径跳过 OAuth autodiscovery**（fix）、**外部 secrets 每 HERMES_HOME 每进程仅应用一次**（fix #32271）、**Gateway `/model --global` scalar→dict coerce**（fix #32272）、**Agent outer-loop ERROR + traceback**（fix #32264）、**Cron schedule 在 create 模式必填**（fix #32427）、**qwen3.6-plus → qwen3.7-max** 同步 / 移除 grok-4-1-fast、**TTS 双 `[pause]` 修复**（fix #29417）、**CLI fallback paste collapse**（fix #32447）、**Telegram 表格 row-group 间距收紧**（fix）
+- 源码已验证存在：
+  - `tools/threat_patterns.py` 252 行（`_PATTERNS` line 49-115、`INVISIBLE_CHARS` line 116-137、`scan_for_threats` line 188-225、`first_threat_message` line 228-244、3 scope all/context/strict）
+  - `tools/memory_tool.py:133-208`（`load_from_disk` + `_sanitize_entries_for_snapshot` 在 frozen snapshot 中替换 `[BLOCKED: ...]`；live state 保留原文）
+  - `agent/tool_dispatch_helpers.py:320-396`（`make_tool_result_message` line 320、`_UNTRUSTED_TOOL_NAMES = {"web_extract", "web_search"}` line 354、`_UNTRUSTED_TOOL_PREFIXES = ("browser_", "mcp_")` line 358-361、`_UNTRUSTED_WRAP_MIN_CHARS = 32` line 363、`_maybe_wrap_untrusted` line 371-396）
+  - `hermes_cli/mcp_catalog.py` 776 行（`_parse_manifest` line 151、`install_entry` line 670、`uninstall_entry` line 755）
+  - `hermes_cli/mcp_picker.py` 322 行（`_Row` line 55、`run_picker` line 274、`_handle_row` line 160-228）
+  - `hermes_cli/mcp_config.py` 803 行
+  - `hermes_cli/main.py:13023-13046`（mcp picker / catalog / install 子命令注册）
+  - `optional-mcps/n8n/manifest.yaml`、`optional-mcps/linear/manifest.yaml`（manifest_version: 1，stdio+api_key+git-bootstrap / http+native OAuth）
+  - `scripts/build_skills_index.py:330-348`（`EXPECTED_FLOORS` + `MIN_TOTAL=1500` + sys.exit(2)）
+  - `.github/workflows/skills-index-freshness.yml` 149 行（每 4h cron）
+  - `tools/skills_hub.py:3046-3058`（`install_from_quarantine` rglob + `_is_path_redirect` 拒符号链接）
+  - `optional-skills/security/web-pentest/SKILL.md`、`optional-skills/autonomous-ai-agents/openhands/SKILL.md`、`optional-skills/software-development/code-wiki/SKILL.md` + 4 模板（templates/README.md / architecture.md / getting-started.md / module.md）
+  - `tools/fuzzy_match.py:185-258 _reindent_replacement` + line 274 非 exact only 调用
+  - `tools/file_operations.py:77-103, 741-760, 1047, 1167`（`_detect_line_ending` + 4096 byte 探测 + write/patch CRLF normalize）
+  - `tools/file_tools.py:257-292, 1080-1095`（`_patch_failure_tracker` + 失败 #3+ 升级 hint）
+  - `tools/cronjob_tools.py:186-227`（`_scan_cron_prompt` strict + `_scan_cron_skill_assembled` loose）+ `cron/scheduler.py:1170-1191`（按 `has_skills` 路由）
+  - `hermes_cli/web_server.py:4546-4612`（`/dashboard-plugins/<name>/<path>` 仅放 17 suffix → 404）
+  - `hermes_cli/config.py:117-152`（`_ENV_VAR_NAME_DENYLIST` frozenset 37 项 + `_reject_denylisted_env_var`）
+  - `gateway/platforms/wecom_callback.py:20-24`（defusedxml.ElementTree + `DEFUSEDXML_AVAILABLE` flag）
+  - `web/src/components/Markdown.tsx:324-345`（链接 scheme allowlist http(s)/mailto）
+  - `agent/subdirectory_hints.py:49-57, 169-220`（`is_relative_to(working_dir)` 强制 + `_is_ancestor_or_same` fallback）
+  - `gateway/delivery.py`（`_looks_like_telegram_private_chat_id` + DM topic 直发分支）
+  - `hermes_cli/env_loader.py:32-40 _APPLIED_HOMES`（per-HERMES_HOME 去重 set）
+- 关键 commit 用 `git show <sha> --stat` + `--format=full` 抽样核对：`0dee92df2`（promptware defense 三模块）/ `8b69ec03a`（MCP catalog 1901 行新增）/ `d8703e27f`（skills-hub health workflow 149 行）/ `cea87d913`（catalog source 全显示）/ `5671461c0` / `386f245d9` / `263e008d6`（三新 skill）/ `6bd0be30b`（patch 三连）/ `ccd899318`（cron scanner 二级）/ `c26af4681`（skill symlink reject）/ `30928f945`（dashboard allowlist + env denylist）/ `5744b1757` + `31c8d5ff5`（markdown scheme + WeCom defusedxml + extras）/ `f4953bc64`（subdir hints scope）/ `415be5539` + 5 跟进（Telegram DM topic）/ `e3236e99a`（Anthropic API-key skip OAuth）/ `de76f4dbc`（external secrets once）/ `2c6bbaf35`（gateway /model scalar coerce）/ `c2aa23532`（outer-loop logger）/ `51013268c` + `556bf7c5c`（cron schedule required）/ `ccd3d04fc` + `bbc8f2f96`（model swap/drop）/ `1d73d5fac` + `5caeb65a0`（TTS [pause]）/ `2517917de`（CLI paste collapse）/ `9d10c45e3`（Telegram 表格 row-group）
+- 更新 9 个 concept / docs 页面：
+  - security-defense-system.md — 新增"v0.14 增量 — 2026-05-26 Promptware 防御 + Posture 硬化簇"大节，覆盖 共享威胁模式库 + Memory load-time scan + `<untrusted_tool_result>` 工具结果分隔符 + 符号链接拒绝 + Dashboard suffix-allowlist + env denylist + Markdown scheme + WeCom defusedxml + AGENTS.md scope + Anthropic API-key skip OAuth + Cron 扫描器二级分裂（引 `threat_patterns.py:49-115` + `memory_tool.py:174-208` + `tool_dispatch_helpers.py:320-396` + `skills_hub.py:3046-3058` + `web_server.py:4546-4612` + `config.py:117-152` + `wecom_callback.py:20-24` + `subdirectory_hints.py:49-57,169-220`）；frontmatter sources / updated 同步
+  - memory-system-architecture.md — "安全扫描" 节升级为"双层 + Load-Time Snapshot 净化"，加 Layer A / Layer B 二分 + BLOCKED 占位 + live state 双轨原则 + prefix cache 不变量 + 威胁模型 poison 来源 + scope strict 集示例
+  - prompt-builder-architecture.md — "上下文文件注入防护" 节迁移到共享 `tools/threat_patterns.py`，加 scope 三分表 + 模式哲学 + 17 invisible unicode codepoint
+  - mcp-and-plugins.md — 新"Nous-Approved MCP Catalog" 大节，覆盖三入口 CLI + manifest schema + 仓内两参考条目 + 设计原则 + 三模块拆分表
+  - skills-system-architecture.md — 新"Skills Hub 健康监控"节（`EXPECTED_FLOORS` + watchdog cron）+ "Skill Install 拒绝符号链接"节 + "新增 Optional Skills"表（web-pentest / openhands / code-wiki）
+  - cron-scheduling.md — "prompt-injection 扫描器二级分裂" 节升级（strict vs loose 表 + scheduler.py:1170 路由）+ "Cron Schedule 必填 — Schema 描述显式化" 节
+  - messaging-gateway-architecture.md — "Telegram DM Topic 投递 6 连"节 + "Telegram 表格 Row-Group 间距收紧" + "WeCom Callback defusedxml + Lazy Dep"节；frontmatter sources 加 `gateway/delivery.py` + `wecom_callback.py`
+  - agent-loop-and-prompt-assembly.md — "高风险工具结果 `<untrusted_tool_result>` 包裹" 节（高风险工具集 + 包裹格式 + 5 项包裹策略 + 设计取舍）+ "Agent Outer-Loop 异常日志" 节
+  - fuzzy-matching-engine.md — "2026-05-26 Patch 工具三连增强" 大节（缩进保留算法 + CRLF 保留 + per-file 失败升级 + 测试增量）
+- README.md / index.md badge & changelog 索引：29 → 30 changelogs，"最后更新" 2026-05-25 → 2026-05-26，跟踪 HEAD 标注 `b62af47` → `556bf7c5c`（badge 用 short hash `556bf7c`）
+- 验证策略: 每条结论都至少一条 `grep -n` / `Read` 命中 `/home/user/hermes-agent` clone；每个 file:line 引用现行 source 实际行号；功能描述对照对应 PR 标题 + commit body + 实际 hunk 内容

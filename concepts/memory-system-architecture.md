@@ -1,10 +1,10 @@
 ---
 title: Memory System Architecture
 created: 2026-04-07
-updated: 2026-05-07
+updated: 2026-05-26
 type: concept
-tags: [memory, architecture, module]
-sources: [tools/memory_tool.py, agent/memory_manager.py, agent/memory_provider.py, agent/builtin_memory_provider.py, run_agent.py, agent/prompt_builder.py, plugins/memory/__init__.py, gateway/platforms/api_server.py]
+tags: [memory, architecture, module, promptware-defense]
+sources: [tools/memory_tool.py, tools/threat_patterns.py, agent/memory_manager.py, agent/memory_provider.py, agent/builtin_memory_provider.py, run_agent.py, agent/prompt_builder.py, plugins/memory/__init__.py, gateway/platforms/api_server.py]
 ---
 
 > **v2026.5.7 增量**：
@@ -115,26 +115,50 @@ def _detect_external_drift(self, target):
 
 USER.md 同样保护。Tests 137 → 144（+7 个用例 pin 三种 mutator 的拒绝行为、`.bak.<ts>` 命名、false-positive 净化场景）。
 
-### 安全扫描
+### 安全扫描（2026-05-26 起：双层 + Load-Time Snapshot 净化）
 
-所有写入内容经过 12 种威胁模式检测 + 不可见 Unicode 字符检测：
+写入扫描与 snapshot 净化合走 `tools/threat_patterns.py`（v0.14.0 安全 wave + 2026-05-26 promptware defense 提取出的**共享威胁模式库**）。
+
+**Layer A — 写入扫描（旧路径，scope="strict"）**：每次 `memory(action=add/replace)` 调用 `first_threat_message(content, scope="strict")`，命中即 raise，content 永远到不了磁盘。Strict scope 包括经典 prompt injection / role-hijack / exfil curl-wget / read_secrets / authorized_keys / `update AGENTS.md` / hardcoded api_key 等。
+
+**Layer B — Load-Time Snapshot 净化（2026-05-26 NEW，commit `0dee92df2`）**：`MemoryStore.load_from_disk()`（`tools/memory_tool.py:133-172`）读 `MEMORY.md` / `USER.md` 后调 `_sanitize_entries_for_snapshot()`（line 174-208），**每 entry 跑 `scan_for_threats(entry, scope="strict")`**。命中即在 frozen system-prompt snapshot 中替换为：
+
+```text
+[BLOCKED: MEMORY.md entry contained threat pattern(s): <ids>.
+Removed from system prompt; use memory(action=read) to inspect
+and memory(action=remove) to delete the original.]
+```
+
+**双轨设计原则**：
+
+- `_system_prompt_snapshot["memory"]` / `["user"]`（line 167-171）—— 进系统提示，毒化条目被 BLOCKED 占位替换。
+- `memory_entries` / `user_entries`（live state）—— 保留**原始**毒化文本。用户仍可 `memory(action=read)` 查看 + `memory(action=remove)` 删除。
+
+> Silently dropping 会**对用户隐藏攻击**，违反 Hermes 的可见性原则。BLOCKED 占位向 agent 与用户都明示了"曾经有内容在这里且被拦"。
+
+**Prefix cache 不变量保持**：scan 是 deterministic from disk bytes，snapshot 整 session 稳定 → 与冻结快照（[[prompt-caching-optimization]]）兼容。
+
+**威胁模型覆盖（poison 来源）**：
+
+- 供应链攻击（恶意 dependency 的 install hook 写 MEMORY.md）
+- 被攻陷的工具（write 工具被诱使写 USER.md）
+- 跨 session 污染（sister-session 把 prompt injection 写进 user-level memory）
+- Brainworm 类 promptware（C2 node registration / heartbeat / `name yourself X` / `unset CLAUDE` 等，scope="strict" 继承自 `"context"` 集合）
 
 ```python
-_MEMORY_THREAT_PATTERNS = [
-    # 提示注入
-    ("ignore previous instructions", "prompt_injection"),
-    ("you are now", "role_hijack"),
-    ("do not tell the user", "deception_hide"),
-    ("act as if you have no restrictions", "bypass_restrictions"),
-    # 泄露
-    ("curl ... $KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API", "exfil_curl"),
-    ("wget ... $KEY|TOKEN|SECRET", "exfil_wget"),
-    ("cat .env|credentials|.netrc|.pgpass|.npmrc|.pypirc", "read_secrets"),
-    # 后门
-    ("authorized_keys|~/.ssh", "ssh_backdoor"),
-    # ... 共 12 种
-]
+# tools/threat_patterns.py 内的 _PATTERNS (节选 strict 集)
+("ignore previous instructions", "prompt_injection", "all"),
+("you are now a/an/the ...", "role_hijack", "context"),  # context implies strict
+("name yourself \w+", "identity_override", "context"),
+("register (as) a? node", "c2_node_registration", "context"),
+("you must (register|connect|report|beacon)", "forced_action", "context"),
+("unset CLAUDE|CODEX|HERMES|AGENT|OPENAI|ANTHROPIC", "env_var_unset_agent", "context"),
+("authorized_keys", "ssh_backdoor", "strict"),
+("(update|modify|edit|write|append) ... AGENTS.md|CLAUDE.md", "agent_config_mod", "strict"),
+("api_key|token|secret|password = \"...20+ chars...\"", "hardcoded_secret", "strict"),
 ```
+
+完整 250+ 模式与 invisible-unicode 集见 `tools/threat_patterns.py:49-137`。
 
 ### 系统提示格式化
 
@@ -545,7 +569,8 @@ session_search(query="nginx 配置")
 
 ## 相关文件
 
-- `tools/memory_tool.py` — MemoryStore 类 + memory 工具 schema（561 行）
+- `tools/memory_tool.py` — MemoryStore 类 + memory 工具 schema（含 2026-05-26 `_sanitize_entries_for_snapshot()` line 174-208）
+- `tools/threat_patterns.py` — **NEW 2026-05-26** 共享威胁模式库（252 行），`scan_for_threats(scope="strict")` 是 memory load-time 净化与 write 时 block 共用入口
 - `agent/memory_manager.py` — MemoryManager 编排层（367 行）
 - `agent/memory_provider.py` — MemoryProvider ABC 接口（232 行）
 - `agent/builtin_memory_provider.py` — 内置 Provider（114 行）

@@ -2,7 +2,7 @@
 
 > 内容目录。每个 wiki 页面按类型列出，附一行摘要。
 > 查询前先读此文件找到相关页面。
-> Last updated: 2026-05-25 | Total pages: 45 concepts + 2 entities + 29 changelogs | Tracking: v0.14.0 (hermes-agent/master HEAD `b62af47`)
+> Last updated: 2026-05-26 | Total pages: 45 concepts + 2 entities + 30 changelogs | Tracking: v0.14.0 (hermes-agent/master HEAD `556bf7c5c`)
 
 ## Entities
 
@@ -69,6 +69,7 @@
 - [[worktree-isolation]] — Git Worktree 并行隔离模式
 
 ### 更新日志（按时间倒序）
+- [[2026-05-26-update]] — **37 commits 跨日同步**（`b62af47 → 556bf7c5c`：**Promptware 防御**（共享威胁模式库 `tools/threat_patterns.py` 252 行 + Memory load-time scan + 高风险工具结果 `<untrusted_tool_result>` 分隔符，#32269）+ **Nous-approved MCP 目录 + 交互式选择器**（`hermes_cli/mcp_catalog.py` 776 行 + `mcp_picker.py` 322 行 + `optional-mcps/{n8n,linear}`，#30870）+ **Skills Hub 健康检查 + 新鲜度徽章 + 4h watchdog cron**（#32345）+ 3 个新可选 skill（`web-pentest` / `openhands` / `code-wiki`）+ Patch 三连（缩进/CRLF/失败升级，#507/#32273）+ Cron 扫描器二级分裂（strict vs loose，#32339）+ Skill install 拒符号链接 + Dashboard 插件资源 suffix-allowlist + env denylist（#32277）+ Markdown link scheme + WeCom defusedxml + AGENTS.md scope + Telegram DM topic 6 连 + Anthropic API-key skip OAuth + Gateway /model coerce + qwen3.7-max + TTS [pause] dedup）
 - [[2026-05-25-update]] — **175 commits 跨日同步**（`186bf25 → b62af47`：Docker `s6-overlay` PID 1 **BREAKING** + 容器化运行时监管 + 安全 wave 3（symlink/`.env`/`/proc/*`/YOLO frozen/GHSA 二次合规/7 处凭据持久化）+ `hermes security audit` OSV.dev + CLI 冷启 -63% Bitwarden 磁盘 cache + TTS/STT plugin hook + `openai-api` 新 provider + CredentialPool 周配额轮换 + 子 Agent busy-mode 抗中断 + Mattermost 迁移 plugin + MCP OAuth 无头 paste-back + Codex TTFB watchdog + partial-stream `finish_reason=length` 续传 + Aux 主模型 fallback 统一 + Nous 401 指导 + `/resume` 编号 + `/q` 改 `/queue`）
 - [[2026-05-24-update]] — **84 commits daily delta**（安全 wave 2：17 webhook/dashboard/平台审批授权 + `register_auxiliary_task()` plugin API + 跨 Profile 软护栏 + Streaming 三连可见性 + ntfy 第 23 平台 + Kanban `promote` `--ids` + Skills `audit --deep` AST + Bitwarden EU）
 - [[2026-05-23-update]] — 49 commits daily delta（Nous Portal one-shot、Kanban DB 抗污染、Memory drift guard、审批沉默契约、TLS FD 三层防御、Plugin RCE 第二段、Telegram/WhatsApp/QQBot）

@@ -1,10 +1,10 @@
 ---
 title: MCP 集成与插件系统
 created: 2026-04-07
-updated: 2026-05-18
+updated: 2026-05-26
 type: concept
-tags: [architecture, mcp, plugins, extensibility]
-sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py]
+tags: [architecture, mcp, plugins, extensibility, mcp-catalog]
+sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py, hermes_cli/mcp_catalog.py, hermes_cli/mcp_picker.py, hermes_cli/mcp_config.py, optional-mcps/]
 ---
 
 > **v2026.5.7 MCP 升级**：
@@ -333,12 +333,64 @@ def register(ctx):
 
 **`tool_override=True`** flag 允许插件**干净替换**一个 built-in 工具的实现，旧实现自动让位。
 
+## Nous-Approved MCP Catalog（NEW 2026-05-26，feat #30870）
+
+镜像 `optional-skills/` 模式的 curated MCP server 目录：**presence in `optional-mcps/` = approval**，no community tier, no trust signals。Entries 仅通过 PR 合入。
+
+### 三入口 CLI（`hermes_cli/main.py:13023-13046`）
+
+| 子命令 | 行为 |
+|--------|------|
+| `hermes mcp` / `hermes mcp picker` | 交互式 catalog picker（curses checklist） |
+| `hermes mcp catalog` | Plain-text 列表，scriptable |
+| `hermes mcp install <name>` | 安装指定 catalog entry |
+| `hermes mcp configure <name>` | 安装后改 tool selection（重跑 checklist） |
+| `hermes mcp login <name>` | 强制 OAuth re-auth |
+
+Picker 行为（`hermes_cli/mcp_picker.py:160-228 _handle_row`）：
+
+- **未安装** → install（必要时 clone/bootstrap，prompt creds）
+- **已装但 off** → enable
+- **已装且 on** → menu（disable / uninstall / reinstall）
+
+### Manifest Schema — `optional-mcps/<name>/manifest.yaml`
+
+`hermes_cli/mcp_catalog.py:151-264 _parse_manifest()`，`manifest_version: 1`：
+
+- `transport`: `stdio`（command/args + `${INSTALL_DIR}` 子串替换 `mcp_catalog.py:427-435`）或 `http`（url）。
+- `install`: 可选 `git_repo` clone + `bootstrap_commands` 链；npx/uvx 类零安装 server 可省略。
+- `auth`: `api_key`（install 时 prompt → `~/.hermes/.env`）/ `oauth`（native MCP OAuth 或 third-party 如 Google）/ `none`。
+- `tools.default_enabled`: 可选预 check 列表；未提供则 install 时全部预 check，用户 prune。
+- `post_install`: 后续指引文案（如 OAuth restart 提示）。
+
+### 仓内两个参考条目
+
+- `optional-mcps/n8n/manifest.yaml` —— **stdio + api_key + git-bootstrap** 路径：clone `CyberSamuraiX/hermes-n8n-mcp` 到本地 venv 后 stdio 启动。
+- `optional-mcps/linear/manifest.yaml` —— **http + native MCP OAuth** 路径：URL `https://mcp.linear.app/mcp`，OAuth 走 PKCE + Dynamic Client Registration（无需本地 install），`mcp_oauth_manager` 自动 discovery + token refresh。
+
+### 设计原则与约束
+
+- **Credentials 永远走 `~/.hermes/.env`**（`mcp_catalog.py:437-459 _prompt_env_vars`，line 14-15 注释引 `.env-is-for-secrets` 规则），从不落 per-server env block —— 统一凭证仓库便于 redact / rotate。
+- **Catalog 从不自动更新** —— 用户显式 `hermes mcp install <name>` 才会拉新 manifest。manifest 修改要走 hermes-agent PR review。
+- **Tool selection 在 install 时定型**：probe server tools → curses checklist 预 check → 写 `mcp_servers.<name>.tools.include`。Probe 失败 fallback 到 manifest `tools.default_enabled` 或全选 + 提示 `hermes mcp configure`。
+
+### 三模块拆分（共 1901 行新增）
+
+| 文件 | 行数 | 责任 |
+|------|------|------|
+| `hermes_cli/mcp_catalog.py` | 776 | manifest 解析、git/bootstrap install、tool probe、tool include 写入、uninstall |
+| `hermes_cli/mcp_picker.py` | 322 | curses 交互层（`_Row` line 55 → `run_picker` line 274） |
+| `hermes_cli/mcp_config.py` | 803 | 入口分发 + 旧 `hermes mcp add/remove/list/enable/disable/configure/login` 命令保持兼容 |
+
+Tests：19 个 catalog 测试 + E2E install/uninstall round-trip。
+
 ## 相关页面
 
 - [[tool-registry-architecture]] — 插件通过 registry.register() 注册工具
 - [[hook-system-architecture]] — 插件钩子系统与网关事件钩子互补，包含 v2026.4.30+ 新 hook（`pre_gateway_dispatch`、`pre_approval_request` / `post_approval_response`、`transform_tool_result` / `transform_terminal_output`）
 - [[model-tools-dispatch]] — MCP 工具通过 discover 机制集成到编排层
 - [[messaging-gateway-architecture]] — `platform` kind plugin（IRC、Teams）
+- [[security-defense-system]] — MCP tool 结果走 `<untrusted_tool_result>` 包裹（`mcp_*` prefix 在 `_UNTRUSTED_TOOL_PREFIXES`）
 
 ## 相关文件
 
@@ -347,3 +399,8 @@ def register(ctx):
 - `hermes_cli/plugins.py` — 插件系统（transform_llm_output: line 136）
 - `agent/conversation_loop.py` — transform_llm_output dispatch（lines 3936, 3944）
 - `plugins/` — 插件目录
+- `hermes_cli/mcp_catalog.py` — **NEW 2026-05-26** Catalog 解析与 install（776 行）
+- `hermes_cli/mcp_picker.py` — **NEW 2026-05-26** Curses 交互选择器（322 行）
+- `hermes_cli/mcp_config.py` — **NEW 2026-05-26** `hermes mcp ...` 命令分发（803 行）
+- `optional-mcps/n8n/manifest.yaml` — **NEW 2026-05-26** 参考 manifest（stdio + api_key + git-bootstrap）
+- `optional-mcps/linear/manifest.yaml` — **NEW 2026-05-26** 参考 manifest（http + native MCP OAuth）

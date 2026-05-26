@@ -1,10 +1,10 @@
 ---
 title: Prompt Builder 系统提示构建架构
 created: 2026-04-08
-updated: 2026-05-17
+updated: 2026-05-26
 type: concept
-tags: [architecture, module, component, agent, prompt-builder]
-sources: [agent/prompt_builder.py, agent/system_prompt.py]
+tags: [architecture, module, component, agent, prompt-builder, promptware-defense]
+sources: [agent/prompt_builder.py, agent/system_prompt.py, tools/threat_patterns.py]
 ---
 
 # Prompt Builder — 系统提示构建架构
@@ -50,30 +50,29 @@ volatile（易变层）=
 - **记忆快照使用冻结模式**——system prompt 在会话内只构建一次并缓存（`self._cached_system_prompt`），仅在上下文压缩后才重建，保护 prefix cache
 - **整个 system prompt 就是一条 message**（`role: "system"`），不是多个 message 拼接
 
-### 上下文文件注入防护
+### 上下文文件注入防护（2026-05-26 起：共享威胁模式库）
+
+威胁正则与 invisible-unicode 集合自 2026-05-26（commit `0dee92df2`，PR #32269）起**迁移到统一模块** `tools/threat_patterns.py`（252 行），由 Prompt Builder / `MemoryStore.load_from_disk` / `tools/skills_guard.py` 三方共用。Prompt Builder 在上下文文件加载时调：
 
 ```python
-_CONTEXT_THREAT_PATTERNS = [
-    (r'ignore\s+(previous|all|above|prior)\s+instructions', "prompt_injection"),
-    (r'do\s+not\s+tell\s+the\s+user', "deception_hide"),
-    (r'system\s+prompt\s+override', "sys_prompt_override"),
-    (r'disregard\s+(your|all|any)\s+(instructions|rules|guidelines)', "disregard_rules"),
-    (r'bypass_restrictions', ...),
-    (r'curl\s+.*\${?\w*(KEY|TOKEN|SECRET)', "exfil_curl"),
-    (r'cat\s+[^\\n]*(\\.env|credentials)', "read_secrets"),
-]
+from tools.threat_patterns import scan_for_threats
 
-_CONTEXT_INVISIBLE_CHARS = {
-    '\u200b', '\u200c', '\u200d', '\u2060', '\ufeff',  # 零宽字符
-    '\u202a', '\u202b', '\u202c', '\u202d', '\u202e',  # 双向文本控制
-}
+findings = scan_for_threats(content, scope="context")
+if findings:
+    content = f"[BLOCKED: {filename} contained potential prompt injection: {', '.join(findings)}]"
 ```
 
-**双重防护**：
-1. **威胁模式检测**：10 种常见注入模式（忽略指令、隐藏行为、执行注入、密钥外泄等）
-2. **不可见 Unicode 检测**：10 种零宽字符和双向文本控制字符（5 种零宽 + 5 种双向控制，可能用于视觉欺骗）
+**Scope 三分**（详见 [[security-defense-system]]）：
 
-检测到威胁时：替换为 `[BLOCKED: filename contained potential prompt injection]`
+- `"all"` — 经典 prompt injection / exfiltration（`ignore previous instructions` / `system prompt override` / `curl $KEY` 等），所有扫描器都用。
+- `"context"`（**Prompt Builder 默认**）— 上面 + 角色扮演 / 身份覆盖 / C2 verbiage（`name yourself X` / `register as a node` / `heartbeat to` / `pull tasking` / `unset CLAUDE|HERMES` / `praxis|cobalt strike|sliver|brainworm`）。
+- `"strict"` — 上面 + 持久化后门（`authorized_keys` / `update AGENTS.md`）+ hardcoded secret，仅 memory write / skills install 这类 user-mediated 路径用。
+
+**模式哲学**："anchor on C2-specific vocabulary or unambiguous attack behavior, NOT on bossy English" —— `you must X` / `you are obligated to` 等普通指令性短语被显式拒绝，因 AGENTS.md / CLAUDE.md 自身存在大量合法 instructional 语句。Multi-word bypass 用 `(?:\\w+\\s+)*` 容许 `ignore all prior instructions` 等 dilution。
+
+**不可见 Unicode** 扩展到 17 个 codepoint（`threat_patterns.INVISIBLE_CHARS`，line 116-137）：5 种零宽 + 3 种 invisible math operator + 9 种 directional embedding / override / isolate / BOM。命中即报 `invisible_unicode_U+XXXX` 编码点便于审计。
+
+检测到威胁时：替换为 `[BLOCKED: filename contained potential prompt injection: <pattern_ids>]`。原始文件**不进入** system prompt。
 
 ## 核心组件
 

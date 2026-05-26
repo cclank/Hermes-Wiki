@@ -1,10 +1,10 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-05-24
+updated: 2026-05-26
 type: concept
-tags: [gateway, architecture, module, telegram, discord, messaging, qq, teams, line, simplex, ntfy, proxy]
-sources: [gateway/run.py, gateway/platforms/, plugins/platforms/, hermes_cli/config.py]
+tags: [gateway, architecture, module, telegram, discord, messaging, qq, teams, line, simplex, ntfy, wecom, proxy]
+sources: [gateway/run.py, gateway/platforms/, gateway/delivery.py, plugins/platforms/, hermes_cli/config.py, gateway/platforms/wecom_callback.py]
 ---
 
 # 消息网关架构
@@ -717,18 +717,60 @@ _run_agent_via_proxy():
 发送回用户
 ```
 
+## Telegram DM Topic 投递（2026-05-26，6 commit 簇）
+
+涉及 6 个 commit（基线 commit `415be5539`，跟进 `96c71d8c4` / `dcd504cea` / `c394e7919` / `5b1c75d66` / `27df4b388`）。**问题域**：Telegram 同时有 group/channel 内的 forum topic（thread_id > 0，chat_id < 0）与 **DM 私聊** 内的 topic（chat_id > 0）。通用 `DeliveryRouter.send()` 路径在 metadata 里塞 `thread_id` 给 group topic 用得很顺，**直接给 DM 私聊 forum topic 反而通不过 Telegram API**。
+
+**核心修复（`gateway/delivery.py` commit `415be5539`）**：
+
+```python
+def _looks_like_telegram_private_chat_id(chat_id: Optional[str]) -> bool:
+    if chat_id is None:
+        return False
+    try:
+        return int(chat_id) > 0
+    except (TypeError, ValueError):
+        return False
+```
+
+`DeliveryRouter.send()` 检测到 `target.platform == Platform.TELEGRAM and _looks_like_telegram_private_chat_id(target.chat_id)` 时**不把 `thread_id` 塞进通用 send metadata** —— DM topic 走 adapter-level 的 direct route 而非通用 thread_id forwarding。
+
+**沿 lifecycle 的 5 个跟进**：
+
+| Commit | 行为 |
+|--------|------|
+| `96c71d8c4` 要求 anchor | DM topic delivery 默认必须有 `reply_to` anchor（防垃圾 thread） |
+| `dcd504cea` 自动 create | 首次 DM topic 不存在 → adapter 自动 `forum_topic_create` |
+| `c394e7919` 刷新过期 thread | thread_id 在 Telegram 端 expire 后自动重 fetch + cache 失效 |
+| `5b1c75d66` refactor | 简化 refresh helper |
+| `27df4b388` 豁免 anchor-required | `reply_to_mode=off` 的 DM topic send 不受 anchor-required 约束（手工 exempt 路径） |
+
+## Telegram 表格 Row-Group 间距收紧（2026-05-26，fix）
+
+`9d10c45e3 fix(telegram): tighten table row-group spacing and drop redundant first bullet`：GFM → Telegram-row-group rewriter 之前用 `"\n\n".join(rendered_rows)`，多列表 mobile 上炸成一 bullet 一段；另当 table 无 row-label 列时，row heading 出两次（standalone bold + 首 bullet）。
+
+修复：row-group 内 heading-to-bullets 用单 `\n`，row-group 之间空一行；当 table 无 row-label 时跳过 value == heading 的首 bullet。
+
+## WeCom Callback defusedxml + Lazy Dep（2026-05-26，harden）
+
+`gateway/platforms/wecom_callback.py:20-24`（commit `5744b1757`）：把 `from xml.etree import ElementTree as ET` 换成 `import defusedxml.ElementTree as ET`。WeCom callback request body 是 **pre-auth untrusted**，defusedxml 屏蔽 entity-expansion / billion-laughs / XXE DoS。response-building XML 在 `wecom_crypto.py` 不动（不从 untrusted 输入 parse）。
+
+跟进 `31c8d5ff5`：把 defusedxml import 包 try/except（同 `aiohttp` / `httpx` 兼容模式），set `DEFUSEDXML_AVAILABLE` flag；`check_wecom_callback_requirements()` 检 flag，缺 dep 时 log 实际缺什么 + skip adapter（不再 hard import crash）；`pyproject.toml` 新加 `[wecom] extra` with `defusedxml==0.7.1`；`tools/lazy_deps.py` 注册触发 lazy install prompt。
+
 ## 相关页面
 
 - [[gateway-session-management]] — 网关会话管理架构
 - [[cron-scheduling]] — Cron 调度器由网关驱动
 - [[hook-system-architecture]] — 网关事件钩子系统
+- [[security-defense-system]] — Webhook 硬化、Gateway 平台审批授权链、WeCom callback defusedxml
 
 ## 相关文件
 
 - `gateway/run.py` — 主循环和消息分发
 - `gateway/session.py` — SessionStore
 - `gateway/platforms/base.py` — 平台基类（`extract_local_files`、`SUPPORTED_DOCUMENT_TYPES`、`send_document`）
-- `gateway/delivery.py` — 消息投递
+- `gateway/delivery.py` — 消息投递（含 2026-05-26 `_looks_like_telegram_private_chat_id` DM topic 直发分支）
 - `gateway/config.py` — 网关配置
 - `gateway/platforms/` — 平台适配器目录
+- `gateway/platforms/wecom_callback.py:20-24` — **NEW 2026-05-26** defusedxml + `DEFUSEDXML_AVAILABLE` flag
 - `hermes_cli/gateway.py` — Gateway CLI 命令

@@ -1,9 +1,9 @@
 ---
 title: Cron 调度与自动化工作流
 created: 2026-04-07
-updated: 2026-05-20
+updated: 2026-05-26
 type: concept
-tags: [architecture, cron, automation, scheduling, webhook]
+tags: [architecture, cron, automation, scheduling, webhook, prompt-injection-defense]
 sources: [cron/scheduler.py, cron/jobs.py, tools/cronjob_tools.py, gateway/platforms/webhook.py]
 ---
 
@@ -313,7 +313,33 @@ cron:
 - **非空 stdout 原样投递** —— 异常立即推送
 - **零 LLM 成本** —— 适合监控/轮询/状态检查
 
-`tools/cronjob_tools.py:44,133-139` **同时**对 prompt-injection 进行**预扫描**（v0.13.0 安全 wave 之一）：cron 组装好的 prompt（含已加载 skill 内容）走 injection 正则，命中返回 `"Blocked: prompt contains injection"` 阻止执行。
+### Prompt-Injection 扫描器二级分裂（2026-05-26，fix #32339）
+
+> 历史版本：`tools/cronjob_tools.py:44,133-139` 在 v0.13.0 安全 wave 中加入 cron 预扫描，组装好的 prompt（含已加载 skill 内容）走 injection 正则，命中返回 `"Blocked: prompt contains injection"`。
+
+**回归问题（commit `ccd899318`）**：v0.13 P0 #21350 的运行时扫描器复用了 create-time 用户 prompt 扫描的 critical 模式集，对 **assembled prompt（含 loaded skill markdown）** 跑同一套正则。窄模式（如 `ignore previous instructions`）正常；**命令形 pattern** 如 `cat ~/.hermes/.env` / `authorized_keys` / `/etc/sudoers` / `rm -rf /` 在 security postmortems / runbooks 的**描述性散文**里频繁出现，导致**所有 11 个 PR-scout cron 任务静默 block 数周**（bundled `hermes-agent-dev` skill 含 "the attacker could just `cat ~/.hermes/.env`" 的散文段）。
+
+**修复 — 两级扫描器 + 上下文路由**（`tools/cronjob_tools.py:186-227`）：
+
+| Scanner | 行号 | 用途 | 模式集 |
+|---------|------|------|--------|
+| `_scan_cron_prompt(prompt)` | 186-205 | **strict 不变**。create / update 时跑；运行时**无 skill 附加**也跑（defense-in-depth） | `_CRON_THREAT_PATTERNS` + `_CRON_EXFIL_COMMAND_PATTERNS` + invisible unicode |
+| `_scan_cron_skill_assembled(assembled)` | 208-227 | **NEW 宽松**。运行时**有 skill 附加**才跑 | 仅 `_CRON_SKILL_ASSEMBLED_PATTERNS` —— "ignore previous instructions" / "disregard your rules" / "system prompt override" / "do not tell the user" + invisible unicode |
+
+`cron/scheduler.py:1170-1191` 按 `has_skills` 选 scanner：
+
+```python
+from tools.cronjob_tools import _scan_cron_prompt, _scan_cron_skill_assembled
+scanner = _scan_cron_skill_assembled if has_skills else _scan_cron_prompt
+```
+
+设计原则（commit body）："This is defense-in-depth, not the only line of defense. Skill bodies are user-curated and already scanned at install time by `skills_guard.py`. This scan is the runtime tripwire for an obvious injection directive surviving a malicious install"。命令形 pattern 在 skill assembled 路径上被**有意 drop** —— 因 skill body 已在 install 时被 `skills_guard.py` 扫过，运行时再扫只制造 false positive on prose。
+
+### Cron Schedule 必填 — Schema 描述显式化（2026-05-26，fix #32427）
+
+`51013268c` + `556bf7c5c`（test guard）：Grok 与其他 LLM 在 `action=create` 调用 cronjob 工具时**省略 `schedule` 参数**，因 schema 的 `required[]` 只列了 `action`，且 schedule description 没显式标 mandatory。
+
+修复：CRONJOB_SCHEMA 的 `schedule` description 显式写入 "REQUIRED for action=create"；`tests/tools/test_cronjob_tools.py` 守护这段文本不被未来 refactor 误删。
 
 ### Watchers Skill（v0.14.0+）
 

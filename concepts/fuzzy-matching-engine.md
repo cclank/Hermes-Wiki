@@ -1,10 +1,10 @@
 ---
 title: 模糊匹配引擎 — 8 策略链
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-05-26
 type: concept
-tags: [architecture, tool, reliability, fuzzy-matching]
-sources: [hermes-agent 源码分析 2026-04-07]
+tags: [architecture, tool, reliability, fuzzy-matching, patch, indentation, crlf, escalation]
+sources: [tools/fuzzy_match.py, tools/file_operations.py, tools/file_tools.py]
 ---
 
 # 模糊匹配引擎 — 8 策略链
@@ -247,14 +247,75 @@ def _unicode_normalize(text: str) -> str:
 | 相似度匹配 | ✅ | ❌ | ❌ |
 | 位置映射 | ✅ 精确 | N/A | ✅ |
 
+## 2026-05-26 Patch 工具三连增强（feat #507 / #32273）
+
+`6bd0be30b feat(patch): indentation preservation, CRLF preservation, per-file failure escalation` 在模糊匹配链外侧加了三个 patch-time 增强（Roo Code 深度对照取出的修复）。
+
+### 缩进保留 — `_reindent_replacement()`（`tools/fuzzy_match.py:185-258`）
+
+**问题场景**：fuzzy 链中 `exact` 之外的策略匹配成功时，LLM 发的 `old_string` / `new_string` 缩进可能与文件实际不同（典型：LLM 发 0 缩进的方法体，但目标方法住在 8-space 缩进 class 内）。原行为：直接 splice 进去，产出格式破但仍 parse 的文件。
+
+**修复算法**（line 199-239）：
+
+1. 取 `old_string` 第一非空 line 的 leading whitespace（LLM base indent）。
+2. 取 `file_region` 第一非空 line 的 leading whitespace（file base indent）。
+3. 若两 indent 相等 → no-op 直返；否则对 `new_string` 每非空行做 prefix swap：`file_base + (line_indent - llm_base)`，保留 LLM 增加的相对 nesting。
+
+**调用约束**：`tools/fuzzy_match.py:274` 仅在 **non-exact** 策略匹配后调，`exact` 策略 passthrough（exact 即 1 比 1，不需要 reindent）。Approach 与 Roo Code `multi-search-replace.ts:466-500` 一致。
+
+### CRLF 保留 — `_detect_line_ending()`（`tools/file_operations.py:77-103, 741-760, 1047, 1167`）
+
+**问题场景**：模型几乎总用 bare LF 发 tool args（JSON encoded），但文件可能 CRLF（Windows `.bat` / `.cmd` / `.ini`）。原行为：
+
+- `write_file` 静默把 CRLF 压成 LF
+- patch 产出**混合**结尾的文件：substituted 段 LF，周围 CRLF
+
+**修复**：
+
+```python
+def _detect_line_ending(sample: str) -> Optional[str]:
+    # 扫前 4096 字节，比 \r\n vs \n 频次，决定 file 实际 ending
+```
+
+`_detect_file_line_ending(path, pre_content)`（line 741-760）：lint/LSP 已读 file 重用 `pre_content`，否则 `head -c 4096` 探测。`write_file` / `patch` 路径（line 1047 / 1167）检测到 `\r\n` 即对整个 write content `_normalize_line_endings(text, "\r\n")`。新文件 verbatim 写。
+
+### Per-File 失败升级 — `_patch_failure_tracker`（`tools/file_tools.py:257-292, 1080-1095`）
+
+**问题场景**：agent 对同一文件失败 3+ 次时，旧的 "old_string not found" hint 不够强；模型继续用变体老 old_string 撞 stale 文件视图。
+
+**实现**：
+
+```python
+_patch_failure_tracker: dict[task_id][resolved_path] = count   # line 263
+# LRU 64 path/task line 273-276
+```
+
+- `_record_patch_failure(task_id, resolved_path)` 每次 fail 自增。
+- `_reset_patch_failures(task_id, paths)` 成功 patch 同 path 时清零（line 1060-1062：避免成功一次后再失败时立刻 escalate）。
+- `failure_count >= 3` 注入 `_hint`（line 1080-1095）：
+
+```text
+This is failure #N patching '<path>'. Stop retrying with variations
+of the same old_string. Either: (1) re-read the file fresh to verify
+current content, (2) use a longer / more unique old_string with
+surrounding context lines, or (3) use write_file to replace the
+entire file if the targeted region is hard to anchor.
+```
+
+不到 3 次 fail 仍走旧的 "old_string not found. Use read_file..." hint（line 1097-1100）。
+
+测试增量：`tests/tools/test_fuzzy_match.py +5`（缩进保留）/ `test_line_ending_preservation.py +12`（CRLF）/ `test_patch_failure_tracking.py +5`（失败计数 + reset）。所有现有测试 165/165 通过（commit body）。
+
 ## 相关页面
 
 - [[model-tools-dispatch]] — 工具编排与调度（调用模糊匹配的上层）
 - [[tool-registry-architecture]] — 工具注册系统（文件工具通过 registry 注册）
 - [[skills-system-architecture]] — 技能管理工具中使用模糊匹配
+- [[tool-loop-guardrails]] — Tool loop guardrails 的"同工具失败"维度与 patch 失败升级互补
 
 ## 相关文件
 
-- `tools/fuzzy_match.py` — 模糊匹配引擎实现
+- `tools/fuzzy_match.py` — 模糊匹配引擎实现（含 2026-05-26 `_reindent_replacement` line 185-258）
+- `tools/file_operations.py` — **NEW 2026-05-26** `_detect_line_ending` line 77-103 + 写入路径 CRLF 保留
+- `tools/file_tools.py` — **NEW 2026-05-26** `_patch_failure_tracker` line 257-292 + 失败 #3+ 升级 hint line 1080-1095
 - `tools/skill_manager_tool.py` — 技能管理中调用模糊匹配
-- `tools/file_tools.py` — 文件工具中调用模糊匹配

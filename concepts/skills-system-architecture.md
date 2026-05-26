@@ -1,10 +1,10 @@
 ---
 title: Skills System Architecture
 created: 2026-04-07
-updated: 2026-05-22
+updated: 2026-05-26
 type: concept
-tags: [skill, architecture, module, prompt-builder, curator, bundles]
-sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, tools/skill_usage.py, tools/skill_provenance.py, run_agent.py, agent/prompt_builder.py, agent/curator.py, agent/curator_backup.py, agent/skill_bundles.py, hermes_cli/curator.py, hermes_cli/plugins.py, agent/skill_utils.py]
+tags: [skill, architecture, module, prompt-builder, curator, bundles, skills-hub-health]
+sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, tools/skill_usage.py, tools/skill_provenance.py, run_agent.py, agent/prompt_builder.py, agent/curator.py, agent/curator_backup.py, agent/skill_bundles.py, hermes_cli/curator.py, hermes_cli/plugins.py, agent/skill_utils.py, scripts/build_skills_index.py, .github/workflows/skills-index-freshness.yml]
 ---
 
 > **v2026.5.7 增量**：
@@ -585,6 +585,67 @@ skills:
 
 设计取舍（`7255050 feat` → `4254f7d refactor` 一日内裁掉 600 行）：原 PR 用 dataclass + severity field + 三个 entry point；refactor 合并为单 `ast_scan_path(path)` + `(file, line, pattern_id, description)` 元组，移除 severity（与 install gate 职责重叠）。
 
+## Skills Hub 健康监控（2026-05-26 NEW，feat #32345）
+
+`d8703e27f feat(skills-hub): health checks, freshness badge, and a watchdog cron` + `cea87d913 fix(skills-hub): show every catalog source` 引入**三层 silent-rot 防护**——commit body 引："a silent regression like 'OpenAI tap moved its skills' now fails the build instead of shipping a quietly broken catalog"。
+
+### Build-time 健康下限 — `scripts/build_skills_index.py:330-348`
+
+```python
+EXPECTED_FLOORS = {
+    "skills.sh":  100,
+    "lobehub":    100,
+    "clawhub":     50,
+    "official":    50,
+    "github":      30,    # collapsed across all GitHub taps
+    "browse-sh":   50,
+}
+
+MIN_TOTAL = 1500
+```
+
+任一 source `count < floor` 或总数 `< MIN_TOTAL` → `sys.exit(2)`，CI 工作流 fail loud。失败文案明示：如果 source 真的下线，要在**同一个 PR**里下调 floor，避免 silently 接受退化的 catalog。
+
+`skills-sh` 与 `skills.sh` 是同一 source 的两个 label，count 合并（line 343-345）。
+
+### Page-level 新鲜度信号
+
+`website/scripts/extract-skills.py` 同步生成 `website/src/data/skills-meta.json`，含 `generated_at` ISO timestamp + 每 source 当前条数。`website/src/pages/skills/index.tsx` 在 hero copy 下渲染 "Catalog refreshed N hours ago · auto-rebuilt twice daily"。Cron 停了 → 用户立刻看到 staleness 不必通过 issue 反馈链路。
+
+### Watchdog Cron — `.github/workflows/skills-index-freshness.yml`（149 行）
+
+每 4 小时拉一次 live `/docs/api/skills-index.json`：
+
+- 校验 shape + age（>26h 算 stale）+ 同样的 per-source floors
+- 任一项不对 → 开 issue（或追加 comment 到已有 `[skills-index-watchdog]` 前缀 issue，避免重复 issue spam）
+- Live 探测确认：`total=2456, all 6 sources above floor, age 0.1h → issues=NONE`（commit body）
+
+### Catalog Source 全显示修复（`cea87d913`）
+
+之前 React 页面只显示部分 source（chunked 渲染逻辑漏 source mapping），现把 `skills.sh / ClawHub / browse.sh / OpenAI` 等全 6 source 都纳入页面 facets。涉及 `website/scripts/extract-skills.py` +229 / `website/scripts/prebuild.mjs` +71 / `website/src/pages/skills/index.tsx` +93。
+
+## Skill Install 拒绝符号链接（2026-05-26 NEW，fix）
+
+`tools/skills_hub.py:3046-3058`（commit `c26af4681`）：`install_from_quarantine()` 在 `shutil.move(quarantine_path, install_dir)` 之**前**用 `quarantine_path.rglob("*")` + `_is_path_redirect(entry)`（line 153-159，含 Windows directory junction `is_junction()`）扫整个 quarantined skill bundle。任一 symlink/junction 入口即：
+
+```python
+raise ValueError(
+    f"Installed skill contains symlinks, which is not allowed: {rel}"
+)
+```
+
+威胁模型（注释引）：恶意 skill bundle 可能含指向 skill tree 外的 symlink；其 target 内容会被 `shutil.move` 当成常规文件 copy 进 `skills/`，下次 `skill_view` 时 leak 给 agent。本提交是 v0.14 安全 wave 3 那"6 处 symlink 拒绝矩阵"在 **skill-install 路径**上的补完。`tools/skills_guard.py:738-852` 旧的结构检查只做 "symlink escape"（target 指向 quarantine 外）—— 现在升级为**任意 symlink 全拒**，因 skill view 是按 path 直读，符号链接的存在本身就有歧义。+47 行测试。
+
+## 新增 Optional Skills（2026-05-26）
+
+| 路径 | 描述 | 状态 |
+|------|------|------|
+| `optional-skills/security/web-pentest/SKILL.md` | 授权 Web 应用渗透测试，Shannon "No Exploit, No Report" 方法论 + 范围/授权/aux-client 泄漏护栏 | feat #32265 |
+| `optional-skills/autonomous-ai-agents/openhands/SKILL.md` | 把 coding delegate 给 OpenHands CLI（model-agnostic via LiteLLM）。`claude-code` / `codex` / `opencode` 家族中的模型无关选项 | feat closes #477 |
+| `optional-skills/software-development/code-wiki/SKILL.md` + 4 模板 | 生成 codebase wiki（overview + Mermaid flowchart + 每模块 deep-dive + class/sequence diagrams + getting-started + API ref）；输出默 `~/.hermes/wikis/<repo>/` | feat closes #486 |
+
+设计原则：三者均归 `optional-skills/`（"when in doubt, optional"），install-on-demand 而非默认加载。`openhands` 的 SKILL.md 经 verified install (`uv tool install openhands --python 3.12`) 重写，因原 PR 的 SKILL.md 由 OpenHands agent 自身起草，幻觉了 `--model` / `--max-iterations` / `--workspace` / `--sandbox docker` 等不存在的 flag。
+
 ## 相关页面
 
 - [[prompt-builder-architecture]] — 技能索引构建与条件激活
@@ -605,3 +666,10 @@ skills:
 - `agent/curator.py` — 后台技能维护（状态机、归档分类）
 - `hermes_cli/curator.py` — `hermes curator` CLI（status/archive/prune/restore 等子命令）
 - `tools/skill_usage.py` — 技能使用 sidecar telemetry（`.usage.json`）
+- `scripts/build_skills_index.py:330-348` — **NEW 2026-05-26** Skills Hub `EXPECTED_FLOORS` 健康下限 + `MIN_TOTAL=1500`
+- `.github/workflows/skills-index-freshness.yml` — **NEW 2026-05-26** 每 4h Skills Hub watchdog cron（149 行）
+- `website/src/data/skills-meta.json` — **NEW 2026-05-26** 新鲜度元数据（`generated_at` + per-source counts）
+- `tools/skills_hub.py:3046-3058` — **NEW 2026-05-26** install_from_quarantine 拒 symlink
+- `optional-skills/security/web-pentest/SKILL.md` — **NEW 2026-05-26** Web 渗透测试 skill
+- `optional-skills/autonomous-ai-agents/openhands/SKILL.md` — **NEW 2026-05-26** OpenHands CLI delegation skill
+- `optional-skills/software-development/code-wiki/SKILL.md` — **NEW 2026-05-26** 代码 wiki 生成 skill
