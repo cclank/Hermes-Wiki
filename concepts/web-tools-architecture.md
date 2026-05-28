@@ -1,7 +1,7 @@
 ---
 title: Web Tools 搜索/提取架构
 created: 2026-04-08
-updated: 2026-05-20
+updated: 2026-05-28
 type: concept
 tags: [tool, toolset, architecture, component, web-search, registry]
 sources: [tools/web_tools.py, agent/web_search_provider.py, agent/web_search_registry.py, plugins/web/]
@@ -18,9 +18,13 @@ sources: [tools/web_tools.py, agent/web_search_provider.py, agent/web_search_reg
 
 # Web Tools — 搜索/提取架构
 
+> ⚠️ **2026-05-28（v0.15.0）— `web_crawl` 工具及 crawl 能力整体移除**（commit `5e1f79343`，#33824，净 25 文件 +115/-1067）。
+> `web_crawl_tool()` 始终是孤儿：无 model schema 注册、无 skill/CLI 调用、agent 无法调用。团队决定不再把 crawl 暴露为独立能力（`web_search` + `web_extract` 已覆盖目标用例）。已移除：`tools/web_tools.py:web_crawl_tool()`（~230 LOC，**现行已无该函数**）、`plugins/web/{firecrawl,tavily}/provider.py` 的 `supports_crawl()`/`crawl()`、`plugins/web/xai/provider.py` 的 `supports_crawl()` override、`agent/web_search_provider.py` 的 `supports_crawl()`/`crawl()` ABC 方法、`agent/web_search_registry.py` 的 `get_active_crawl_provider()` + `_resolve()` 的 `'crawl'` 分支、`agent/display.py` 的 crawl 进度渲染、`hermes_cli/config.py` 中 `TAVILY_API_KEY.tools` 的 `'web_crawl'`、以及 EN/zh-Hans capability 表的 Crawl 列。Closes #33762。
+> **下文凡涉及 `web_crawl` / `crawl()` / `supports_crawl()` / Crawl 列的内容均为 v0.15.0 之前的历史描述，现已失效。** 详见 [[2026-05-28-update]]。
+
 ## 概述
 
-Web Tools 提供**多后端 Web 搜索/提取/爬取**能力，所有后端对 Agent 暴露相同的 `web_search`、`web_extract`、`web_crawl` 工具接口。
+Web Tools 提供**多后端 Web 搜索/提取**能力（v0.15.0 起 crawl 能力已移除，见上方说明），所有后端对 Agent 暴露相同的 `web_search`、`web_extract` 工具接口。
 
 核心理念：**内容获取优先于浏览器自动化**——简单信息检索使用 web_search/web_extract（更快、更便宜），仅在需要交互时才使用 browser 工具。
 

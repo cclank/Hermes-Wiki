@@ -1,7 +1,7 @@
 ---
 title: Skills System Architecture
 created: 2026-04-07
-updated: 2026-05-26
+updated: 2026-05-28
 type: concept
 tags: [skill, architecture, module, prompt-builder, curator, bundles, skills-hub-health]
 sources: [tools/skills_tool.py, tools/skill_manager_tool.py, tools/skills_hub.py, tools/skills_guard.py, tools/skill_usage.py, tools/skill_provenance.py, run_agent.py, agent/prompt_builder.py, agent/curator.py, agent/curator_backup.py, agent/skill_bundles.py, hermes_cli/curator.py, hermes_cli/plugins.py, agent/skill_utils.py, scripts/build_skills_index.py, .github/workflows/skills-index-freshness.yml]
@@ -623,6 +623,34 @@ MIN_TOTAL = 1500
 ### Catalog Source 全显示修复（`cea87d913`）
 
 之前 React 页面只显示部分 source（chunked 渲染逻辑漏 source mapping），现把 `skills.sh / ClawHub / browse.sh / OpenAI` 等全 6 source 都纳入页面 facets。涉及 `website/scripts/extract-skills.py` +229 / `website/scripts/prebuild.mjs` +71 / `website/src/pages/skills/index.tsx` +93。
+
+## Skills 目录全量拉取（2026-05-28 NEW，v0.15.0）
+
+两个 catalog source 此前都因分页/抓取限制只暴露目录极小一部分，本次修为全量——直接抬高 §Skills Hub 健康监控里那些 `EXPECTED_FLOORS` 的真实可达上限。
+
+### skills.sh 走 sitemap（858 → 19,932，`7050c052e` #34025）
+
+旧 `SkillsShSource` 跑 28 个硬编码关键词搜索（各 cap 50），只得 ~858。真实目录 ~20k，经 `sitemap-skills-{1,2}.xml`（各 ≤10k URL）暴露。现行 `tools/skills_hub.py`：
+
+| 行 | 内容 |
+|----|------|
+| `:1215` | `class SkillsShSource(SkillSource)` |
+| `:1224` | `SITEMAP_INDEX_URL = "https://www.skills.sh/sitemap.xml"` |
+| `:1262` | 空查询路径改走 `self._sitemap_catalog(limit)`（替代 homepage featured strip 抓取） |
+| `:1323` | `_sitemap_catalog()` — 走 sitemap 枚举全目录，sitemap 不可达时回退 `_featured_skills` |
+| `:1342` | 处理 httpx + brotlicffi 交互：per-skill sitemap 显式用 `Accept-Encoding: gzip` |
+
+`build_skills_index.crawl_skills_sh()` 现只调 `search("", limit=0)`（一次 HTTP 往返替代 28 次关键词搜索，同结果）。
+
+### ClawHub 全目录分页（200 → 20k+，`fb9f3a4ef` #33748）
+
+`ClawHubSource.search("")` 空查询走单次无分页请求，ClawHub API 单页 cap 200 并返回 `nextCursor`；旧逻辑抓第 1 页就停，缓存索引（hermes-agent.nousresearch.com 服务）静默截断 99%。修为按 `nextCursor` 翻页拉全量。
+
+### 其他 Skills 修复
+- `e0572a6de`（#33810）：skills-hub 标识符列不再省略号截断。
+- `a1eaad2fc`（perf，#33809）：dashboard skills 页改懒加载目录，不再把 34MB 打进 JS bundle。
+
+详见 [[2026-05-28-update]]。
 
 ## Skill Install 拒绝符号链接（2026-05-26 NEW，fix）
 

@@ -345,3 +345,38 @@
 - 关键 commit 用 `git show <sha> --stat` 抽样：`8773bbf` / `2dc6d03` / `c32b17f` / `848baeb` / `b69fce9` / `2fc4615` / `848baeb` / `c310419` / `4272977` / `b3dc539`（dashboard auth Phase 0-7）；`2e3c662` / `0bac880` / `1a8e670` / `c03960d` / `eccbbe4`（honcho 15 子修复）；`9919caf` (Krea) / `249534e` (security-guidance) / `0a83247` (TUI orchestrator) / `f7527b0` (api_server session) / `25f43d3` (api_server /v1/skills #33016) / `cb38ce2` + `b6ca56f` + `e8955f2` (Codex 修复); `0ec052c` (cold start -19s) / `544c31b` (47% agent-loop perf) / `6bd4311` (terminal poll -195ms); `12842d3` + `9ff98da` + `6f3a020` (xAI migrate); `a0c0312` (xAI Web Search); `57145ca` (BrowseShSource); `bc3f1f4` (Bitwarden EU)
 - README.md / index.md badge & changelog 索引：30 → 31 changelogs，"最后更新" 2026-05-26 → 2026-05-27，跟踪 HEAD 标注 `556bf7c5c` → `963d22c`（badge short hash `963d22c`），跟踪远端分支由 `master` 改为 `main`，**concept 页面 45 → 46**（新增 [[dashboard-auth-oauth-gate]]）
 - 验证策略: 每条结论都至少一条 `grep -n` / `Read` 命中 `/tmp/hermes-agent` clone @ `963d22c`；每个 file:line 引用现行 source 实际行号；功能描述对照对应 PR 标题 + commit body + 实际 hunk 内容；645 commit 量级下重点抓 19 个 feat + 3 security + 11 perf 上游 PR 验证
+
+
+## [2026-05-28] ingest | 跨日同步 hermes-agent 90 commits（`963d22c` → `11d93096`，v0.15.0 发布）
+- 输入: `git clone NousResearch/hermes-agent` @ `11d93096`（merge `#34097` "salvage/memori-trace-messages"，2026-05-28 13:56 -0700）
+- 范围: 自 wiki HEAD `66e5d25` = hermes `963d22c` 起 90 个新 commit（52 fix / 11 feat / 8 test / 8 chore / 6 docs / 1 refactor / 1 perf / 1 ci），窗口约 24 小时；**版本由 v0.14.0 升至 v0.15.0**（commit `0c859a1c0` "chore: release v0.15.0 (2026.5.28)"，`pyproject.toml:version = "0.15.0"` + `hermes_cli/__init__.py:__version__ = "0.15.0"` 现行已验证）；验证基线 `/tmp/hermes-agent` clone @ `11d93096`
+- 新增 1 个 changelog 页面：
+  - changelog/2026-05-28-update.md（17 章 + 文件矩阵）—— 主题：**v0.15.0 "The Velocity Release" 正式打标**（RELEASE_v0.15.0.md 655 行；自 v0.14.0 累计 1,302 commits / 747 PRs，绝大多数 highlight 已于 wiki 既往日同步 05-22~05-27 覆盖，本页仅记 90 个新 commit）、**claude-opus-4.8 / claude-opus-4.8-fast 接入**（#34003）、**Memory Provider 主机契约扩展**（sync_turn messages kwarg + Hindsight recall_types observation-only）、**Context Engine 外部引擎主机契约**（#33750）、**Kanban SQLite 抗损坏 wave ~14 commit**、**Skills 目录全量拉取**（skills.sh sitemap + ClawHub 分页）、**web_crawl 工具整体移除**（#33824）、**MCP mTLS 客户端证书**（#33721）、**Docker wave 7 连**、**安全加固 4 项**、**Krea 2 入 FAL 目录**（#33506）、**Agent/Provider 健壮性簇**、**Nous Portal entitlement 归一 + Codex 池 re-auth**、**xAI proxy/OAuth 修复簇**、**Discord 线程回填三连**、**dashboard UI 三连**、文档站 30 天大检修（#33782）
+- 源码已验证存在（关键样本，全部现行行号）：
+  - `pyproject.toml:version = "0.15.0"` + `hermes_cli/__init__.py:__version__ = "0.15.0"`（release commit `0c859a1c0`）
+  - `hermes_cli/models.py:35-36`（opus-4.8 + -fast OpenRouter fallback）+ `:144` Nous Portal curated + `:296` Anthropic picker；`agent/model_metadata.py:144-145`（1M ctx）+ `:98`（128k 输出）；`agent/anthropic_adapter.py:80,85,89`（4-8/4.8 substring 三表）
+  - `plugins/memory/hindsight/__init__.py:590 _recall_types = ["observation"]` + `:867` schema + `:1202-1209` 解析 + `:1346-1347` 召回（`490b3e76b`）
+  - `agent/memory_manager.py _provider_sync_accepts_messages`（签名内省派发，`5a95fb2e1`）
+  - `run_agent.py:530 _transition_context_engine_session` + `:621,643` 调用；`agent/agent_init.py:1519`、`agent/conversation_compression.py:419-420` on_session_start 转发 conversation_id（`9b5dae17a`）
+  - `hermes_cli/kanban_db.py:1305 PRAGMA synchronous=FULL` + `:1310 secure_delete=ON` + `:1313 cell_size_check=ON`（`6416dd518`）+ `:1633,1697` page_count 不变量（`99c19eb2f`）+ `:1023 _cross_process_init_lock`（`3ba896273`）+ `:1142` content-addressed 备份（`6f9182cb3`）+ `:147 _resolve_crash_grace_seconds`（`c002668ff`）
+  - `tools/skills_hub.py:1215 SkillsShSource` + `:1224 SITEMAP_INDEX_URL` + `:1262,1323,1342 _sitemap_catalog`（`7050c052e`）；ClawHub nextCursor 分页（`fb9f3a4ef`）
+  - `tools/web_tools.py` 已无 `web_crawl`（`grep` 0 命中，`5e1f79343` 净 25 文件 +115/-1067）
+  - `tools/mcp_tool.py:562 _resolve_client_cert` + `:608,617-622` list/password 形式（`87e5b2fae`）
+  - `gateway/platforms/api_server.py:4105-4121` API_SERVER_KEY 强制（`1a9ef8314`）
+  - `gateway/platforms/msgraph_webhook.py:67,100,136,287` source CIDR 白名单（`43abc51f6`）
+  - `tools/tirith_security.py`（+41/-12）非常规 tar 成员拒绝 + `tests/.../test_tirith_security.py` member.type=SYMTYPE（`a91b1c8b3`）
+  - `tools/image_generation_tool.py:327-328 fal-ai/krea/v2/medium` + `:349-350 large`（`6d947e4d7`，$0.03/$0.06）
+  - `agent/conversation_loop.py:3077,3093,3154,3185,3200` content_policy_blocked 立即 fallback（`0554ef1aa`）；`agent/error_classifier.py:50` 枚举
+  - `plugins/model-providers/openrouter/__init__.py:46-47` session_id sticky + `:93-94` x-grok-conv-id 头（`e8b9369a9`）
+- 关键 commit 用 `git show <sha> --stat` 抽样：`0c859a1c0`（v0.15.0 release 7 文件）/ `1a7479573`（opus-4.8）/ `5a95fb2e1`（memori messages）/ `490b3e76b`（hindsight）/ `9b5dae17a`（context-engine host contract）/ `6416dd518` + 13 kanban / `7050c052e` + `fb9f3a4ef`（skills 目录）/ `5e1f79343`（web_crawl 移除）/ `87e5b2fae`（mTLS）/ `6d947e4d7`（Krea FAL）/ `a91b1c8b3` + `aa3466063`（tar 拒绝）/ `43abc51f6`（msgraph CIDR）/ `1a9ef8314`（API_SERVER_KEY）/ Docker 7 连
+- 更新 7 个 concept 页面：
+  - smart-model-routing.md — 顶部增 "claude-opus-4.8 / -fast 接入" 增量块（三处注册 + 1M ctx + 2× fast 定价 + Opus 4.7 API 契约继承）；updated 2026-05-20 → 2026-05-28
+  - memory-system-architecture.md — MemoryProvider ABC 节后增 "sync_turn 完整回合消息契约" + "Hindsight recall_types 默认 observation-only" 两小节；sources 加 hindsight + conversation_loop；updated 2026-05-27 → 2026-05-28
+  - kanban-multi-agent-board.md — 并发策略后增 "SQLite 抗损坏加固 wave（2026-05-28）" 节（三 pragma + page_count + init lock + 备份 + grace + reaper + UI）；frontmatter 补 updated
+  - skills-system-architecture.md — Catalog 修复后增 "Skills 目录全量拉取（2026-05-28）" 节（skills.sh sitemap + ClawHub 分页 + 懒加载）；updated 2026-05-26 → 2026-05-28
+  - web-tools-architecture.md — 顶部增 "web_crawl 工具及 crawl 能力整体移除" 警示块，概述去 crawl 措辞，标注下文 crawl 内容为历史；updated 2026-05-20 → 2026-05-28
+  - mcp-and-plugins.md — stdio 诊断节后增 "mTLS 客户端证书（2026-05-28）" 节（_resolve_client_cert + 三 schema 形式 + ssl_verify）；tags 加 mtls；updated 2026-05-26 → 2026-05-28
+  - context-compressor-architecture.md — ContextEngine ABC 节内增 "外部 Context Engine 主机契约（2026-05-28）"；sources 加 agent_init.py；tags 加 context-engine；updated 2026-05-18 → 2026-05-28
+  - security-defense-system.md — 末尾增 "v0.15.0 增量 — 2026-05-28 Wave 5" 大节（tar-member 拒绝 ×2 + msgraph CIDR + API_SERVER_KEY + npm overrides）+ 汇总表加 Wave 5 行；sources 加 api_server.py；updated 2026-05-27 → 2026-05-28
+- README.md / index.md badge & changelog 索引：31 → 32 changelogs，"最后更新" 2026-05-27 → 2026-05-28，跟踪 HEAD `963d22c` → `11d9309`，版本 v0.14.0 → v0.15.0（concept 页面仍 46，本次无新增 concept）
+- 验证策略: 每条结论都至少一条 `grep -n` / `git show <sha>` 命中 `/tmp/hermes-agent` clone @ `11d93096`；每个 file:line 引用现行 source 实际行号；功能描述对照 PR 标题 + commit body + 实际 hunk 内容；90 commit 量级下重点抓 11 个 feat + 安全 + perf 上游 PR 验证

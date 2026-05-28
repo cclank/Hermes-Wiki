@@ -1,7 +1,7 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-05-20
+updated: 2026-05-28
 type: concept
 tags: [architecture, module, model-routing, performance, caching, anthropic, provider-plugin]
 sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py, providers/, plugins/model-providers/]
@@ -16,6 +16,15 @@ sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.
 > 详见 [[provider-plugin-system]]。
 >
 > **v0.12.0+ Remote model catalog manifest**：OpenRouter + Nous Portal 的 model catalog 不再硬编码在仓库，改成远端 manifest 拉取（PR #16033）。新模型上架**不需要发版**即可见。
+
+> **2026-05-28 增量（v0.15.0）— claude-opus-4.8 / claude-opus-4.8-fast 接入**（commit `1a7479573`，#34003）
+>
+> Anthropic 2026-05-27 发布 Claude Opus 4.8（OpenRouter / Anthropic / Bedrock / Claude Platform on AWS）。三处注册，全部现行可验证：
+> - `hermes_cli/models.py:35-36` — OpenRouter fallback 快照新增 `anthropic/claude-opus-4.8` + `anthropic/claude-opus-4.8-fast`（注 `"2x price, higher output speed"`）；`:144` Nous Portal curated list；`:296` Anthropic-native picker（`claude-opus-4-8`）。
+> - `agent/model_metadata.py:144-145` — `DEFAULT_CONTEXT_LENGTHS`：`claude-opus-4-8` / `claude-opus-4.8` = **1,000,000**（与 4.6/4.7 一致）；`:98` 最大输出 `128_000`。
+> - `agent/anthropic_adapter.py:80,85,89` — `4-8`/`4.8` 加入 `_XHIGH_EFFORT_SUBSTRINGS` / `_ADAPTIVE_THINKING_SUBSTRINGS` / `_NO_SAMPLING_PARAMS_SUBSTRINGS`：4.8 继承 Opus 4.7 API 契约（仅 adaptive thinking、支持 xhigh effort、采样参数 temperature/top_p/top_k 返回 400）。
+>
+> **关键差异**：`claude-opus-4.8-fast` 是**独立 model ID**、定价为基础模型 **2×**（旧 Opus 4.6/4.7 fast 溢价为 6×），**不是** Opus 4.6 那种 `speed: "fast"` 请求参数。live catalog 可达时自动 surface，fallback 快照仅 manifest 拉取失败时生效。详见 [[2026-05-28-update]]。
 
 ## v0.11.0 - v0.14.0 新增的 provider / 推理路径
 

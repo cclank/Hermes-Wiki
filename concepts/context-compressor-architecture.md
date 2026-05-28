@@ -1,10 +1,10 @@
 ---
 title: Context Compressor 上下文压缩架构
 created: 2026-04-08
-updated: 2026-05-18
+updated: 2026-05-28
 type: concept
-tags: [architecture, module, component, agent, context-compression]
-sources: [agent/context_engine.py, agent/context_compressor.py, agent/conversation_compression.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
+tags: [architecture, module, component, agent, context-compression, context-engine]
+sources: [agent/context_engine.py, agent/context_compressor.py, agent/conversation_compression.py, agent/agent_init.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
 ---
 
 # Context Compressor — 上下文压缩架构
@@ -45,6 +45,16 @@ context:
 **插件目录**：`plugins/context_engine/<name>/`，包含 `plugin.yaml` + `__init__.py`（实现 `register(ctx)` 或暴露 `ContextEngine` 子类）。
 
 **只允许一个引擎活跃**，同 MemoryProvider 的 "至多一个外部" 约束。
+
+#### 外部 Context Engine 主机契约（2026-05-28，v0.15.0，`9b5dae17a`，#33750）
+
+把 5 个旧 PR（#16453/#17453/#16451/#17600/#13373）凝练成一个**最小通用主机契约**，供外部 context engine plugin（如 hermes-lcm）干净集成；删掉重复脚手架。三处关键扩展，已验证现行源码：
+
+1. **`_transition_context_engine_session()` on AIAgent**（`run_agent.py:530`）—— 通用生命周期助手，依次触发 `on_session_end → on_session_reset → on_session_start → 可选 carry_over_new_session_context`；engine 只实现需要的钩子，缺失钩子跳过。`reset_session_state()` 现可选接收 `previous_messages` / `old_session_id` / `carry_over_context`，有元数据时委托该助手（`:621,643`）。内置 compressor 保持原 reset-only 行为。
+2. **`conversation_id` 传入 `on_session_start()`** —— agent-init（`agent/agent_init.py:1519`）+ compression-boundary（`agent/conversation_compression.py:419-420`）两处都转发 `self._gateway_session_key`，使 plugin engine 拥有跨 session_id 轮换（压缩切分 / `/new` / resume）稳定的会话身份。
+3. **规范化 cache 桶转发** —— `update_from_response()` 的 usage dict 现含 `input_tokens / output_tokens / cache_read_tokens / cache_write_tokens / reasoning_tokens`（叠加在 legacy prompt/completion/total 之上），engine 可基于 cache 命中率与 reasoning 成本决策。
+
+ABC 文档同步更新（`agent/context_engine.py:135`）；回归 `tests/agent/test_context_engine_host_contract.py`。配套 `8595281f3` 让 context engine 工具在 saved toolset 路径下也能暴露。详见 [[2026-05-28-update]]。
 
 核心理念：**长对话不需要丢弃上下文——用结构化摘要替代旧轮次，保留关键信息。**
 

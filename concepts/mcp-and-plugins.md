@@ -1,9 +1,9 @@
 ---
 title: MCP 集成与插件系统
 created: 2026-04-07
-updated: 2026-05-26
+updated: 2026-05-28
 type: concept
-tags: [architecture, mcp, plugins, extensibility, mcp-catalog]
+tags: [architecture, mcp, plugins, extensibility, mcp-catalog, mtls]
 sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py, hermes_cli/mcp_catalog.py, hermes_cli/mcp_picker.py, hermes_cli/mcp_config.py, optional-mcps/]
 ---
 
@@ -133,6 +133,23 @@ async def authenticate_mcp_server(server_config: dict) -> dict:
 ### v0.14.0 MCP stdio SDK 缺失诊断（2026-05-23，`5acaeba`，#31450）
 
 `tools/mcp_tool.py:+9 行` —— stdio MCP SDK（`mcp.client.stdio`）缺失时，调用 `_run_stdio` 抛 `ImportError` 并附带安装指引（"pip install mcp"），不再抛 `NameError: name '_stdio_client' is not defined`（原因：try/except ImportError 把 import 静默吞，names 留在 module scope 未绑定）。对齐 `_run_http` 早已存在的 `_MCP_HTTP_AVAILABLE` gate。
+
+### mTLS 客户端证书（2026-05-28，v0.15.0，`87e5b2fae`，#33721）
+
+为 HTTP / SSE transport 加一等公民 `client_cert` / `client_key` 配置键，mTLS 后的 MCP server 无需外部 TLS 终止代理。解析逻辑 `tools/mcp_tool.py:562 _resolve_client_cert(server_name, config)`，schema（仅 `mcp_servers.<name>` 的 HTTP/SSE）：
+
+| 配置形式 | 含义 |
+|----------|------|
+| `client_cert: "/path/combined.pem"` | 单 PEM 含 cert+key |
+| `client_cert` + `client_key` | 分开两文件 |
+| `client_cert: [cert, key]` | list 形式（`:608`） |
+| `client_cert: [cert, key, password]` | list + 加密 key 口令（`:617-622`） |
+
+- 路径支持 `~` 展开（`_expand`）；缺文件在 connect 时抛 server-scoped `FileNotFoundError`，而非晚到的 opaque TLS 握手错误。
+- 新 SDK HTTP 路径（mcp ≥ 1.24）：在 user-owned `httpx.AsyncClient` 上加 `cert=`，与既有 `verify=` 并列。
+- SSE 路径：经 `httpx_client_factory` 包裹 SDK 默认值（`follow_redirects=True`）再叠 `verify` + `cert`；仅需要时注入，默认仍用 SDK 内置 `create_mcp_http_client`。
+- 废弃的 mcp<1.24 路径不动（其 `streamablehttp_client` 签名不暴露 `cert`）。
+- 顺带文档化此前未文档的 `ssl_verify` 键。测试 `tests/tools/test_mcp_client_cert.py`。详见 [[2026-05-28-update]]。
 
 ## 插件系统
 

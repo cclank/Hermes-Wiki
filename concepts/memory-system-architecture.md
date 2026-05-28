@@ -1,10 +1,10 @@
 ---
 title: Memory System Architecture
 created: 2026-04-07
-updated: 2026-05-27
+updated: 2026-05-28
 type: concept
-tags: [memory, architecture, module, promptware-defense, honcho]
-sources: [tools/memory_tool.py, tools/threat_patterns.py, agent/memory_manager.py, agent/memory_provider.py, agent/builtin_memory_provider.py, run_agent.py, agent/prompt_builder.py, plugins/memory/__init__.py, plugins/memory/honcho/__init__.py, plugins/memory/honcho/client.py, plugins/memory/honcho/session.py, plugins/memory/honcho/cli.py, gateway/platforms/api_server.py]
+tags: [memory, architecture, module, promptware-defense, honcho, hindsight, memory-provider]
+sources: [tools/memory_tool.py, tools/threat_patterns.py, agent/memory_manager.py, agent/memory_provider.py, agent/builtin_memory_provider.py, run_agent.py, agent/conversation_loop.py, agent/prompt_builder.py, plugins/memory/__init__.py, plugins/memory/honcho/__init__.py, plugins/memory/honcho/client.py, plugins/memory/honcho/session.py, plugins/memory/honcho/cli.py, plugins/memory/hindsight/__init__.py, gateway/platforms/api_server.py]
 ---
 
 > **v2026.5.7 增量**：
@@ -285,6 +285,27 @@ class MemoryProvider(ABC):
 之前 provider 只在初始化时收到一次 `session_id`。但 `session_id` 会在 `/resume`、`/branch`、`/reset`、`/new`、上下文压缩等场景被**重新分配**——provider 不知道，后续写入会落到错误的 session 记录里。
 
 `agent/memory_manager.py:on_session_switch()` 现在会在 session_id 改变时调用所有 provider 的 `on_session_switch(new_session_id, parent_session_id, reset, **kwargs)`，让 provider 刷新缓存的 per-session 状态。Provider 不需要 tear down 重建，只需要更新内部句柄。错误会被 swallow（log debug 不阻塞主流程）。
+
+### `sync_turn` 完整回合消息契约（2026-05-28，v0.15.0，`5a95fb2e1`）
+
+`sync_turn` 新增可选 `messages` 关键字，让外部/社区 memory plugin 收到 OpenAI 风格的**完整对话消息列表**（含 assistant 工具调用 + tool result content），不再只有最终 assistant 文本：
+
+- **签名内省派发**：`agent/memory_manager.py:_provider_sync_accepts_messages` 只给声明了 `messages` 形参（或 `**kwargs`）的 provider 传该参数；所有现有 in-tree provider 保持 legacy `sync_turn(user, assistant)` 签名，调用不变（零行为变化）。
+- **不在 core 加结构化 trace 信封** —— provider 自行从标准消息列表重建所需内容。
+- 改动：`agent/conversation_loop.py`（+1）/ `agent/memory_manager.py`（+35）/ `agent/memory_provider.py`（+13）/ `run_agent.py`（+9）；并把 **Memori** 文档化为独立社区 memory provider（co-author Dave Heritage @ memorilabs.ai，salvage #28065）。merge HEAD `11d93096` 标题即 "salvage/memori-trace-messages"。
+
+### Hindsight `recall_types` 默认 observation-only（2026-05-28，v0.15.0，`490b3e76b`）
+
+自动召回过去把 Hindsight 的三类 fact（`world` / `experience` / `observation`）全部上屏 —— 三种 framing 重复同一信号、烧掉 `recall_max_tokens`、挤掉模型真正需要的事件。改为默认只召回 `observation`（已去重、密度更高、最贴近对话 ground truth）。现行 `plugins/memory/hindsight/__init__.py`：
+
+| 行 | 内容 |
+|----|------|
+| `:590` | `self._recall_types: list[str] = ["observation"]`（原为 `None` = 服务端"全返回"） |
+| `:867` | `get_config_schema()` 加 `recall_types` 键（`default: "observation"`，可发现于 `hermes config`） |
+| `:1202-1209` | `initialize()`：缺失→`["observation"]`；逗号分隔字符串→split；显式 `recall_types=[]`→回退默认（不静默放宽） |
+| `:1346-1347` | `if self._recall_types: recall_kwargs["types"] = self._recall_types` |
+
+逐次 `hindsight_recall` 工具调用不受影响（仅当 caller 显式传 `types` 才转发）。配套 `4df62d239` docs 修正 scope。详见 [[2026-05-28-update]]。
 
 ### initialize() 的 kwargs
 

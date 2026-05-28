@@ -1,10 +1,10 @@
 ---
 title: 安全防御体系 — 多层注入检测
 created: 2026-04-07
-updated: 2026-05-27
+updated: 2026-05-28
 type: concept
 tags: [architecture, security, injection-defense, skills-guard, promptware-defense, p0, supply-chain, webhook-hardening, dashboard-auth, security-guidance]
-sources: [tools/threat_patterns.py, tools/skills_guard.py, tools/memory_tool.py, agent/tool_dispatch_helpers.py, tools/tirith_security.py, tools/url_safety.py, agent/redact.py, agent/file_safety.py, agent/subdirectory_hints.py, tools/osv_check.py, cron/scheduler.py, hermes_cli/config.py, hermes_cli/web_server.py, gateway/platforms/webhook.py, gateway/platforms/wecom_callback.py, gateway/platforms/feishu.py, gateway/platforms/msgraph_webhook.py, web/src/components/Markdown.tsx, hermes_cli/dashboard_auth/base.py, hermes_cli/dashboard_auth/middleware.py, plugins/dashboard_auth/nous/__init__.py, plugins/security-guidance/patterns.py, plugins/security-guidance/__init__.py]
+sources: [tools/threat_patterns.py, tools/skills_guard.py, tools/memory_tool.py, agent/tool_dispatch_helpers.py, tools/tirith_security.py, tools/url_safety.py, agent/redact.py, agent/file_safety.py, agent/subdirectory_hints.py, tools/osv_check.py, cron/scheduler.py, hermes_cli/config.py, hermes_cli/web_server.py, gateway/platforms/webhook.py, gateway/platforms/wecom_callback.py, gateway/platforms/feishu.py, gateway/platforms/msgraph_webhook.py, gateway/platforms/api_server.py, web/src/components/Markdown.tsx, hermes_cli/dashboard_auth/base.py, hermes_cli/dashboard_auth/middleware.py, plugins/dashboard_auth/nous/__init__.py, plugins/security-guidance/patterns.py, plugins/security-guidance/__init__.py]
 ---
 
 > **v2026.5.7 安全 wave —— 8 个 P0 闭环**：
@@ -934,7 +934,38 @@ content_types = {".js", ".mjs", ".css", ".json", ".html",
 | 1 | v0.13 / v0.14 base | 主线 20 P0 闭合 |
 | 2 | 2026-05-23 ~ 24 | webhook fail-closed + Svix + Dashboard WS loopback + 多平台审批授权链 |
 | 3 | 2026-05-25 ~ 26 | 6 处 symlink 拒绝矩阵 + `.env` 0o600 + `_YOLO_MODE_FROZEN` + GHSA-rhgp-j443-p4rf + `hermes security audit` + threat_patterns 库 + `<untrusted_tool_result>` 包裹 |
-| 4 | 本次 2026-05-27 | Dashboard OAuth + security-guidance + 凭据/webhook 加固 |
+| 4 | 2026-05-27 | Dashboard OAuth + security-guidance + 凭据/webhook 加固 |
+| 5 | 本次 2026-05-28（v0.15.0） | 解包 tar-member 拒绝 ×2 + msgraph webhook source CIDR 白名单 + API_SERVER_KEY 强制 + npm overrides 钉版 |
+
+## v0.15.0 增量 — 2026-05-28 Wave 5（解包与 webhook 加固）
+
+> 详细 changelog：[[2026-05-28-update]]
+
+### 自动安装解包拒绝非常规 tar 成员（`a91b1c8b3` / `aa3466063`）
+
+- **Tirith**（`a91b1c8b3`）：`tools/tirith_security.py`（+41/-12）在 auto-install 解包时拒绝非常规 tar 成员（symlink / hardlink / device / fifo），只放行 regular file + dir。测试 `tests/tools/test_tirith_security.py`（+85）以 `member.type = tarfile.SYMTYPE` 验证拒绝路径。防 tar-slip / 解包逃逸。
+- **Android psutil 兼容安装器**（`aa3466063`）：同样拒绝不安全 tar 成员，覆盖 Termux/Android 安装路径。
+
+### msgraph webhook 强制 source CIDR 白名单（`43abc51f6`）
+
+`gateway/platforms/msgraph_webhook.py`：公网绑定（非 loopback）的 Microsoft Graph webhook 必须配 `extra.allowed_source_cidrs`，否则拒绝启动。
+
+| 行 | 内容 |
+|----|------|
+| `:67` | `_parse_allowed_source_cidrs(extra.get("allowed_source_cidrs"))` |
+| `:100` | `_parse_allowed_source_cidrs` 解析 CIDR（无效条目记 warning 跳过） |
+| `:136` | `_source_allowlist_required_but_missing()` — 公网绑定且未配 CIDR → True → 拒绝 |
+| `:287` | 请求源 IP 不在白名单内 → 403（读 body 之前） |
+
+提示文案引导：配 source CIDR 或绑 loopback（`127.0.0.1/::1`）走反代。
+
+### API Server 强制 API_SERVER_KEY（`1a9ef8314`）
+
+`gateway/platforms/api_server.py:4105-4121`：`connect()` 在缺 `API_SERVER_KEY` 时拒绝启动 API server（**不论绑定地址**），对空/占位 key 也给出明确拒绝日志。配套 `:908,913,1746,1752` 把长期记忆 scoping 等特性 gating 在 key 之后。
+
+### 网站传递依赖钉版（`0bf9b867c`）
+
+经 npm `overrides` 钉死 `serialize-javascript` + `uuid` 传递依赖版本，防供应链漂移。
 
 ## 相关页面
 
