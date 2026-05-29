@@ -9,6 +9,24 @@ sources: [plugins/kanban/, hermes_cli/kanban.py, hermes_cli/kanban_db.py, hermes
 # Kanban 多 Agent 看板
 
 > **2026-05-23 更新**：新增 `hermes kanban promote <id> [--ids id...]` 子命令，手动 todo→ready 恢复（详见 § CLI 命令一览）。
+>
+> **2026-05-29 更新（hermes-agent `689ef5e2`）— 可靠性 wave**：
+>
+> - **`POST /api/plugins/kanban/runs/{run_id}/terminate`** 端点（commit `9d4fda995`）—— `plugins/kanban/dashboard/plugin_api.py:1317-1318`（`@router.post("/runs/{run_id}/terminate")` → `terminate_run_endpoint(...)`），测试 `tests/plugins/test_kanban_worker_runs.py:306-425`
+> - **per-profile 并发上限 + `default_assignee` 回退**（`3b6347af1`，#34244, #27145, #21582）
+> - **CLI dispatch 遵循 config 的 `max_in_progress`/`max_spawn`**（`69b74c15a`，#34337）
+> - **SQLite 抗撕裂写**：`secure_delete` + `cell_size_check` + `synchronous=FULL`（`6416dd518`）
+> - **zombie reaper 从 `dispatch_once` 上提** + 崩溃 worker 宽限期检测（`ffdc937c1` / `c002668ff`）
+> - **blocked / iteration-exhausted 三处缺口修复**（`592a4ffb6`，#29747）
+> - **worker SIGTERM 必须终止进程**（`f30db14ce`，#28181）
+> - **worker 运行时活动桥接到看板心跳**（`bc31ee5cf`，#31752）
+> - **Windows init lock guard + sqlite 并发加固**（`3ba896273` / `90b6b3d18`）
+> - **close kanban.db FD after every connect()**（`ebe04c66c`）
+> - **corrupt-DB 备份文件名改为内容寻址**（`6f9182cb3`）
+> - **`unblock` 加 `--reason` flag 对称 `block`**（`ae6817f7f`，#30897）
+> - **STATUS_DEAD for terminal OAuth failures**（凭据池侧，`86a389fee`，#32849）
+>
+> 详见 [[2026-05-29-update#7-kanban-可靠性-wave]]。
 
 ## 概述
 

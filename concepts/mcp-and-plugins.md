@@ -7,6 +7,14 @@ tags: [architecture, mcp, plugins, extensibility, mcp-catalog]
 sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py, hermes_cli/mcp_catalog.py, hermes_cli/mcp_picker.py, hermes_cli/mcp_config.py, optional-mcps/]
 ---
 
+> **2026-05-29 增量（hermes-agent `689ef5e2`）**：
+>
+> - **MCP mTLS 客户端证书**（HTTP + SSE，#33721 / `87e5b2fae`）—— `tools/mcp_tool.py:573-625` 新增 `_resolve_client_cert(server_name, config)`，接受三种形态：单 PEM 字符串（cert + key 合并）、`[cert, key]` 列表、或 `(cert, key, password)` 三元组；亦支持 `client_cert + client_key` 分离形式。配套 `tests/tools/test_mcp_client_cert.py` 与 `website/docs/reference/mcp-config-reference.md`。
+> - **工具渐进式披露扩展到 MCP / 插件工具**（`feat(tools): progressive tool disclosure for MCP and plugin tools`，`369075dc9`）—— 新增 `tools/tool_search.py`；`agent/tool_executor.py` / `hermes_cli/config.py` / `model_tools.py` 接入。MCP 与插件工具不再一次性全量注入 system prompt，按需经检索披露；并在会话 toolsets 作用域内收敛（`fix(tool-search): scope bridge catalog + dispatch to the session's toolsets`，`7427b9d58`）。
+> - **MCP 连接侧修复**：解析裸 `npx`/`npm`/`node` 至 `/usr/local/bin`（`e7c99651f`）、未取得 token 时不再误报 OAuth 成功（`27a2c4f36` #34807）、`CancelledError` isinstance 检查放宽到 `BaseException`（`9f5afc763`）。
+>
+> 详见 [[2026-05-29-update#4-mcp-mtls-客户端证书--解析与-oauth-修复]]。
+>
 > **v2026.5.7 MCP 升级**：
 >
 > - **SSE transport** 支持（salvage #19135，#21227）—— `tools/mcp_tool.py:34` `transport: sse` 配置；line 199-204 SSE client 加载逻辑；line 1301 `# SSE transport (for MCP servers that implement the SSE transport protocol`。

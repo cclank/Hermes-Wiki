@@ -29,6 +29,31 @@ sources: [tools/memory_tool.py, tools/threat_patterns.py, agent/memory_manager.p
 
 # 记忆系统架构
 
+> **2026-05-29 增量（hermes-agent `689ef5e2`）**：
+>
+> `feat: expose completed-turn message context to memory providers`（commit `5a95fb2e1`）在 **现有 `sync_turn` 方法上追加一个可选 `messages` 参数**（不是新增独立 hook 方法）：
+>
+> ```python
+> # agent/memory_provider.py:115-133
+> def sync_turn(
+>     self,
+>     user_content: str,
+>     assistant_content: str,
+>     *,
+>     session_id: str = "",
+>     messages: Optional[List[Dict[str, Any]]] = None,
+> ) -> None:
+>     """``messages`` is the OpenAI-style conversation message list as of the
+>     completed turn, including any assistant tool calls and tool results.
+>     Providers that do not need raw turn context can ignore it."""
+> ```
+>
+> 改动 8 个文件：`agent/conversation_loop.py` / `agent/memory_manager.py` / `agent/memory_provider.py` / `run_agent.py` + 2 测试 + 2 docs。Honcho 实现（`plugins/memory/honcho/__init__.py:1119`）保持原签名 — 按基类契约可忽略 `messages`。
+>
+> 同期：`feat(hindsight): default recall_types to observation only`（`490b3e76b`） + `docs(hindsight): correct recall_types scope — tool path is also narrowed`（`4df62d239`）。
+>
+> 详见 [[2026-05-29-update#8-记忆系统]]。
+
 ## 概述
 
 Hermes 的记忆系统是一个**三层架构**：存储层（MemoryStore）、编排层（MemoryManager）、插件层（MemoryProvider）。

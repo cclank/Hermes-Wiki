@@ -8,6 +8,16 @@ sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.
 ---
 
 > v0.13.0 起，全部 30 个 provider 走 `providers/base.py:ProviderProfile` ABC + `plugins/model-providers/<name>/` 插件目录。Provider 行为是 *声明性* 的，由 transport 层读取，不再硬编码进 `model_metadata.py`。详见 [[provider-profile-plugins]]。
+>
+> **2026-05-29 模型目录增量（hermes-agent `689ef5e2`）**：
+>
+> - **`claude-opus-4-8` + `claude-opus-4-8-fast`** 加入（`feat: add claude-opus-4.8 and claude-opus-4.8-fast (#34003)`，commit `1a7479573`）—— 验证：`agent/anthropic_adapter.py:98`（`"claude-opus-4-8": 128_000`）、`agent/model_metadata.py:144-145`（同时列 `claude-opus-4-8` 与点号写法 `claude-opus-4.8`，均 1,000,000 ctx）、`agent/usage_pricing.py:89-111`、`hermes_cli/models.py:35-36,144`、`website/static/api/model-catalog.json`
+> - **`gemini-3.5-flash`** 加入 OpenRouter + Nous 列表（`5e7c2ffa9`，#34581）—— 验证：`hermes_cli/models.py:52,159`。**注意**：`gemini-3-flash-preview` 仍是 `agent/auxiliary_client.py:262,274,417,418` 等处的默认 aux 模型；本次替换仅限两个列表，并非全局替换。
+> - **`step-3.7-flash` 替换 `step-3.5-flash`**（OpenRouter + Nous，`f2d88c820`）；Vercel 403 时回退 raw.github（`bc736ff54`）
+> - **OpenCode-Go `mimo-v2.5-pro`** max_tokens 上限 131072（`8cf6b3da9`）
+> - **`/model` 与 `hermes model` 列表统一**+磁盘缓存（`3a9bc9d88`，#33867）
+>
+> 详见 [[2026-05-29-update#2-模型目录更新]]。
 
 # Smart Model Routing — 智能模型路由
 

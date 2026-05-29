@@ -9,6 +9,17 @@ sources: [hermes_state.py, tools/session_search_tool.py]
 
 # 会话搜索与 SessionDB
 
+> **2026-05-29 增量（hermes-agent `689ef5e2`）**：
+>
+> `perf(state): merge FTS5 segments on VACUUM + add 'hermes sessions optimize'`（commit `38695254f`）落地索引维护能力：
+>
+> - `hermes_state.py:3267` 新增 `def optimize_fts(self) -> int:` —— 合并 FTS5 段（`INSERT INTO ...(fts) VALUES('merge', N)` 增量合并），缩减索引、加速查询；返回索引计数（`refactor(state): return FTS index count from vacuum()`，`904c0b479`）
+> - `hermes_state.py:3306` 新增 `def vacuum(self) -> int:` —— 先 `optimize_fts()` 再 `VACUUM`，把空间还给 OS
+> - CLI 新增 `hermes sessions optimize`（`hermes_cli/main.py:13414` help、`:13596-13598` 执行入口）
+> - 可靠性：瞬时 EIO 时不再把 WAL 静默降级为 DELETE（`fix(state): never silently downgrade WAL to DELETE on transient EIO`，`5c49cd0ed`）
+>
+> 与既有 `vacuum()` / `maybe_auto_prune_and_vacuum()`（见下文 "启动时自动修剪 + VACUUM"）协作：本次的 `optimize_fts()` 是真正合并 FTS5 段（VACUUM 本身不动 FTS5），`vacuum()` 把两步连起来。详见 [[2026-05-29-update#6-sessiondb-fts5-段合并--hermes-sessions-optimize]]。
+
 ## 概述
 
 `session_search` 提供**跨会话的对话回忆能力**，使用 SQLite FTS5 全文搜索。该工具经 #27590 重写为 **single-shape 工具**，**不做任何 LLM 调用** — 每种模式都直接从 DB 返回真实消息（`tools/session_search_tool.py:23`）。

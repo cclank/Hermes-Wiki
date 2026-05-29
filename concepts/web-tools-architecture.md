@@ -7,6 +7,8 @@ tags: [tool, toolset, architecture, component, web-search, registry]
 sources: [tools/web_tools.py, agent/web_search_provider.py, agent/web_search_registry.py, plugins/web/]
 ---
 
+> **2026-05-29 增量（hermes-agent `689ef5e2`）**：`web_crawl` 工具与各 provider 的 crawl 管线已**全面移除**（`chore(web): remove web_crawl tool + provider crawl plumbing`，commit `5e1f793430`，#33824）。本页中所有关于 `web_crawl` 工具与 crawl backend（Firecrawl `/crawl`、Tavily crawl `instructions` 等）的描述均为**历史信息**，对应代码已不在 HEAD 中。Web 工具现收敛为 **`web_search` + `web_extract`** 两个。详见 [[2026-05-29-update#5-web_crawl-工具与-provider-crawl-管线全面移除]]。
+>
 > **v2026.5.7 增量**：
 >
 > - **Per-capability backend selection**（@kshitijk4poor, #20061）—— search / extract / browse 各自独立选 backend（如 SearXNG 搜索 + Firecrawl 抽取）。

@@ -5,6 +5,36 @@
 > Actions: ingest, update, query, lint, create, archive, delete
 > 当此文件超过 500 条时，轮换：重命名为 log-YYYY.md，重新开始。
 
+## [2026-05-29] sync | hermes-agent 963d22c → 689ef5e2（275 commits, v0.15.0 + v0.15.1）
+- 同步范围：hermes-agent/main `963d22c`（2026-05-27）→ `689ef5e2`（2026-05-29），275 个 commit
+- 验证基线：`/tmp/hermes-src` blobless clone @ `689ef5e2`，逐 commit + git grep + Read 实证
+- 新增文件：`changelog/2026-05-29-update.md`（374 行）
+- 更新文件：
+  - `README.md` — 版本徽章 `v0.14.0 (963d22c) → v0.15.1 (689ef5e2)`、新增 changelog 徽章、web-tools 行修正（crawl 已移除）、changelog 列表新增 2026-05-29 条目
+  - `index.md` — 顶部 tracking 字段、changelog 列表新增 2026-05-29 条目
+  - `concepts/web-tools-architecture.md` — 顶部 banner 说明 web_crawl 工具及 crawl backend 描述均为历史信息（#33824 移除）
+  - `concepts/mcp-and-plugins.md` — 顶部 banner 加入 mTLS 客户端证书（#33721）+ 工具渐进式披露扩展到 MCP/插件工具
+  - `concepts/session-search-and-sessiondb.md` — 顶部 banner 加入 `hermes_state.py:3267 optimize_fts` / `:3306 vacuum` + `hermes sessions optimize` CLI
+  - `concepts/smart-model-routing.md` — 顶部 banner 加入 claude-opus-4-8 + gemini-3.5-flash + step-3.7-flash 模型目录更新
+  - `concepts/memory-system-architecture.md` — 顶部 banner 加入 `sync_turn` 新增 `messages` 参数（`agent/memory_provider.py:115-133`）
+  - `concepts/kanban-multi-agent-board.md` — 顶部加入 2026-05-29 可靠性 wave（terminate 端点 + per-profile 并发 + SQLite 抗撕裂 + close-FD 等）
+  - `log.md` — 本条记录
+- 核心结论（均经源码验证）：
+  - 双版本发布 v0.15.0（`0c859a1c0` #34008）+ v0.15.1（`e71a2bd11` #34222），`pyproject.toml:7 version = "0.15.1"`
+  - claude-opus-4-8/4-8-fast：`agent/anthropic_adapter.py:98` / `agent/model_metadata.py:144-145` / `agent/usage_pricing.py:92,104` / `hermes_cli/models.py:35-36,144`
+  - 工具渐进式披露扩展到 MCP+插件：`tools/tool_search.py` + 5 个伴随文件（`369075dc9`）
+  - MCP mTLS：`tools/mcp_tool.py:573-625 _resolve_client_cert`（`87e5b2fae` #33721）
+  - web_crawl 移除：23 文件改动（`5e1f793430` #33824），非测试 `*.py` 已无 `web_crawl` 引用
+  - SessionDB optimize_fts + vacuum：`hermes_state.py:3267,3306` + `hermes_cli/main.py:13414,13596`（`38695254f`）
+  - Kanban terminate：`plugins/kanban/dashboard/plugin_api.py:1317`（`9d4fda995`），完整路径 `/api/plugins/kanban/runs/{run_id}/terminate`
+  - Memory `sync_turn` 加 `messages` 参数：`agent/memory_provider.py:115-133`（`5a95fb2e1`），非新增独立 hook
+  - Context Engine pluggable ABC：`agent/context_engine.py:32 class ContextEngine(ABC)`（`9b5dae17a`），plugin 目录 `plugins/context_engine/<name>/`
+  - Krea 2：进入 `tools/image_generation_tool.py` 的 `FAL_MODELS`（`6d947e4d7` #33506）；既有 `plugins/image_gen/krea/` 直连后端早在上一次 sync 已存在
+  - FAL 视频经 Nous 网关：`plugins/video_gen/fal/__init__.py:326-331`（`d04b3c193`）
+  - Skills：skills.sh 858→19,932（sitemap，#34025）、ClawHub 200→20k+（#33748）、NVIDIA tap、新增 `optional-skills/autonomous-ai-agents/{antigravity-cli,grok}/`
+  - Docker s6：persist-across-processes（#20561）+ 孤儿回收，config `terminal.docker_persist_across_processes`
+  - 安全：Nous 仅 JWT、AWS 子进程凭据剥离、code-exec 审批旁路回归簇（`108397726`/`21aeefe5f`/`655090b3d`/`4bdae3477`）、`API_SERVER_KEY` 必填
+
 ## [2026-04-07] create | Wiki initialized
 - Domain: Hermes Agent — Skills System and Memory
 - Structure created with SCHEMA.md, index.md, log.md
