@@ -1,11 +1,24 @@
 ---
 title: Context Compressor 上下文压缩架构
 created: 2026-04-08
-updated: 2026-05-18
+updated: 2026-05-30
 type: concept
-tags: [architecture, module, component, agent, context-compression]
-sources: [agent/context_engine.py, agent/context_compressor.py, agent/conversation_compression.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
+tags: [architecture, module, component, agent, context-compression, partial-compress]
+sources: [agent/context_engine.py, agent/context_compressor.py, agent/conversation_compression.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py, hermes_cli/partial_compress.py]
 ---
+
+> **2026-05-30 增量（hermes-agent `5921d6678`，#35048）— `/compress here [N]` 边界对齐部分压缩**：
+>
+> 用户可选压缩边界 —— `/compress here [N]` 摘要除最近 N 个 exchange 外的全部，最近 N 个**原文保留**。灵感来源 Claude Code v2.1.139（Week 20, May 2026）"Summarize up to here"。
+>
+> - **新模块** `hermes_cli/partial_compress.py`（235 行）：`DEFAULT_KEEP_LAST = 2`、`MAX_KEEP_LAST = 100`（fat-finger clamp）、`parse_partial_compress_args(raw)`（`:55-115`）识别 `here` / `here N` / `--keep N` / `-k N` / `--keep=N` / `up to here`（Claude Code 菜单别名）；其它任何 token 走旧 `/compress <focus>` 全量行为
+> - **互斥**：部分压缩与 focus topic 互斥（`partial_compress.py:71-72` 注释明示"focused partial compress is not a documented Claude Code behavior and would muddy the UX"）
+> - **seam 守卫**（`partial_compress.py:124-235`）：摘要替代头部时，head 末尾若是 `user` 而 tail 开头也是 `user`（或同样 assistant→assistant），插入最小桥接 turn 让 role 始终交替
+> - **入口**：CLI `cli.py`（+70 行）、gateway `gateway/run.py`（+39 行），复用既有 `_compress_context` 锁与 session rotation 机制；压缩 core **不变**
+> - **不变**：裸 `/compress`（全量）、`/compress <focus>`（focus）行为**不变**
+> - **测试**：`tests/cli/test_partial_compress.py`（12 unit）+ `tests/cli/test_compress_here.py`（5 CLI 集成 + E2E：交错 tool-call transcript / degenerate seam / multimodal seam）
+>
+> 详见 [[2026-05-30-update#2-compress-here-n-边界对齐部分压缩35048]]。
 
 # Context Compressor — 上下文压缩架构
 

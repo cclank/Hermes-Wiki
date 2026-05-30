@@ -244,6 +244,37 @@ remote model catalog manifest（v0.12.0）通过 profile.fetch_models 的远端 
 
 ---
 
+## 7.05 Picker 多端点 provider 聚合（2026-05-30，#35227）
+
+`93e6a05ef feat(model-picker): group multi-endpoint providers under one row` —— 之前 picker 把每个 provider slug 平铺，"一家 vendor 多 endpoint"（Kimi/Moonshot、MiniMax、xAI Grok、Google Gemini、OpenAI、OpenCode、GitHub Copilot）各占多行。现在折叠成一行下钻。
+
+**表**（`hermes_cli/models.py:958`）：
+
+```python
+PROVIDER_GROUPS: dict[str, tuple[str, list[str]]] = {
+    "kimi":     ("Kimi / Moonshot", ["kimi-coding", "kimi-coding-cn"]),
+    "minimax":  ("MiniMax",         ["minimax", "minimax-oauth", "minimax-cn"]),
+    "xai":      ("xAI Grok",        ["xai", "xai-oauth"]),
+    "google":   ("Google Gemini",   ["gemini", "google-gemini-cli"]),
+    "openai":   ("OpenAI",          ["openai-codex", "openai-api"]),
+    "opencode": ("OpenCode",        ["opencode-zen", "opencode-go"]),
+    "copilot":  ("GitHub Copilot",  ["copilot", "copilot-acp"]),
+}
+```
+
+`group_providers(slugs)`（`models.py:979-1036`）—— DISPLAY ONLY 折叠 helper：
+
+- 输出 row 形如 `{"kind": "single", "slug": ...}` 或 `{"kind": "group", "group_id": ..., "label": ..., "members": [...]}`
+- 三处 picker 共用：`hermes model` 交互式 / `hermes setup` 向导 / Telegram `/model` 内联键盘（`gateway/platforms/telegram.py:3087-3088` 调 `PROVIDER_GROUPS.get(group_id, ...)`）
+
+**关键不变量**：
+
+- `CANONICAL_PROVIDERS`、所有 slug、`--provider <slug>`、`/model <provider:model>` **全部不变**，仍按 slug 单独可寻址
+- group 在**首个 present 成员的位置**出现；其余成员折进去
+- 只有一个成员当前 present 时降级回 `single` 行（不做无意义的一项子菜单）
+- 反向索引 `_SLUG_TO_GROUP`（`models.py:970`）import 时一次构建
+- 测试 `tests/hermes_cli/test_provider_groups.py` pin 行为契约 —— 测的是 `PROVIDER_GROUPS` / `CANONICAL_PROVIDERS` 的形状，不是具体 set
+
 ## 7.1 OpenCode Go reasoning controls（2026-05-23+）
 
 PR `3589960` + 跟进 `70aaa77`：`plugins/model-providers/opencode-zen/__init__.py` +63 行，把 OpenCode Go 的 reasoning controls（如 `reasoning_effort`）暴露成 provider profile field。`70aaa77` 进一步把 OpenCode Go 路径下的 Kimi 子模型 reasoning_effort 输出对齐 `KimiProfile` 形状 —— 同 provider 下不同模型分支不再分歧。

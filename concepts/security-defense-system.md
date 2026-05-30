@@ -1,11 +1,31 @@
 ---
 title: 安全防御体系 — 多层注入检测
 created: 2026-04-07
-updated: 2026-05-27
+updated: 2026-05-30
 type: concept
-tags: [architecture, security, injection-defense, skills-guard, promptware-defense, p0, supply-chain, webhook-hardening, dashboard-auth, security-guidance]
-sources: [tools/threat_patterns.py, tools/skills_guard.py, tools/memory_tool.py, agent/tool_dispatch_helpers.py, tools/tirith_security.py, tools/url_safety.py, agent/redact.py, agent/file_safety.py, agent/subdirectory_hints.py, tools/osv_check.py, cron/scheduler.py, hermes_cli/config.py, hermes_cli/web_server.py, gateway/platforms/webhook.py, gateway/platforms/wecom_callback.py, gateway/platforms/feishu.py, gateway/platforms/msgraph_webhook.py, web/src/components/Markdown.tsx, hermes_cli/dashboard_auth/base.py, hermes_cli/dashboard_auth/middleware.py, plugins/dashboard_auth/nous/__init__.py, plugins/security-guidance/patterns.py, plugins/security-guidance/__init__.py]
+tags: [architecture, security, injection-defense, skills-guard, promptware-defense, p0, supply-chain, webhook-hardening, dashboard-auth, security-guidance, cve]
+sources: [tools/threat_patterns.py, tools/skills_guard.py, tools/memory_tool.py, agent/tool_dispatch_helpers.py, tools/tirith_security.py, tools/url_safety.py, agent/redact.py, agent/file_safety.py, agent/subdirectory_hints.py, tools/osv_check.py, cron/scheduler.py, hermes_cli/config.py, hermes_cli/web_server.py, gateway/platforms/webhook.py, gateway/platforms/wecom_callback.py, gateway/platforms/feishu.py, gateway/platforms/msgraph_webhook.py, web/src/components/Markdown.tsx, hermes_cli/dashboard_auth/base.py, hermes_cli/dashboard_auth/middleware.py, plugins/dashboard_auth/nous/__init__.py, plugins/security-guidance/patterns.py, plugins/security-guidance/__init__.py, pyproject.toml, tools/lazy_deps.py]
 ---
+
+> **2026-05-30 增量（hermes-agent `5921d6678`，#35118）— Starlette CVE-2026-48710 (BadHost) 修复 pin**：
+>
+> **漏洞**（CWE-444）：Starlette < 1.0.1 不校验 HTTP Host header 就用于重建 `request.url`。畸形 Host 会让 `request.url.path` 与 ASGI 路由真正分发的 `scope["path"]` **脱钩**，基于 `request.url` 做 path-based authorization 的 middleware/endpoint 可被绕过。
+>
+> Hermes 仅经 transitive 引用：`[web] → fastapi==0.133.1 (starlette>=0.40.0, no upper bound)`、`[mcp]/[computer-use]/[dev] → mcp==1.26.0 + sse-starlette`。无 upper bound，pip/uv 新解析能落到任意 pre-1.0.1。
+>
+> 修复（`0437137ff`）：所有暴露 Starlette-backed server surface 的 extra 直接 pin `starlette==1.0.1`，并重新生成 `uv.lock`（hash-verified）：
+>
+> | `pyproject.toml` 行 | extra | pin |
+> |---|---|---|
+> | `:86`  | `dev` | `mcp==1.26.0, starlette==1.0.1` |
+> | `:118` | `mcp` | `mcp==1.26.0, starlette==1.0.1` |
+> | `:125` | `computer-use` | `mcp==1.26.0, starlette==1.0.1` |
+> | `:180` | `web` | `fastapi==0.133.1, uvicorn[standard]==0.41.0, starlette==1.0.1` |
+>
+> 镜像到 `tools/lazy_deps.py:176 "starlette==1.0.1"` —— 确保 on-demand dashboard install 不会 re-resolve 到 vulnerable 版本。
+>
+> 详见 [[2026-05-30-update#10-starlette-cve-2026-48710-badhost-修复-pin35118]]。
+>
 
 > **v2026.5.7 安全 wave —— 8 个 P0 闭环**：
 >

@@ -1,11 +1,25 @@
 ---
 title: MCP 集成与插件系统
 created: 2026-04-07
-updated: 2026-05-26
+updated: 2026-05-30
 type: concept
-tags: [architecture, mcp, plugins, extensibility, mcp-catalog]
-sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py, hermes_cli/mcp_catalog.py, hermes_cli/mcp_picker.py, hermes_cli/mcp_config.py, optional-mcps/]
+tags: [architecture, mcp, plugins, extensibility, mcp-catalog, mcp-startup]
+sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py, hermes_cli/mcp_catalog.py, hermes_cli/mcp_picker.py, hermes_cli/mcp_config.py, hermes_cli/mcp_startup.py, optional-mcps/]
 ---
+
+> **2026-05-30 增量（hermes-agent `5921d6678`）— MCP 启动期非阻塞化**：
+>
+> 旧路径：`gateway.ready` 同步 inline 跑 MCP discovery，任何配置但不可达的 server 烧完它的 connect-retry backoff（1+2+4s ≈ 7s）才让 composer 出现。
+>
+> - **新模块**：`hermes_cli/mcp_startup.py`（59 行，`0c6e133c0`）
+>   - `start_background_mcp_discovery(*, logger, thread_name)` —— 用 `threading.Lock` 单一实例 guard 起一个共享 daemon thread
+>   - `_has_configured_mcp_servers()` —— 用便宜的 `read_raw_config()` 探测 `mcp_servers` dict 是否非空，**没配 MCP 直接跳过**整个 `from tools.mcp_tool import ...` import（避免冷启动拉重型 stack）
+>   - `wait_for_mcp_discovery(timeout=0.75)` —— 第一次需要 tool snapshot 时短暂等一下后台线程，**永不超过 0.75s**
+> - **TUI 实测**：spawn → ready `~7500ms → ~115ms`（config 挂死的 stdio MCP server 场景，`cbf851ae1`）
+> - 附带 `banner.py` 路径去掉 `rich.console` + `prompt_toolkit` import（冷启再降）
+> - 测试：`tests/hermes_cli/test_mcp_startup.py`（166 行）
+>
+> 详见 [[2026-05-30-update#8-mcp-启动期非阻塞化cli--tui]]。
 
 > **2026-05-29 增量（hermes-agent `689ef5e2`）**：
 >

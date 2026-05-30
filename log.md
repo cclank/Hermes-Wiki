@@ -5,6 +5,41 @@
 > Actions: ingest, update, query, lint, create, archive, delete
 > 当此文件超过 500 条时，轮换：重命名为 log-YYYY.md，重新开始。
 
+## [2026-05-30] sync | hermes-agent 689ef5e2 → 5921d6678（95 commits, v0.15.1 post-release）
+- 同步范围：hermes-agent/main `689ef5e2`（2026-05-29 13:30 -0700）→ `5921d6678`（2026-05-30 13:22 +0530），95 个 commit
+- 验证基线：`/tmp/hermes-src` blobless clone @ `5921d6678`，逐 commit + git grep + Read 实证
+- 版本：`pyproject.toml:7 version = "0.15.1"` 未变（v0.15.1 post-release 流）
+- 新增文件：`changelog/2026-05-30-update.md`
+- 更新文件：
+  - `README.md` — 版本徽章 `v0.15.1 (689ef5e2 → 5921d6678)`、changelog 徽章 `32 → 33`、changelog 列表新增 2026-05-30 条目
+  - `index.md` — 顶部 tracking 字段 `5921d6678` + changelog 计数 33、changelog 列表新增 2026-05-30 条目
+  - `concepts/kanban-multi-agent-board.md` — 顶部加入 2026-05-30 文件附件 wave + 表结构补 `task_attachments`（#35395）
+  - `concepts/context-compressor-architecture.md` — 顶部加入 `/compress here [N]` 边界对齐部分压缩 banner（`hermes_cli/partial_compress.py`，#35048）
+  - `concepts/cli-architecture.md` — 顶部加入 `hermes prompt-size` / `/compress here` / model picker grouping / MCP 启动期非阻塞 / 进程名 banner；斜杠命令表 `/compress` 行扩展；新子命令表加 `hermes prompt-size`
+  - `concepts/messaging-gateway-architecture.md` — WhatsApp / 微信 WeChat 两节加入文本去抖批合并条目（config.extra-only，#35301）
+  - `concepts/large-tool-result-handling.md` — 顶部加入 `read_file` 紧凑 gutter -14% banner + write_file/patch 原子写 + UTF-8 BOM + 相对路径定位
+  - `concepts/mcp-and-plugins.md` — 顶部加入 MCP 启动期非阻塞化 banner（`hermes_cli/mcp_startup.py`，CLI `0c6e133c0` + TUI `cbf851ae1`）
+  - `concepts/session-search-and-sessiondb.md` — 顶部加入 mid-session model 持久化 banner（`hermes_state.py:968-980`，fixes #34850）
+  - `concepts/security-defense-system.md` — 顶部加入 Starlette CVE-2026-48710 BadHost pin banner（4 处 pyproject pin + `tools/lazy_deps.py:176`）
+  - `concepts/multi-agent-architecture.md` — 顶部加入 TUI `/agents` 看板可发现性 nudge banner（`display.tui_agents_nudge` default true，#34704+#35216）
+  - `concepts/provider-plugin-system.md` — 新增 § 7.05 Picker 多端点 provider 聚合（`models.py:958 PROVIDER_GROUPS` + `:979 group_providers()`，#35227）
+  - `log.md` — 本条记录
+- 核心结论（均经源码验证）：
+  - 95 个 commit 中含 1 个 security pin（Starlette CVE-2026-48710）+ 7 个新 feat / perf 改动 + ~80 个 fix/test/chore
+  - **Kanban 文件附件**：`hermes_cli/kanban_db.py:399 attachments_root` / `:429 task_attachments_dir` / `:870 class Attachment` / `:1015 task_attachments` 表 / `:2487/2509/2529/2547` CRUD / `:6650 build_worker_context` surface 绝对路径；REST `:636 _MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024`，`:639 _safe_attachment_name` traversal-safe
+  - **`/compress here [N]`**：`hermes_cli/partial_compress.py:50 MAX_KEEP_LAST=100`、`:55 parse_partial_compress_args` 识别 `here` / `here N` / `--keep N` / `-k N` / `up to here`；`:124 split_history_for_partial_compress` + seam 守卫；`cli.py` +70 / `gateway/run.py` +39 接入
+  - **`hermes prompt-size`**：`hermes_cli/prompt_size.py:52 compute_prompt_breakdown` + `:141 cmd_prompt_size`；dummy credential 走直接构造路径 = 零网络 + 零模型工具足迹
+  - **Model picker grouping**：`hermes_cli/models.py:958 PROVIDER_GROUPS`（7 family）+ `:970 _SLUG_TO_GROUP` 反向索引 + `:979 group_providers()` DISPLAY ONLY；`gateway/platforms/telegram.py:3087-3088` 调用证明 Telegram `/model` 共用
+  - **WhatsApp/WeChat 去抖**：`gateway/platforms/whatsapp.py:285-296` default 5/10s、`gateway/platforms/weixin.py:1180-1197` default 3/5s；**两处都 config-only**，测试 `tests/gateway/test_whatsapp_text_batching.py:60 test_env_var_is_ignored` 明确断言 env var 路径**被忽略**（更正 commit message 说法）
+  - **`read_file` gutter**：`tools/file_operations.py:705-730 _add_line_numbers` —— compact `<n>|` 默认；`HERMES_READ_GUTTER=padded` 回归旧 fixed-width；patch/fuzzy_match 不消费 gutter，下游零影响
+  - **原子写**：`tests/tools/test_file_write_safety.py:TestAtomicWrite` 真实 LocalEnvironment 无 mock 覆盖 6 场景
+  - **MCP 启动非阻塞**：`hermes_cli/mcp_startup.py:1-60` 新模块 + `_has_configured_mcp_servers()` 跳 import + `wait_for_mcp_discovery(timeout=0.75)`
+  - **mid-session model**：`hermes_state.py:968-980 update_session_model` —— `UPDATE sessions SET model = ?` 无条件覆盖，区别于 `update_token_counts` 的 `COALESCE` only-fill-NULL
+  - **Starlette CVE pin**：`pyproject.toml:86/118/125/180` 四个 extra 同步 pin `starlette==1.0.1` + `tools/lazy_deps.py:176` 同步
+  - **TUI nudge**：`hermes_cli/config.py:1226-1230 "tui_agents_nudge": True` default + `ui-tui/src/app/createGatewayEventHandler.ts:143-186` 实现；事件挂 `subagent.start` 不挂 `spawn_requested`（progress callback 只转发 start/complete）
+  - **进程名**：`hermes_cli/main.py:65-105 _set_process_title` 在 `main()` 最早调用；strategy 1 `setproctitle` → 2 Linux `prctl(PR_SET_NAME=15, b"hermes")` → 3 macOS `pthread_setname_np` → Windows no-op
+  - 12 节杂项 fix（compressor resume/handoff 清理 + post-interrupt 状态恢复、vision retry 紧缩、kanban legacy TEXT-PK migrate、skills rmtree readonly、MCP stdio 孙进程 process-group 回收、SQLite FTS5 缺失降级 5 commit、dashboard insecure WS / browser CDP crash recovery / Windows MEDIA path / gateway transient-network auto-pause 拒绝等）
+
 ## [2026-05-29] sync | hermes-agent 963d22c → 689ef5e2（275 commits, v0.15.0 + v0.15.1）
 - 同步范围：hermes-agent/main `963d22c`（2026-05-27）→ `689ef5e2`（2026-05-29），275 个 commit
 - 验证基线：`/tmp/hermes-src` blobless clone @ `689ef5e2`，逐 commit + git grep + Read 实证

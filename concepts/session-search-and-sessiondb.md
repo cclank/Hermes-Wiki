@@ -1,13 +1,25 @@
 ---
 title: Session Search and SessionDB
 created: 2026-04-07
-updated: 2026-05-20
+updated: 2026-05-30
 type: concept
 tags: [session-search, session-store, memory, architecture, state-db]
-sources: [hermes_state.py, tools/session_search_tool.py]
+sources: [hermes_state.py, tools/session_search_tool.py, gateway/run.py]
 ---
 
 # 会话搜索与 SessionDB
+
+> **2026-05-30 增量（hermes-agent `5921d6678`，fixes #34850）— mid-session model 持久化**：
+>
+> 用户 `/model` mid-session 切换时，gateway 更新 in-memory agent 和 session override，但 DB 从未更新 —— `update_token_counts()` 里 `COALESCE(model, ?)` 只填 NULL，所以 dashboard 永远显示原始 model。
+>
+> 修复（`794519c6a fix(state): persist mid-session model switch to database`）：
+>
+> - 新增 `hermes_state.py:968-980 SessionDB.update_session_model(session_id, model)` —— 用 `UPDATE sessions SET model = ?` **无条件覆盖**，区别于 `update_token_counts` 的 `COALESCE` only-fill-NULL 语义
+> - `gateway/run.py` +29 行：interactive picker 与直接 `/model` 命令两条路径都调用
+> - 回归测试 `e1945ff69 test(state): cover update_session_model overwrite + getattr-guard text path`
+>
+> 详见 [[2026-05-30-update#9-session-model-中途切换持久化fixes-34850]]。
 
 > **2026-05-29 增量（hermes-agent `689ef5e2`）**：
 >

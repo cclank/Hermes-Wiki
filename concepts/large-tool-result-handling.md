@@ -1,11 +1,28 @@
 ---
 title: 大型工具结果处理与上下文保护
 created: 2026-04-07
-updated: 2026-04-11
+updated: 2026-05-30
 type: concept
-tags: [architecture, context-management, performance]
-sources: [tools/tool_result_storage.py, tools/budget_config.py, run_agent.py]
+tags: [architecture, context-management, performance, read-file-gutter]
+sources: [tools/tool_result_storage.py, tools/budget_config.py, run_agent.py, tools/file_operations.py]
 ---
+
+> **2026-05-30 增量（hermes-agent `5921d6678`，#35368）— `read_file` 紧凑行号 gutter**：
+>
+> 旧 gutter `"     1|content"`（固定宽度 zero/space padding）改为 compact `"1|content"`。**节省 ~14% read token**（cl100k 实测真实 Hermes 源码：padded 比 bare content 多 ~48% token，比 compact 多 ~16%，因为前缀空格 + 零填充逐行 tokenize 成额外 token）。
+>
+> - 实现：`tools/file_operations.py:705-730 _add_line_numbers`，新增 `import os; padded = (os.environ.get("HERMES_READ_GUTTER") or "").lower() == "padded"` —— `HERMES_READ_GUTTER=padded` 恢复旧固定宽度行为
+> - **下游影响 = 零**：`patch` / `fuzzy_match` 永不消费 gutter（它们匹配 `old_string` 文本、内部算字符 offset）；无下游 parser 依赖固定列宽
+> - **A/B 验证**（Sonnet 4.6，OpenRouter，2 pass，4-task battery，每条对 ground truth）：padded 4/4 PASS / compact 4/4 PASS（line-referencing + patch + value-lookup + structure 都过）/ 无行号 3/4 PASS（模型手数行算错 33 vs 34）—— 所以**保留行号，砍掉 padding**，更激进的去掉行号方案（-33%）被拒
+> - 209 个 file-tool 测试全绿；新增 env-override 测试覆盖 `HERMES_READ_GUTTER=padded` 回归
+>
+> **相关 file-tools 加固**（同日同套 PR）：
+>
+> - `write_file` / `patch` 原子写（#35252，`39f6b6e9d`）—— 写入 same-dir temp file 后 `mv` 覆盖（POSIX 原子），失败留原文件字节完整 + 无 temp leak；mode 跨 swap 保留（stat + chmod）；内容仍走 stdin 无 ARG_MAX 限制；trap 清理 temp。`tests/tools/test_file_write_safety.py:TestAtomicWrite` 真实 LocalEnvironment 无 mock 覆盖 6 个场景
+> - UTF-8 BOM handling（#35278，`5f84c9144`）—— `read_file` / `write_file` / `patch` 三处统一识别和保留 BOM
+> - 相对路径定位到 absolute base（#35399，`96643b4a5`）—— 错误消息显示解析后路径
+>
+> 详见 [[2026-05-30-update#6-read_file-紧凑行号-gutter-14-token-节省35368]]。
 
 # 大型工具结果处理与上下文保护
 

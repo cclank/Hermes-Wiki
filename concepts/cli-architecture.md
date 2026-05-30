@@ -1,11 +1,21 @@
 ---
 title: CLI 架构与终端交互设计
 created: 2026-04-07
-updated: 2026-05-20
+updated: 2026-05-30
 type: concept
-tags: [architecture, cli, terminal, ux, tui, ink]
-sources: [cli.py, hermes_cli/, ui-tui/, tui_gateway/]
+tags: [architecture, cli, terminal, ux, tui, ink, prompt-size, model-picker]
+sources: [cli.py, hermes_cli/, ui-tui/, tui_gateway/, hermes_cli/prompt_size.py, hermes_cli/partial_compress.py, hermes_cli/mcp_startup.py]
 ---
+
+> **2026-05-30 增量（hermes-agent `5921d6678`）**：
+>
+> - **`hermes prompt-size` 离线 prompt 预算诊断**（#35276，`61268ff7a`）—— `hermes_cli/prompt_size.py:52 compute_prompt_breakdown(platform="cli")`，输出 system_prompt / skills_index / memory / user_profile / prompt_tiers / tool_schemas 各自的 chars 与 bytes。`--platform <name>` 模拟某平台 hint，`--json` 机器可读。**关键**：用 dummy credential 走直接构造路径，**零网络调用**；它是 top-level CLI 子命令，**不是 agent 工具**，零模型工具足迹。**实际意义**：当 skill 装得多时，skills_index 经常是单个最大 block（#34667）
+> - **`/compress here [N]` 边界对齐部分压缩**（#35048，`bcc830100`，灵感 Claude Code v2.1.139 "Summarize up to here"）—— 摘要除最近 N exchange 外的全部，最近 N **原文保留**；`here` / `here 4` / `--keep 4` / `up to here`。模块 `hermes_cli/partial_compress.py`（235 行）。裸 `/compress` 与 `/compress <focus>` 行为不变。详见 [[context-compressor-architecture]]
+> - **Model picker 多端点 provider 聚合**（#35227，`93e6a05ef`）—— Kimi/Moonshot、MiniMax、xAI Grok、Google Gemini、OpenAI、OpenCode、GitHub Copilot 这种"一家 vendor 多 endpoint"折叠成一行。`PROVIDER_GROUPS` 表与 `group_providers()` 在 `hermes_cli/models.py:958-1036`。DISPLAY ONLY —— `CANONICAL_PROVIDERS` / slug / `--provider <slug>` / `/model <provider:model>` 全部不变。`hermes model` / 设置向导 / Telegram `/model` 三处 picker 共用。详见 [[provider-plugin-system]]
+> - **MCP 启动期非阻塞化**（CLI: `0c6e133c0`，TUI: `cbf851ae1`）—— 新增 `hermes_cli/mcp_startup.py` 把 MCP discovery 挪进 daemon 后台线程；`_has_configured_mcp_servers()` 探测 `mcp_servers` dict，没配 MCP 直接跳过整段 import；`wait_for_mcp_discovery(timeout=0.75)` 第一次需要 tool snapshot 时短暂等待。TUI 实测 `spawn → ready: ~7500ms → ~115ms`（配置里挂死服务器场景）。同时 banner.py 去掉 `rich.console` + `prompt_toolkit` import
+> - **进程名 = `hermes`**（#35108，`84ee80eb5`）—— `hermes_cli/main.py:65-105 _set_process_title()` 让 `ps` / `top` / `htop` 显示 `hermes` 而非 `python3.xx`。优先 `setproctitle`（opt-in dep）；Linux 回落 `libc.prctl(PR_SET_NAME=15, b"hermes")`；macOS 回落 `libc.pthread_setname_np(b"hermes")`；Windows no-op（`hermes.exe` 已是对的）
+>
+> 详见 [[2026-05-30-update]]。
 
 > **v2026.4.30 ~ v2026.5.7 增量**：
 >
@@ -145,7 +155,7 @@ class CommandDef:
 | `/retry` / `/undo` | 重试 / 撤销 | 双 |
 | `/title [name]` ★ | 设置会话标题 | 双 |
 | `/branch`（别名 `/fork`）`[name]` ★ | 分叉会话 | 双 |
-| `/compress [focus]` | 手动压缩 | 双 |
+| `/compress [focus\|here [N]\|--keep N\|-k N\|up to here]` | 手动压缩；`here [N]` 保留最近 N exchange（默认 2）原文，其余摘要（v0.15.1+，#35048） | 双 |
 | `/rollback [number]` | 列 / 还原 checkpoint | 双 |
 | `/snapshot [create\|restore <id>\|prune]` ★（别名 `/snap`） | Hermes config/state 快照 | cli only |
 | `/stop` ★ | 杀所有后台进程 | 双 |
@@ -319,6 +329,7 @@ hermes send --list
 | `hermes portal {status, open, tools}` | v0.14.0 (2026-05-23) | 状态/订阅页/Tool Gateway 路由薄表面，缺省派发 `status`（`hermes_cli/portal_cli.py:175-220`，注册 `hermes_cli/main.py:11877-11880`） |
 | `hermes kanban promote <id> [reason ...] [--ids id...] [--force] [--dry-run] [--json]` | 2026-05-23 | 手动 todo→ready 恢复（auto-promote daemon 漏父任务 done 时使用），`--ids` 批量；`task_events kind="promoted_manual"`（区分 daemon 自动 promoted）。源码 `hermes_cli/kanban.py:553-584` |
 | `hermes skills audit [name] --deep` | 2026-05-23 | AST 深度诊断（`tools/skills_ast_audit.py:84 ast_scan_path`）—— 在 regex Skills Guard 之上覆盖动态 `importlib.import_module(computed)` / `getattr(obj, computed)` 等绕过模式。输出为 diagnostic hints，不影响 install gate（详见 [[skills-system-architecture]]） |
+| `hermes prompt-size [--platform <name>] [--json]` | 2026-05-30 (#35276) | 离线 prompt 预算诊断：system_prompt / skills_index / memory / user_profile / prompt_tiers / tool_schemas 各自 chars+bytes。dummy credential 走直接构造路径，**零网络调用** + **零模型工具足迹**。源码 `hermes_cli/prompt_size.py:52 compute_prompt_breakdown`、CLI 入口 `:141 cmd_prompt_size` |
 
 ### 新斜杠命令（v0.13.0+）
 

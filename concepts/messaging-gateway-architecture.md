@@ -515,12 +515,14 @@ slack:
 - 原生 Markdown 渲染
 - CDN 白名单 SSRF 防护（安全修复）
 - macOS SSL 证书修复
+- **文本去抖批合并**（2026-05-30，`b0ce47daa` + `cddb7283d`，#35301）：iLink 同样逐条投递无 batching。`gateway/platforms/weixin.py:1180-1197` 读取 `_text_batch_delay_seconds`（default **3.0s**，比 WhatsApp 紧）+ `_text_batch_split_delay_seconds`（default **5.0s**），路径同 WhatsApp `_enqueue_text_event` / `_flush_text_batch`。**配置 config-only**：`gateway.platforms.weixin.extra.text_batch_delay_seconds` / `text_batch_split_delay_seconds`
 
 ### WhatsApp
 - 需要 WhatsApp Bridge (Node.js)
 - 群消息需要前缀触发
 - 允许列表控制
 - **JID/LID alias 跨形稳定 pairing**（commit `52a368f`，2026-05-23+）：WhatsApp 会在 `xxx@s.whatsapp.net`（JID）和 `xxx@lid`（LID）两种 user identifier 之间漂移。`gateway/pairing.py:124-140 _user_id_aliases()` 把同一用户的所有 alias 折叠成一个 set，`_user_ids_match()` 用集合相交判等；`approve_pair` 和 list/lookup 路径（`pairing.py:377-378`）通过 `expand_whatsapp_aliases` 把 LID/JID 两种形式都登记进 `{platform}:{alias}` 索引，approval 不会因为对端 identifier 切形就失效。+73 测试覆盖各跨形场景
+- **文本去抖批合并**（2026-05-30，`b0ce47daa` + `cddb7283d`，#35301）：WhatsApp 逐条投递消息无客户端 batching，快速多条爆发（forward 批 / paste-split）会逐条触发 agent。镜像 Telegram 既有 debounce —— `gateway/platforms/whatsapp.py:285-296` 读取 `_text_batch_delay_seconds`（default 5.0s）+ `_text_batch_split_delay_seconds`（default 10.0s），`_pending_text_batches` 按 session key 累积 TEXT 消息，静默期后 `_flush_text_batch` 一次性派发拼接结果。**配置 config-only**（commit message 误称环境变量；测试 `test_env_var_is_ignored` 显式断言 `HERMES_WHATSAPP_TEXT_BATCH_DELAY_SECONDS` **被忽略**）：`gateway.platforms.whatsapp.extra.text_batch_delay_seconds` / `text_batch_split_delay_seconds`，`_coerce_float_extra()` 防 NaN/Inf/负数 fallback 到 default
 
 ### Home Assistant
 - 智能家居事件监控

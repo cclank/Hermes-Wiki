@@ -1,11 +1,28 @@
 ---
 title: Hermes 多 Agent 架构
 created: 2026-04-08
-updated: 2026-05-22
+updated: 2026-05-30
 type: concept
-tags: [architecture, module, agent, delegation, concurrency, kanban]
-sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, run_agent.py, hermes_cli/kanban_db.py, plugins/kanban/]
+tags: [architecture, module, agent, delegation, concurrency, kanban, tui-nudge]
+sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, run_agent.py, hermes_cli/kanban_db.py, plugins/kanban/, ui-tui/src/app/createGatewayEventHandler.ts, ui-tui/src/components/thinking.tsx, hermes_cli/config.py]
 ---
+
+> **2026-05-30 增量（hermes-agent `5921d6678`，#34704 + #35216）— TUI `/agents` 看板可发现性 nudge**：
+>
+> 痛点：TUI 早就有富 `/agents` spawn-tree 看板（live tree / timeline / per-child tokens·cost·files·tools / kill·pause），但**没有任何 surface 提示用户**它存在 —— delegation 期间 transcript 静默。
+>
+> 第一阶段（`5a72e82fd feat(tui): nudge toward /agents dashboard when delegation starts`）：第一次 turn 触发 delegation 时落一条 transient activity hint："`subagents working · /agents to watch live`"，风格对齐既有的"· /logs to inspect"。
+>
+> - **guard**（`ui-tui/src/app/createGatewayEventHandler.ts:143-186`）：每 turn 最多一次（`message.start` 重置）；`/agents` overlay 已开则静默；`display.tui_agents_nudge` config 开关（default true）
+> - **config 默认**（`hermes_cli/config.py:1221-1230`）：`"tui_agents_nudge": True`
+> - **事件挂在 `subagent.start`**，不挂 `subagent.spawn_requested` —— `tools/delegate_tool.py` 的 progress callback 只把 start/complete 转给 gateway，spawn_requested 被 drop，所以 start 才是 TUI 第一个可靠拿到的 delegation 事件
+>
+> 第二阶段 fix（`9d2571c86 fix: surface /agents nudge while delegate_task is in-flight (TUI + CLI)`）：
+>
+> - **TUI**（`ui-tui/src/components/thinking.tsx`）：任何 "Delegate Task" 工具组**一出现就显示 `(/agents)`**，不再等 subagent 已注册
+> - **CLI**：单次 `delegate_task` 进行中（不只是多个 subagent）也 surface nudge
+>
+> 详见 [[2026-05-30-update#11-tui-agents-看板-nudge34704--35216]]。
 
 # Hermes 多 Agent 架构
 
