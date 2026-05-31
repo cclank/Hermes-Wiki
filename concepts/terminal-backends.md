@@ -1,10 +1,10 @@
 ---
 title: 终端后端与环境抽象层
 created: 2026-04-07
-updated: 2026-05-20
+updated: 2026-05-31
 type: concept
-tags: [architecture, environments, terminal, isolation]
-sources: [tools/environments/, tools/terminal_tool.py]
+tags: [architecture, environments, terminal, isolation, cwd-persistence, spawn-via-env]
+sources: [tools/environments/, tools/terminal_tool.py, tools/process_registry.py]
 ---
 
 # 终端后端与环境抽象层
@@ -218,6 +218,48 @@ terminal:
 - [[credential-pool-and-isolation]] — 凭证池与环境隔离（终端后端环境）
 - [[multi-agent-architecture]] — 子代理使用独立终端后端执行
 - [[tool-registry-architecture]] — 终端工具通过 registry 注册
+
+## 2026-05-31 增量 — cwd 持久化 + spawn_via_env 防双包裹
+
+### 1. 终端 cwd 持久化（`7a315bd70`）
+
+`fix(tools): preserve live session cwd in terminal_tool, and keep ACP update_cwd authoritative`：
+
+**问题**：`terminal_tool` 每次 command **强制**重发 init-time / config cwd，覆盖了会话内 `cd` 的累积状态。环境侧 `env.cwd` 已经更新到新目录，但每次 foreground / background call 又被踩回旧值。
+
+**修**：`tools/terminal_tool.py:1738 _resolve_command_cwd(env, explicit_cwd, init_cwd)` 加 resolver，按以下优先级：
+
+1. **ACP-explicit `update_cwd`**（最高优先；ACP 协议显式告知 cwd 时不能被其他源覆盖）
+2. **live `env.cwd`**（会话累积状态，含 agent 自己 `cd ...` 的结果）
+3. **`init_cwd`** / config cwd（fallback）
+
+调用点：
+
+- `tools/terminal_tool.py:2034` foreground execute
+- `tools/terminal_tool.py:2255` background spawn（`cwd` field of `process_registry.spawn_via_env(...)`）
+
+### 2. spawn_via_env 防双 compound-rewrite 包裹（`6f8975dcd`）
+
+`fix(tools): don't compound-rewrite spawn_via_env background wrappers`：
+
+**问题**：
+
+- 非 local backend（SSH / Docker / Modal / Daytona / Singularity）的 background task 经 `tools/process_registry.py:651 spawn_via_env`，后者构建**手工 shell-safe wrapper**（已含 `nohup` / `&` / `disown` / output redirection / `setsid` 适配 backend）。
+- `tools/environments/base.py:843` execute 路径默认还会过 `_rewrite_compound_background`（防 `A && B &` subshell-wait 陷阱），把已经构造好的 wrapper **当用户裸命令二次重写** —— 破坏正确语义（如 `nohup` 不再 detach、`disown` 失败）。
+
+**修**（`tools/environments/base.py:843-846`）：
+
+```python
+# Some callers (spawn_via_env) already produce shell-safe wrappers and
+# pass rewrite_compound_background=False.
+if rewrite_compound_background:
+    from tools.terminal_tool import _rewrite_compound_background
+    exec_command = _rewrite_compound_background(exec_command)
+```
+
+`spawn_via_env` 调用 execute 时传 `rewrite_compound_background=False`，跳过二次 rewrite。
+
+---
 
 ## 相关文件
 

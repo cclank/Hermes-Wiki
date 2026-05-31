@@ -1,10 +1,10 @@
 ---
 title: 安全防御体系 — 多层注入检测
 created: 2026-04-07
-updated: 2026-05-27
+updated: 2026-05-31
 type: concept
-tags: [architecture, security, injection-defense, skills-guard, promptware-defense, p0, supply-chain, webhook-hardening, dashboard-auth, security-guidance]
-sources: [tools/threat_patterns.py, tools/skills_guard.py, tools/memory_tool.py, agent/tool_dispatch_helpers.py, tools/tirith_security.py, tools/url_safety.py, agent/redact.py, agent/file_safety.py, agent/subdirectory_hints.py, tools/osv_check.py, cron/scheduler.py, hermes_cli/config.py, hermes_cli/web_server.py, gateway/platforms/webhook.py, gateway/platforms/wecom_callback.py, gateway/platforms/feishu.py, gateway/platforms/msgraph_webhook.py, web/src/components/Markdown.tsx, hermes_cli/dashboard_auth/base.py, hermes_cli/dashboard_auth/middleware.py, plugins/dashboard_auth/nous/__init__.py, plugins/security-guidance/patterns.py, plugins/security-guidance/__init__.py]
+tags: [architecture, security, injection-defense, skills-guard, promptware-defense, p0, supply-chain, webhook-hardening, dashboard-auth, security-guidance, cve, mutation-footer]
+sources: [tools/threat_patterns.py, tools/skills_guard.py, tools/memory_tool.py, agent/tool_dispatch_helpers.py, tools/tirith_security.py, tools/url_safety.py, agent/redact.py, agent/file_safety.py, agent/subdirectory_hints.py, tools/osv_check.py, cron/scheduler.py, hermes_cli/config.py, hermes_cli/web_server.py, gateway/platforms/webhook.py, gateway/platforms/wecom_callback.py, gateway/platforms/feishu.py, gateway/platforms/msgraph_webhook.py, gateway/platforms/base.py, web/src/components/Markdown.tsx, hermes_cli/dashboard_auth/base.py, hermes_cli/dashboard_auth/middleware.py, plugins/dashboard_auth/nous/__init__.py, plugins/security-guidance/patterns.py, plugins/security-guidance/__init__.py, run_agent.py, hermes_cli/gateway.py, pyproject.toml]
 ---
 
 > **v2026.5.7 安全 wave —— 8 个 P0 闭环**：
@@ -941,6 +941,80 @@ content_types = {".js", ".mjs", ".css", ".json", ".html",
 - [[memory-system-architecture]] — 记忆内容安全扫描机制
 - [[skills-system-architecture]] — 技能安装时的安全扫描与信任策略
 - [[prompt-builder-architecture]] — 上下文文件注入扫描防护
+
+---
+
+## v0.15.1 维护窗口增量（2026-05-31，hermes `eb3cf9750`）
+
+### 1. CVE-2026-48710 Starlette BadHost pin（`0437137ff`，#35118）
+
+**唯一一条带 `security:` prefix 的 commit**。
+
+- Starlette < 1.0.1 受 CVE-2026-48710（"BadHost"，CWE-444）：HTTP Host header 在重建 `request.url` 前未校验。恶意 Host 让 `request.url.path` 与 router 实际 dispatch 的 ASGI path 不同步 —— middleware 和应用层基于错位 path 做授权判断，可被绕过。
+- `pyproject.toml` 三处 pin `starlette==1.0.1`：
+  - `:86` dev extra（带 `# starlette: CVE-2026-48710` 内联注释）
+  - `:118` mcp extra
+  - `:125` computer-use extra
+- `:178` 注释解释：fastapi 通过 `web` extra 间接拉 Starlette；显式 pin 让供应链不会再被任何 transitive bump 偷偷换版本。
+
+### 2. 文件 mutation-verifier footer 路径中和（`9b78f411c`，#35584/#35684）
+
+per-turn file-mutation verifier footer 把失败 write 的路径作为**裸路径**渲染。gateway 的 `extract_local_files()` 扫响应文本中以可投递后缀（`.yaml/.json/...`）结尾的裸路径，`os.path.isfile` 验存后**自动作为 native upload 附加** —— 拒写 `~/.hermes/config.yaml` 时 footer 漏路径，凭据文件被静默上传到 messaging channel。
+
+防御层（深度防御）：
+
+| 层 | 文件 | 内容 |
+|---|---|---|
+| 1（源头）| `run_agent.py: _format_file_mutation_failure_footer` + `_neutralize_footer_paths` | footer 输出的所有路径都加 backtick wrap（bullet 路径 + tool error preview 中单引号嵌套的路径） |
+| 2（gateway 提取）| `extract_local_files()` | 已 skip inline-code span（``` `path` ```）内的路径 |
+| 3（denylist）| `gateway/platforms/base.py` `validate_media_delivery_path` | 显式 `config.yaml` denylist（`4ec0adebe`，belt-and-suspenders） |
+| 4（系统 tips）| 平台 base | 系统 tips 文本不再自动 upload 命中其中的 local file（`bdfba4524`） |
+| 5（HERMES_HOME 全 deny）| `gateway/platforms/base.py:18-26` | Block Hermes root config（整个 `~/.hermes/` 目录）于 media delivery（`02d1da49d`） |
+
+### 3. Gateway 自指令循环防御（`5cd6c1717` + `bd72d333d`，#30719）
+
+三层 defense 防 SIGTERM-respawn 循环（agent 在 launchd / systemd KeepAlive 监管下调度自己的 gateway restart 会无限重启）：
+
+1. **`_HERMES_GATEWAY=1` env var**：gateway 启动时 `gateway/run.py:740 os.environ["_HERMES_GATEWAY"] = "1"`。`hermes_cli/gateway.py:5427` stop / `:5512` restart 看到此 marker 即拒（"refuse self-targeting gateway stop/restart from inside the gateway"）。
+2. **cron regex 收紧**（`bd72d333d`）：cron schedule 中不把 `hermes restart` 当合法 cron 子命令路由。
+3. **`cli.py:598-600`**：默认 stop/restart 路径检查 `_HERMES_GATEWAY == "1"`，agent 内部不发自指令。
+
+测试 `tests/hermes_cli/test_gateway_restart_loop.py:197` 显式断言 `_HERMES_GATEWAY=1` 时 stop/restart 拒。
+
+### 4. Dashboard chat WS 在 `--insecure` 非环回放行（`e8076c1eb` + `234ac0093`）
+
+- 之前的 `#35141` 修了 `0.0.0.0/::` insecure-bind 路径。
+- 但**绑定到具体非环回 IP**（如 Tailscale/LAN 静态 IP via `--host 100.x.x.x --insecure`）未被覆盖。
+- 补：非环回 + `--insecure` 都允许 chat WebSocket 对端，匹配 `hermes_cli/dashboard_auth/middleware.py` 已有的 binding-mode 推断。
+
+### 5. Discord mention 不再脱敏（`c2cbe2c97` + `fe62424ac`）
+
+- secret scrubber 把 `<@123456789>` 当 secret 误删（`agent/redact.py` -8 行）—— 这是 Discord 提及格式（`@@用户`），不是凭据。
+- 测试 `fe62424ac` 断言 Discord mention 在 scrubber 前后**字符相同**。
+
+### 6. Skills 安装时 read-only 文件 / 目录 rmtree（`8ae0802d5` + `83a7d0b60`）
+
+`fix(skills): make _rmtree_writable handle read-only directories, not just files` + `fix(skills): fix transaction ordering in reset_bundled_skill and handle read-only files in rmtree`：
+
+- `_rmtree_writable` 原仅 chmod 文件；某些发行版的 read-only **目录**（如 root-owned `optional-skills/`）无法 unlink 子项 → rmtree 半途失败。
+- 修：chmod 目录到 0o700 后再递归。
+- 配套：`reset_bundled_skill` 的 transaction 顺序（先 rmtree 后写新版）让中断半态可恢复。
+
+### 7. Run-tool cleanup `finally` 包裹（`bede3cf12` + `182739fcd`）
+
+`fix(tools): wrap _run_tool cleanup in finally to prevent interrupt state leak`：
+
+- `_run_tool` 的 cleanup（释放 interrupt-state lock、清子进程引用）在 happy path 才跑；
+- 中断引发的 exception 让 cleanup 跳过 → interrupt state lock leak（下次 `/stop` 立刻看到"已中断"）。
+- 修：包 `try / finally`，cleanup 不论 exception 都跑。test `182739fcd` 断言"no leaked tid"。
+
+### 8. Concurrent checkpoint preflight gated on block_result（`6baf0016b`，#34827）
+
+并发工具执行路径下，checkpoint preflight（write_file / patch / destructive terminal 前的快照）**在** plugin guardrail `block_result` 之前触发，让**被禁工具仍写了 checkpoint** —— 多余 IO + 持久化层观察到的 "ghost mutation"。
+
+修：`block_result` 优先级提到 preflight 之前；只有 `block_result is None` 才真做 preflight。
+
+---
 
 ## 相关文件
 

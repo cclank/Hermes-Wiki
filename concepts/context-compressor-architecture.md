@@ -1,10 +1,10 @@
 ---
 title: Context Compressor 上下文压缩架构
 created: 2026-04-08
-updated: 2026-05-18
+updated: 2026-05-31
 type: concept
-tags: [architecture, module, component, agent, context-compression]
-sources: [agent/context_engine.py, agent/context_compressor.py, agent/conversation_compression.py, run_agent.py, hermes_state.py, plugins/context_engine/__init__.py]
+tags: [architecture, module, component, agent, context-compression, partial-compress]
+sources: [agent/context_engine.py, agent/context_compressor.py, agent/conversation_compression.py, run_agent.py, hermes_state.py, hermes_cli/partial_compress.py, plugins/context_engine/__init__.py]
 ---
 
 # Context Compressor — 上下文压缩架构
@@ -653,6 +653,58 @@ while api_call_count < max_iterations and iteration_budget.remaining > 0:
 - **多模态 token 估算改用 text-char 总和**（PR #16369）—— `_find_tail_cut_by_tokens` 不再尝试解码图像 base64 来估 token，避免 PIL 内存爆炸；图像按其 placeholder 文字字符数估
 - **Aux 头预算保留 system + tools headroom**（PR #15631）—— aux 模型 binding threshold 时给 system + tools 留空间，防止压缩 prompt 太长触发 aux 自身 ctx 限制
 - **`/compress` 包在 `_busy_command`**（PR #15388）—— 压缩期间阻止用户继续输入，避免 race condition
+
+## 2026-05-31 增量 — `/compress here [N]` 边界感知 + Compressor 四连修复
+
+### `/compress here [N]` — 用户选择压缩边界（#35048，commit `bcc830100`）
+
+灵感来自 Claude Code Rewind "Summarize up to here"（v2.1.139，Week 20）。在既有 `/compress` 系列上新增**用户选择压缩边界**子命令：
+
+- `/compress here [N]` —— 摘要除最后 `N` 个 exchange 之外的全部，最后 `N` 个保留原文（默认 `N=2`）。等价于 `/compress --keep N`。
+- 裸 `/compress`（全压）与 `/compress <focus>`（focus 压）行为不变。
+
+#### 新模块 `hermes_cli/partial_compress.py`（235 行）
+
+| 函数 | 行号 | 职责 |
+|---|---|---|
+| `parse_partial_compress_args(raw_args)` | `:55` | 解析 `here [N]` / `--keep N` |
+| `_coerce_keep(value)` | `:111` | N → int |
+| `split_history_for_partial_compress(messages, keep_last)` | `:124` | 按 exchange 边界分头 / 尾 |
+| `rejoin_compressed_head_and_tail(summary_msg, tail)` | `:180` | **seam-alternation guard**：merge 任何非法 `user → user` / `assistant → assistant` 邻接 |
+
+#### 路由
+
+- `cli.py:10006-10019` —— 把 `here [N]` 路径交给 `partial_compress` 模块，复用既有 `_compress_context` session-rotation / lock 机制。
+- `gateway/run.py` —— 平行注册同样路径。
+
+**为什么需要 seam guard？** 头部摘要后变成单 assistant 消息，尾部首条仍是 assistant（一连串工具回合的延续），拼接处会出现非法 `assistant → assistant`。Guard 在结合处插入 minimal 占位 user 消息保持 role alternation 不变。
+
+测试：12 helper unit + 5 CLI 集成 + E2E（含交错 tool-call、退化 seam、multimodal 尾、真实 handler 路径）。
+
+### Compressor 四连修复（2026-05-29 ~ 30）
+
+| commit | 主题 |
+|---|---|
+| `42bbd221e` (#35344) | **strip stale handoff prefix on resume** —— `_strip_summary_prefix` 只匹配"当前 / legacy"两种字面 SUMMARY_PREFIX，更早版本的 prefix 在 resume 后留在正文，旧 "resume exactly from Active Task" 指令劫持新轮回复。改为支持多版本 prefix 历史剥离，reconcile #26290 + #32787 双修复。 |
+| `56b8dccf2` | **treat unanswered user questions as Active Task** —— 模板原把 Active Task 描述为 "task assignment / request"，summary LLM 看见用户**问题**（而非显式任务）时写 `'None'`，导致下一轮失去续作焦点。改：未答问题也是 Active Task。 |
+| `020601d41` | **drop conflicting 'resume Active Task' directive** —— SUMMARY_PREFIX 同时含两条互斥指令（"作为背景参考，不要响应" vs "从 Active Task 恢复"），删第二条。 |
+| `e38b0b55d` + `9dbc3722a` | **avoid repeat preflight compaction from rough estimates** —— preflight rough estimate 在阈值边界附近来回触发 compaction。加单调钳制 + StopIteration 测试 fix。 |
+
+### Status bar token sentinel 钳制（`f2d4cf4f7`，#35858）
+
+`fix(cli): clamp post-compression token sentinel in status bar`：
+
+- 状态栏读 `context_compressor.last_prompt_tokens`，原仅 `or 0` 保护 0/None。
+- 压缩完成瞬间 sentinel 可能为负（短暂状态）。`or 0` 不覆盖。改 `max(0, value or 0)`。
+
+### docs：压缩阈值来源（`860cf28da`，#35099）
+
+`docs: clarify compression threshold is derived from the main model's context window`：
+
+- 文档原 hint "你可以调 compression threshold"，但未说明该值是按**主模型** context window 派生。
+- 加注解：调阈值前请先看主模型 context length；切主模型会自动重算。
+
+---
 
 ## ABC 合规修复（2026-05-23 ~ 24，`8b2adea` + `dcbcdd6`）
 

@@ -1,10 +1,10 @@
 ---
 title: Prompt Builder 系统提示构建架构
 created: 2026-04-08
-updated: 2026-05-26
+updated: 2026-05-31
 type: concept
-tags: [architecture, module, component, agent, prompt-builder, promptware-defense]
-sources: [agent/prompt_builder.py, agent/system_prompt.py, tools/threat_patterns.py]
+tags: [architecture, module, component, agent, prompt-builder, promptware-defense, prompt-size-diagnostic]
+sources: [agent/prompt_builder.py, agent/system_prompt.py, tools/threat_patterns.py, hermes_cli/prompt_size.py]
 ---
 
 # Prompt Builder — 系统提示构建架构
@@ -267,6 +267,46 @@ DEVELOPER_ROLE_MODELS = ("gpt-5", "codex")
 skills:
   disabled: ["some-skill", "another-skill"]
 ```
+
+## 2026-05-31 增量 — `hermes prompt-size` 诊断命令
+
+PR #35276 / `61268ff7a`，关闭 #34667（"哪个块吃掉了我的 token budget"）。
+
+**新模块** `hermes_cli/prompt_size.py`（153 行）：
+
+| 入口 | 行号 | 用途 |
+|---|---|---|
+| `cmd_prompt_size(args)` | `:141` | CLI subparser handler |
+
+**CLI 注册**：`hermes_cli/main.py:14467-14486` `prompt-size [--platform NAME] [--json]` subparser。
+
+### 报告内容
+
+对**新会话**的**固定 prompt budget** 做完整拆分：
+
+- **System prompt total** —— `agent/prompt_builder.py.build_system_prompt()` 输出的总 token / byte 数
+- **Skills index** —— 渐进式披露最外层 catalog 的尺寸（常是最大单块，see issue #34667）
+- **Memory** —— `MEMORY.md` + 临时 ENV memories（含 frozen snapshot 状态）
+- **User profile** —— `USER.md` 内容
+- **Prompt tiers** —— 静态分层（Identity / Persona / Tools / Environment / Skill index / Memory / User）逐层 byte 计数
+- **Tool-schema JSON bytes** —— 所有注册工具的 JSON schema 总字节数（schema 大小 ≠ tool 实际 prompt 中显示的指导文字）
+
+### 关键特性
+
+- **零模型工具足迹**：顶层 CLI subcommand，不是 agent tool；不污染 agent 看到的 tool list。
+- **离线运行**：模块内部用**假凭据**强制走 direct-construction path —— 不发任何网络请求即可得到完整尺寸。
+- `--platform <name>` 模拟某 channel 的 platform hint（如 `--platform telegram` 让 prompt builder 加 telegram-specific 段落）。
+- `--json` 输出机器可读 breakdown，可 grep / 写入监控时序。
+
+### 典型使用场景
+
+- "升级了几个 skill 之后 prompt 变大了多少？" —— 跑两次 `prompt-size`，比较差。
+- "为什么我的 first-token latency 增加？" —— skills index 是嫌疑点（每次都重发，prefix cache 复用至关重要）。
+- "为什么 my smaller-context model 拒绝接 prompt？" —— 看 system + tool-schema 总和。
+
+[[cli-architecture]]
+
+---
 
 ## 与其他系统的关系
 

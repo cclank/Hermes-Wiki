@@ -1,10 +1,10 @@
 ---
 title: Messaging Gateway Architecture
 created: 2026-04-07
-updated: 2026-05-27
+updated: 2026-05-31
 type: concept
-tags: [gateway, architecture, module, telegram, discord, messaging, qq, teams, line, simplex, ntfy, wecom, proxy, api-server]
-sources: [gateway/run.py, gateway/platforms/, gateway/platforms/api_server.py, gateway/delivery.py, plugins/platforms/, hermes_cli/config.py, gateway/platforms/wecom_callback.py]
+tags: [gateway, architecture, module, telegram, discord, messaging, qq, teams, line, simplex, ntfy, wecom, proxy, api-server, debounce, dm-topic]
+sources: [gateway/run.py, gateway/platforms/, gateway/platforms/api_server.py, gateway/delivery.py, gateway/platforms/telegram.py, plugins/platforms/, hermes_cli/config.py, gateway/platforms/wecom_callback.py]
 ---
 
 # 消息网关架构
@@ -816,6 +816,91 @@ def _looks_like_telegram_private_chat_id(chat_id: Optional[str]) -> bool:
 - `e572737` **Fix cron dashboard rendering for partial jobs** + `e407376` partial job records normalize + `96dc272` getJobState helper
 - `2a7047c` **fix(sqlite): fall back to `journal_mode=DELETE` on NFS/SMB/FUSE (#22043)** —— 当 sessions.db 跑在网络共享盘时 WAL 不可用，自动降级
 - `78b0008` **fix(gateway): also catch restart TimeoutExpired; friendly message** + `dccf1fb` cap adapter disconnect during stop
+
+## v0.15.1 维护窗口增量（2026-05-31，hermes `eb3cf9750`）
+
+### Telegram DM topic 路由双修复
+
+#### 1. 合成通知保留 DM topic 元数据（`4259bab7d`）
+
+`gateway/run.py` 修改 +109 / -25 行 + `tests/gateway/test_restart_notification.py` +29 / -3 + `test_update_command.py` +6 / -2：
+
+- restart / update / 其它 gateway 自发的"系统通知"消息原本只带 `(chat_id, thread_id)` 二元组，**丢了 DM topic 元数据**（topic 名 / topic root flag）。
+- 修复后合成 envelope 时**完整复制源 envelope 的 DM topic 字段**，让 reply-to-mode / topic-anchor 一致。
+
+#### 2. `_get_dm_topic_info` 在类上解析（HEAD `eb3cf9750`）
+
+- `gateway/run.py:12897 get_info = getattr(type(adapter), "_get_dm_topic_info", None)`
+- 原 instance-level `getattr(adapter, "_get_dm_topic_info")` 在 `MagicMock` 测试 fixture 下假阳：mock 自动生成任何属性 → truthy callable，任何非 dm `chat_type` + thread_id 的 fixture 错走 DM topic 路径。
+- 改成**只在类**上找该方法（`type(adapter).__dict__` 或 `getattr(type(adapter), ...)`)，mock auto-attribute 失效。
+
+#### 3. 配套链路
+
+- `gateway/run.py:14232,14251 _is_telegram_dm_topic_target` 判定路由
+- `gateway/platforms/telegram.py:1292 _persist_dm_topic_thread_id` + `:1318` 持久化 / `:1469` 自动 refresh stale thread
+
+### WhatsApp / WeChat 文本去抖批处理（`b0ce47daa` + `cddb7283d`）
+
+- WhatsApp / WeChat（Weixin / iLink）的客户端不做消息打包，转发或多行复制粘贴会拆成多条单独 webhook 投递；agent 被每条都 trigger 一次。
+- 新加**文本去抖批处理**：可配 N ms 窗口内连续来的文本合并成单次 turn。
+- 配置键放 `config.yaml` 下，per-platform；`cddb7283d` 修正 PR 的 config path 拼写。
+
+### `/stop` 跨参与者（`1044d9f25`，#35959）
+
+per-user thread 模式（`thread_sessions_per_user=True`）下，每个参与者的 session key 是 `...:{thread_id}:{user_id}`。一个用户 `/stop` 另一参与者起的 run 时，caller 自己 key 下找不到 → 回 "no active task to stop"。修复：在线程范围内查所有参与者的 active run。
+
+### 自指令循环防御（`5cd6c1717` + `bd72d333d`，#30719）
+
+三层 defense 防 SIGTERM-respawn 循环（agent 调度自己的 gateway restart 与 launchd/systemd KeepAlive 互动产生）：
+
+1. **`_HERMES_GATEWAY=1` env var**（gateway 启动时设）：`hermes_cli/gateway.py:5427` stop / `:5512` restart 看到此 marker 即拒。
+2. **cron regex 收紧**（`bd72d333d`）：不把 `hermes restart` 当用户合法 cron route。
+3. 子命令 dispatch 防回环。
+
+### 嵌套 `gateway.platforms` 配置块合并（`44f3e5186` + `6d2727ef1` + `0bfe19ba1`）
+
+- `config.yaml` 下 `gateway:` → `platforms:` 嵌套块原本不被 adapter config hook 看到（只走顶层 `platforms:`）。
+- 三 commit 修：merge nested 块 + 跑 nested-only platform 的 hook + Discord `allow_from` 明确 → env var 映射。
+
+### Watcher recovery 与 LRU cache 加固
+
+#### Watcher 分批 100 + 原子 detach（`32899279a` + `0036c7292`）
+
+- `gateway/run.py:4481-4490` watcher recovery 重写：
+  - 原子分离当前 batch：reassign 新 list 而非 `clear()`，避免并发 append 被吞
+  - 每 100 个 `await asyncio.sleep(0)` 让出 event loop（避免 O(n²) 阻塞 thousands of watcher）
+- `0036c7292`：plugin/bundle 错误日志 `debug` → `warning`；watcher recovery O(n²) 修复。
+
+#### LRU cache 封顶（`3c21fed09` + `e8cacb57d`）
+
+- BlueBubbles `_guid_cache` LRU 封顶
+- Feishu `_message_text_cache` LRU 封顶
+
+### Telegram httpx pool timeout 重试（`dc4de1437`，#35664）
+
+高并发下 httpx pool exhaust → 不再 silently drop 消息，改重试。
+
+### 其它
+
+- **send_message 识 email target**（`d3724c0be` + `bfc4a2603`）—— 符合 RFC5322 的字符串当 explicit target，不强制走 EMAIL_HOME。错误消息指 `EMAIL_HOME_ADDRESS`。
+- **google-workspace Gmail header 大小写不敏感**（`8bd00607d`）
+- **silence-narration 消息 pre-send 拦截**（`45bc65abb`）—— `*(silent)*` / `_silent_` / 单点 `.` / `...` / `silent` / 静音 emoji；bot-to-bot 防回环。
+- **`fix(gateway): never auto-pause platforms on transient network/DNS failures`**（`45465b0d5`，#35387）
+- **`fix(gateway): recover model on post-interrupt turn; gate fallback status`**（`2b16b756a`，#35381）
+- **MEDIA tag regex 支持 Windows 绝对路径**（`51d165a8e` + `1b955450e` + `20d073fd0`，#34632）—— `(?:~/|/)` 原仅 Unix 形式；扩到 `[A-Za-z]:\\` Windows drive letter。
+- **Dashboard chat WS 允许 insecure 公网绑定**（`e8076c1eb` + `234ac0093`）—— 显式 `--host <non-loopback> --insecure` 时放行非环回 WS 对端。
+- **Honcho self-hosted setup paths 加固**（`827ce602d`）
+
+### 安全：媒体投递路径中和
+
+四层防御链（详见 [[security-defense-system]]）：
+
+- `9b78f411c` (#35584/#35684) — mutation-verifier footer 把所有路径 backtick wrap，防止 `extract_local_files()` 误把拒写的 `config.yaml` 路径自动当文件附件上传。
+- `4ec0adebe` — `gateway/platforms/base.py` 在 `validate_media_delivery_path` 加 `config.yaml` denylist（belt-and-suspenders）。
+- `bdfba4524` — 系统 tips 文本不再自动 upload 命中其中的 local file。
+- `02d1da49d` — `gateway/platforms/base.py:18-26` Block Hermes root config（`~/.hermes/`）整个目录于 media delivery，测试 +39 行。
+
+---
 
 ## 相关页面
 

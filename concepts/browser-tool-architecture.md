@@ -1,9 +1,9 @@
 ---
 title: Browser Tool 浏览器自动化架构
 created: 2026-04-08
-updated: 2026-05-20
+updated: 2026-05-31
 type: concept
-tags: [tool, toolset, architecture, component, browser, cdp]
+tags: [tool, toolset, architecture, component, browser, cdp, vision-cap]
 sources: [tools/browser_tool.py, tools/browser_supervisor.py, tools/browser_cdp_tool.py, hermes_cli/browser_connect.py]
 ---
 
@@ -435,6 +435,45 @@ Lightpanda 'click' failed (timeout); retried with Chrome.
 `tools/url_safety.py:37-45`、`tools/browser_tool.py:2325,2334,2399-2411`：浏览器工具**硬拒**访问 cloud metadata endpoint（`169.254.169.254`、`metadata.google.internal` 等），即使用户配置 `allow_private_urls=true` 也无法绕过。返回："Blocked: URL targets a cloud metadata endpoint"。
 
 闭合 v0.13.0 P0 之一。
+
+## 2026-05-31 增量 — CDP DOM-node 序列化降级 + Vision 4 MB 提前 cap
+
+### 1. CDP DOM-node 序列化崩溃自动降级（#35385，`92ad7cc62`）
+
+**问题**：`browser_console(expression="document.body")` 返回 CDP 协议错 `"Object reference chain is too long"`，不是有用结果。
+
+根本原因：
+
+- `Runtime.evaluate` 的 `returnByValue=true` 让 Chrome **深序列化**结果。
+- 活 DOM Node / NodeList / Window 内部互相引用，深序列化超 CDP 递归保护 → **整 call 失败**（协议级别错，不是 JS exception）。
+- `_browser_eval` 把这个错原文 surface 出来，模型看见无法理解。
+
+修复（两路径）：
+
+| 路径 | 修复 |
+|---|---|
+| `browser_supervisor.evaluate_runtime` | 见 ref-chain 错时**自动重试一次**，改 `returnByValue=false` → Chrome 返回 node 的 description string（与 `document.querySelector()` 已有的降级路径一致） |
+| `browser_tool._browser_eval`（CLI 子进程 fallback） | 子进程不能重试 → 把 ref-chain 错**转 actionable hint**："extract a primitive value (e.g. `document.body.tagName`) or use `JSON.stringify(...)` to serialize what you need" |
+
+**不重写表达式**：正常 eval（`1+41 → 42`）不受影响——`returnByValue=true` 对 primitive 仍是更省的路径。
+
+测试 `tests/tools/test_browser_eval_supervisor_path.py:+32 行` 断言两路径都被覆盖。
+
+### 2. Vision 4 MB embed cap 提前到 load 时（#35732，`0ffbcbbe7`）
+
+**问题**：
+
+- 老逻辑：image tool-result 仅在 20 MB 硬天花板才 resize。
+- 5-20 MB 图穿过 native fast path 进 conversation history。
+- Anthropic 单 image base64 5 MB 上限 → 此后**每次** API call 都被拒（图在 history 里反复发），session **wedge**。
+
+修复：load 时按 **4 MB embed cap** 提前 resize（4 MB base64 ≈ 5.5 MB binary，超 Anthropic 5 MB 上限会被拒，所以 4 MB 是安全边界）。
+
+### 3. Vision 非 retryable 立即失败（`b4cf114f6`，#35221）
+
+`fail fast on non-retryable image download errors` —— 4xx（认证失败、不存在）不再走 3 次重试。
+
+---
 
 ## 与其他系统的关系
 

@@ -1,10 +1,10 @@
 ---
 title: MCP 集成与插件系统
 created: 2026-04-07
-updated: 2026-05-26
+updated: 2026-05-31
 type: concept
-tags: [architecture, mcp, plugins, extensibility, mcp-catalog]
-sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py, hermes_cli/mcp_catalog.py, hermes_cli/mcp_picker.py, hermes_cli/mcp_config.py, optional-mcps/]
+tags: [architecture, mcp, plugins, extensibility, mcp-catalog, mcp-pgid, mcp-startup]
+sources: [tools/mcp_tool.py, tools/mcp_oauth.py, tools/mcp_oauth_manager.py, hermes_cli/plugins.py, hermes_cli/mcp_catalog.py, hermes_cli/mcp_picker.py, hermes_cli/mcp_config.py, hermes_cli/mcp_startup.py, optional-mcps/]
 ---
 
 > **2026-05-29 增量（hermes-agent `689ef5e2`）**：
@@ -391,6 +391,59 @@ Picker 行为（`hermes_cli/mcp_picker.py:160-228 _handle_row`）：
 | `hermes_cli/mcp_config.py` | 803 | 入口分发 + 旧 `hermes mcp add/remove/list/enable/disable/configure/login` 命令保持兼容 |
 
 Tests：19 个 catalog 测试 + E2E install/uninstall round-trip。
+
+## v0.15.1 维护窗口增量（2026-05-31，hermes `eb3cf9750`）
+
+### 1. stdio MCP 子孙经进程组信号回收（`a29d64e50`）
+
+**问题**：
+
+- MCP SDK 用 `start_new_session=True` 启 stdio 子进程：每个直接子 = 自己的 session/pgroup leader（PGID == PID）。
+- 该直接子若自己再 spawn helper（如 wrapper `openclaw mcp serve` 内部再起 `claude mcp serve`），孙子继承 PGID（除非自己 `setsid`）。
+- 直接子退出后，孙子 reparent 到 `systemd --user` 但**保留原 PGID** —— 老 reaper 只 track 直接 PID 就**清不到孙子**，孙子在 systemd 下永生。
+
+**修复**（`tools/mcp_tool.py`）：
+
+| 行号 | 内容 |
+|---|---|
+| `:2270-2281` | `_stdio_pgids: Dict[int, int] = {}  # pid -> pgid` —— spawn 时捕获 PGID，与 `_stdio_pids` 分开存（即使直接子退出移出 active map，PGID 仍保留） |
+| `:3699-3700` | 信号经 `os.killpg(pgid, sig)` 发给整 pgroup —— 孙子也吃到 |
+| Windows | `_stdio_pgids` 空（`os.getpgid` POSIX-only），fallback 老 PID 路径 |
+
+### 2. agent-capable startup 不再阻塞 MCP discovery（`0c6e133c0`）
+
+`perf(cli): stop eager MCP discovery from blocking agent-capable startup`：
+
+- 新文件 **`hermes_cli/mcp_startup.py`（59 行）** + tests 166 行。
+- `hermes -z` / interactive / TUI 等 agent-capable 启动路径原同步 await 全部 MCP server discovery；多 server / 慢 server 时冷启冻几秒。
+- 改 background task：startup 不 await，agent 首次需要 MCP 工具时如未就绪走 graceful degrade（log warning + skip）。
+
+### 3. MCP OAuth 重连 poll 改 asyncio.sleep（`eb9bfd392`）
+
+`fix(T5): replace time.sleep(0.25) with asyncio.sleep in MCP auth reconnect poll`：
+
+- OAuth re-auth 重连 polling 用 `time.sleep(0.25)`，**阻塞 event loop** 250 ms × N 次。
+- 改 `await asyncio.sleep(0.25)`，让出 loop 让其他任务（webhook、heartbeat）跑。
+
+### 4. TUI 启动不被慢/死 MCP 卡住（`cbf851ae1`）
+
+`perf(tui): stop slow/dead MCP servers from freezing TUI startup`。结构与 §2 同：discovery 异步化 + per-server timeout。
+
+### 5. mcp_serve 包进 py-modules（`a57cc0008`）
+
+`fix(packaging): include mcp_serve in py-modules so hermes mcp serve works on pip installs`：
+
+- 顶层模块 `mcp_serve` 不在 `pyproject.toml` 的 `py-modules` 显式列表 → pip wheel 不打包 → `hermes mcp serve` 子命令 ImportError。
+- 修：加 `mcp_serve` 进 `[tool.setuptools] py-modules`。
+
+### 6. tool_output_limits 不再 cache（`91a98d151`）
+
+`fix: tool_output_limits re-reads config on every call (no caching)`：
+
+- 之前 module-level 一次读、cache 到 frozenset/dict；用户改 config 不生效（即使 `hermes reload` 也只重建 agent）。
+- 改：每次 call 现读 config。性能损失可忽略（dict lookup 在 µs 级），换来 config 改动立即生效。
+
+---
 
 ## 相关页面
 

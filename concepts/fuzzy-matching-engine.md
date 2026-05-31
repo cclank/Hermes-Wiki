@@ -1,9 +1,9 @@
 ---
 title: 模糊匹配引擎 — 8 策略链
 created: 2026-04-07
-updated: 2026-05-26
+updated: 2026-05-31
 type: concept
-tags: [architecture, tool, reliability, fuzzy-matching, patch, indentation, crlf, escalation]
+tags: [architecture, tool, reliability, fuzzy-matching, patch, indentation, crlf, escalation, atomic-write, utf8-bom, gutter]
 sources: [tools/fuzzy_match.py, tools/file_operations.py, tools/file_tools.py]
 ---
 
@@ -305,6 +305,70 @@ entire file if the targeted region is hard to anchor.
 不到 3 次 fail 仍走旧的 "old_string not found. Use read_file..." hint（line 1097-1100）。
 
 测试增量：`tests/tools/test_fuzzy_match.py +5`（缩进保留）/ `test_line_ending_preservation.py +12`（CRLF）/ `test_patch_failure_tracking.py +5`（失败计数 + reset）。所有现有测试 165/165 通过（commit body）。
+
+## 2026-05-31 增量 — 文件 IO 健壮性三连
+
+### 1. write_file / patch 原子化（#35252，`39f6b6e9d`）
+
+`tools/file_operations.py:772 _atomic_write(self, path, content) -> ExecuteResult`：
+
+- 流到 target 同**目录** temp file（关键：同 FS 才保证 rename 原子）。
+- 经 `mv` 原子换到 target。失败：fallback PID-stamped 名（line 797 注释）。
+- 模板（line 813）：
+  ```bash
+  tmp="$(mktemp ...)"
+  [ -n "$tmp" ] || { echo "atomic write: could not create temp file" >&2; exit 1; }
+  ...
+  mv "$tmp" "$path"
+  ```
+- `patch` 路径在 `:1192-1207` 流到 temp 再 `mv`（line 1204 备注："保留 mode bits — atomic swap 不静默扩/收权限"）。
+
+**影响**：进程崩溃 / out-of-disk 不会留半成品文件；reader 看到的要么是旧版本要么是完整新版本。
+
+### 2. UTF-8 BOM 处理（#35278，`5f84c9144`）
+
+某些 Windows 编辑器在文本首字符塞 U+FEFF。原行为三处出错：
+
+| 路径 | 出错点 |
+|---|---|
+| read_file | 把 BOM 当首字符返回，模型看见 phantom U+FEFF |
+| patch | 真正首行匹配可能漏（BOM 占了 char 0） |
+| write/patch round-trip | 静默剥 BOM，把原文件改成非 BOM |
+
+**修复**（`tools/file_operations.py`）：
+
+- `:127 _UTF8_BOM = "﻿"`
+- `:131 _strip_leading_bom(text) -> (text, had_bom)` —— 只剥首 BOM；中段 U+FEFF 保留（合法 unicode whitespace 用途）。
+- `:142 _starts_with_utf8_bom(text)` 探测。
+- `:848` `_file_has_bom` 属性（基于磁盘探测，新文件返 False —— 新建写不会带 BOM）。
+- read（`:947`）："Strip a leading UTF-8 BOM so the model never sees a phantom U+FEFF"。
+- write / patch 探测原文件 BOM 状态 → round-trip 后**保留 / 不保留**与磁盘上一致。
+
+### 3. read_file 紧凑 gutter — ~14% token 节省（#35368/#35532，`ea6eaabd8` + `b1a25404b`）
+
+原 gutter：固定宽度 `"     1|content"`（零/空格 padding 到 4-6 字符宽）。
+新 gutter：紧凑 `"<n>|content"`（仅 `<n>` 实际位数 + `|`）。
+
+**实测**（cl100k tokenizer on dense Hermes source）：
+- padding：比 bare content 多 **~48%** token。
+- 紧凑：比 bare content 多 **~16%** token。
+- → 切换的净收益 **~14%**。
+
+`b1a25404b` 是后续把它定为**唯一**格式：
+
+- 删 `HERMES_READ_GUTTER=padded` env var 逃生口与其 lookup。
+- `grep -r HERMES_READ_GUTTER` 全仓零命中（彻底删除）。
+- `tools/file_operations.py:707-713` 文档化新策略 + "padding 是纯 token overhead，dense 源码上"。
+
+### 4. 相对路径 anchor 到绝对 base（#35399，`96643b4a5`）
+
+`fix(file-tools): anchor relative-path resolution to absolute base; report resolved path`：
+
+- 之前：相对路径在 write_file / patch 解析对 **agent process cwd**（可能是 `/`、HERMES_HOME，或终端 init dir）。
+- git worktree 会话特别危险：相对路径写到错 worktree。
+- 修：相对路径强制 anchor 到**终端 cwd 的绝对 base**；返回**解析后的绝对路径**让用户验证。
+
+---
 
 ## 相关页面
 

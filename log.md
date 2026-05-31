@@ -5,6 +5,56 @@
 > Actions: ingest, update, query, lint, create, archive, delete
 > 当此文件超过 500 条时，轮换：重命名为 log-YYYY.md，重新开始。
 
+## [2026-05-31] sync | hermes-agent 689ef5e2 → eb3cf9750（141 commits, v0.15.1 维护窗口）
+- 同步范围：hermes-agent/main `689ef5e2`（2026-05-29 13:30 -0700）→ `eb3cf9750`（2026-05-31 12:13 -0700），**141 个 commit**，约 47 小时维护窗口
+- 验证基线：`/tmp/hermes-agent` 全历史 clone @ `eb3cf9750`，逐 commit + `grep -n` + `git show <sha> --stat` 实证
+- 版本：仍 v0.15.1（`pyproject.toml:7 version = "0.15.1"` 不变，**无新发布 tag**，纯增量维护）
+- commit 类型分布：97 fix / 11 feat / 11 test / 5 chore / 4 perf / 2 docs / 2 refactor / 1 security / 1 revert（≈ 69% 修复，v0.15.1 后冷却期特征）
+- 新增文件：`changelog/2026-05-31-update.md`（450+ 行，28 章节）
+- 更新文件：
+  - `README.md` — 版本徽章 `v0.15.1 (689ef5e2) → v0.15.1 (eb3cf9750)`、Changelogs 32 → 33、跟踪 HEAD 与最后更新日期同步、新增 changelog 列表条目
+  - `index.md` — 顶部 tracking 字段（HEAD `eb3cf9750`）、Total pages 32 → 33 changelogs、changelog 列表新增 2026-05-31 条目（141 commit 总述）
+  - `concepts/context-compressor-architecture.md` — 顶部 frontmatter `updated/tags/sources` 同步；新章节"2026-05-31 增量 — `/compress here [N]` 边界感知 + Compressor 四连修复"（`hermes_cli/partial_compress.py` 235 行 + 4 compressor fix + status bar token 钳制 + docs 阈值澄清）
+  - `concepts/kanban-multi-agent-board.md` — 顶部加入 2026-05-31 双特性 + 三可靠性修复段（task_attachments 表 + `goal_mode`/`goal_max_turns` 字段 + legacy TEXT-PK rebuild + iteration budget 修 + recompute_ready failure_limit 对齐）；文件索引表追加 4 条新行
+  - `concepts/cli-architecture.md` — frontmatter 同步；新章节"v0.15.1 维护窗口增量"覆盖 Quick Setup→Nous Portal + Full Setup happy-defaults + curses picker 迁移 + `hermes prompt-size` + `/compress here` 入口 + Tool Gateway 始终展示 + Model picker 三连 + CLI 状态簇 + Update/install 8 簇 + 进程标题 + MCP discovery 非阻塞 + TUI 簇；相关文件表新增 3 条
+  - `concepts/messaging-gateway-architecture.md` — frontmatter 同步；新章节"v0.15.1 维护窗口增量"：Telegram DM topic 双修复（合成通知保留元数据 + `_get_dm_topic_info` 类级别解析）+ WhatsApp/WeChat 文本去抖批处理 + `/stop` 跨参与者 + `_HERMES_GATEWAY` 自指令循环防御三层 + 嵌套 `gateway.platforms` 合并 + watcher 分批 + LRU 封顶 + httpx pool 重试 + send_message 邮件 + 其它 12 条 + 媒体投递路径中和四层
+  - `concepts/security-defense-system.md` — frontmatter 同步；新章节"v0.15.1 维护窗口增量"：CVE-2026-48710 Starlette pin（3 处 + 注释）+ mutation-verifier footer 路径中和五层防御 + 自指令循环防御 + Dashboard chat WS insecure-非环回 + Discord mention 不脱敏 + Skills rmtree read-only + interrupt state leak 修 + checkpoint preflight 优先级
+  - `concepts/fuzzy-matching-engine.md` — frontmatter 同步；新章节"2026-05-31 增量 — 文件 IO 健壮性三连"：write/patch 原子化（`_atomic_write` line 772）+ UTF-8 BOM 处理（`_UTF8_BOM` line 127-143 + `_file_has_bom` 属性）+ 紧凑 gutter（`<n>|content` ~14% token 节省，删 `HERMES_READ_GUTTER` env 逃生口）+ 相对路径 anchor 绝对 base
+  - `concepts/session-search-and-sessiondb.md` — frontmatter 同步；新章节"v0.15.1 维护窗口增量"：FTS5 优雅降级（`hermes_state.py:452 _sqlite_supports_fts5` + 4 commit 簇 + uv-managed Python 确保 FTS5 + warning 文案指 supported install）+ Mid-session 模型切换持久化（`SessionDB.update_session_model`）
+  - `concepts/agent-loop-and-prompt-assembly.md` — frontmatter 同步；新章节"2026-05-31 增量 — Turn-Completion Explainer + max-iterations 总结路径修复"（`conversation_loop.py:4493-4540` + `run_agent.py:2179 _turn_completion_explainer_enabled` + `config.py:1255 display.turn_completion_explainer` 默认 True + max-iter summary 路径 schema-foreign keys strip #34436）
+  - `concepts/auxiliary-client-architecture.md` — frontmatter 同步；新章节"v0.15.1 维护窗口增量"：cumulative-resend tool-arg 修复 → 6h 后 revert 双 commit 拉锯（streaming saga）+ Anthropic thinking-signature 在 orphan-strip 后降级（Opus 4.8 extended-thinking）+ 默认不 cap max_tokens + custom provider 4 元组 runtime main
+  - `concepts/browser-tool-architecture.md` — frontmatter 同步；新章节"2026-05-31 增量 — CDP DOM-node 序列化降级 + Vision 4 MB 提前 cap"（`browser_supervisor.evaluate_runtime` 自动 retry `returnByValue=false` + `_browser_eval` 子进程 actionable hint + vision 4 MB embed cap 防 session wedge + 4xx 不重试）
+  - `concepts/prompt-builder-architecture.md` — frontmatter 同步；新章节"2026-05-31 增量 — `hermes prompt-size` 诊断命令"（`hermes_cli/prompt_size.py:141 cmd_prompt_size` + 6 类 breakdown + `--platform` / `--json` flag + 离线运行）
+  - `concepts/mcp-and-plugins.md` — frontmatter 同步；新章节"v0.15.1 维护窗口增量"：stdio MCP 子孙经进程组信号回收（`tools/mcp_tool.py:2270-2281 _stdio_pgids` + `:3699 killpg`）+ agent-capable startup MCP discovery 非阻塞（**新模块** `hermes_cli/mcp_startup.py` 59 行）+ OAuth 重连 poll 改 `await asyncio.sleep` + TUI 启动不被慢/死 MCP 卡 + mcp_serve 进 py-modules + tool_output_limits 不再 cache
+  - `concepts/terminal-backends.md` — frontmatter 同步；新章节"2026-05-31 增量 — cwd 持久化 + spawn_via_env 防双包裹"（`tools/terminal_tool.py:1738 _resolve_command_cwd` ACP→env.cwd→init 优先级 + `tools/environments/base.py:843-846 rewrite_compound_background=False` 跳过二次重写）
+  - `concepts/lsp-integration.md` — frontmatter 同步；新章节"2026-05-31 增量 — Windows .cmd shim 双修复"（spawn 探测 `.cmd/.bat` 走 shell + installer probe sweep `[name, name+".exe", name+".cmd", name+".bat", name+".ps1"]`）
+  - `concepts/voice-mode-architecture.md` — frontmatter 同步；新章节"2026-05-31 增量 — SSH 下允许语音（探 PulseAudio / PipeWire socket）"（探 `PULSE_SERVER` unix path / `PULSE_RUNTIME_PATH/native` / PipeWire socket）
+  - `concepts/smart-model-routing.md` — frontmatter 同步；新章节"2026-05-31 增量 — Model picker UX 三连"（多 endpoint provider 合并到一行 + catalog TTL 24h→1h + deepseek-v4-flash 进精选 + 按 maker 分组 + mirror test 清理）
+  - `log.md` — 本条记录
+- 核心结论（均经源码验证，关键 `file:line` 引用现行 source 实际行号）：
+  - **Setup**：`hermes_cli/setup.py:3010` 菜单文本 + `:3064 _run_first_time_quick_setup` 调用 `hermes_cli.main._model_flow_nous`；`/tmp/hermes-agent` `git show de4f40ed0 --stat` 实证
+  - **`/compress here [N]`**：`hermes_cli/partial_compress.py` 235 行 5 函数（`:55 parse_partial_compress_args` / `:111 _coerce_keep` / `:124 split_history_for_partial_compress` / `:180 rejoin_compressed_head_and_tail`）；`cli.py:10006-10019` 路由（实证）
+  - **`hermes prompt-size`**：`hermes_cli/prompt_size.py:141 cmd_prompt_size`（153 行）+ `hermes_cli/main.py:14467-14486` subparser 注册（实证）
+  - **Kanban 附件**：`hermes_cli/kanban_db.py:399 attachments_root` / `:429 task_attachments_dir` / `:889 class Attachment` / `:1044-1079 CREATE TABLE task_attachments` / `:2535-2620` accessors + `plugins/kanban/dashboard/plugin_api.py:638-640 _MAX_ATTACHMENT_BYTES=25*1024*1024` / `:687-727` POST / `:763 root.resolve()`（实证）
+  - **Kanban goal_mode**：`hermes_cli/kanban_db.py:737 goal_mode: bool=False` / `:740 goal_max_turns: Optional[int]` / `:974,977` CREATE TABLE INTEGER NOT NULL DEFAULT 0 / `:1616-1624` additive 迁移 / `:813-817` row→Task 反序列化（实证）
+  - **read_file gutter**：`tools/file_operations.py:707-713` 文档化紧凑 gutter；`grep -r HERMES_READ_GUTTER` 全仓零命中（env 已彻底删除）
+  - **write/patch 原子化**：`tools/file_operations.py:772 _atomic_write` + `:1192-1207` patch 路径 temp + mv（实证）
+  - **UTF-8 BOM**：`tools/file_operations.py:127 _UTF8_BOM` + `:131 _strip_leading_bom` + `:142 _starts_with_utf8_bom` + `:848 _file_has_bom` + `:947` read 注释（实证）
+  - **FTS5**：`hermes_state.py:452 _sqlite_supports_fts5` + `:441-444` warning + `:514 _ensure_fts_schema` + `:747-812` v10 trigram 同闸（实证）
+  - **Starlette CVE**：`pyproject.toml:86,118,125` 三处 pin `starlette==1.0.1` + `:178` 注释（实证）
+  - **进程标题**：`hermes_cli/main.py:68 _set_process_title` + `:84-86 setproctitle` + `:11505 main()` 入口调用（实证）
+  - **MCP pgid**：`tools/mcp_tool.py:2270-2281 _stdio_pgids: Dict[int,int]` + `:3699-3700 killpg` 文档（实证）
+  - **MCP startup**：`hermes_cli/mcp_startup.py` 59 行新文件（实证）
+  - **Telegram DM topic**：`gateway/run.py:12897 getattr(type(adapter), "_get_dm_topic_info", None)` + `:14232,14251 _is_telegram_dm_topic_target` + `gateway/platforms/telegram.py:1292,1318,1469`（实证）
+  - **`_HERMES_GATEWAY` 自指令循环**：`gateway/run.py:740 os.environ["_HERMES_GATEWAY"]="1"` + `hermes_cli/gateway.py:5427,5512` 拒检测 + `cli.py:598-600` defense（实证）
+  - **Watcher 分批**：`gateway/run.py:4475-4490` 原子分离 + 每 100 个 `await asyncio.sleep(0)`（实证）
+  - **Telegram cli alternation curses**：`hermes_cli/setup.py:3010` Quick Setup menu 文案
+  - **Terminal cwd**：`tools/terminal_tool.py:1738 _resolve_command_cwd` + `:2034 effective_cwd` + `:2255 cwd field`（实证）
+  - **spawn_via_env 防双重写**：`tools/environments/base.py:843-846` 注释 + `rewrite_compound_background=False` 路径（实证）
+  - **Turn-completion explainer**：`agent/conversation_loop.py:4493-4540` + `run_agent.py:2179-2204 _turn_completion_explainer_enabled` + `hermes_cli/config.py:1255` 默认 True（实证）
+- 关键 commit 用 `git show <sha> --stat` 抽样：`de4f40ed0`（Quick Setup Nous Portal）/ `bcc830100`（`/compress here` 235 行新模块）/ `61268ff7a`（prompt-size 153 行）/ `b47cb1bbf`（Kanban attachments 13 测试）/ `0cd7d54b0`（Kanban goal_mode additive 迁移）/ `ea6eaabd8`+`b1a25404b`（gutter 紧凑+删 env）/ `39f6b6e9d`（原子写）/ `5f84c9144`（UTF-8 BOM）/ `5ad2b4c6d`+`97ecfa0fc`+`a7421dc7d`+`355af2c20`+`4fa20f9a8`+`ec67def5b`（FTS5 优雅降级 6 簇）/ `0437137ff`（Starlette CVE）/ `84ee80eb5`（进程标题）/ `93e6a05ef`+`e1293bde4`+`50db2d9c1`+`7b0915037`（model picker 四簇）/ `64628ea89`（Anthropic thinking signature）/ `ca03486b6`→`2b5268f71`（streaming saga）/ `4259bab7d`+HEAD `eb3cf9750`（Telegram DM topic 双修）/ `b0ce47daa`+`cddb7283d`（WhatsApp/WeChat 去抖）/ `42bbd221e`+`56b8dccf2`+`020601d41`+`e38b0b55d`（compressor 四连）/ `a29d64e50`（MCP pgid）/ `0c6e133c0`（MCP startup）/ `eb9bfd392`（asyncio.sleep）/ `cbf851ae1`（TUI MCP）/ `a57cc0008`（packaging）/ `92ad7cc62`（Browser CDP）/ `0ffbcbbe7`+`b4cf114f6`（Vision 4 MB cap + fail-fast）/ `d4e7b2fc1`（Voice SSH）/ `1fc7bdc5e`（Tool Gateway）/ `5a72e82fd`+`9d2571c86`+`e481b1533`（TUI agents nudge）/ `b1d34cf6e`+`cd067ab91`+`64998fa93`+`16882cfde`（TUI 杂项）/ `59b0ea98c`+`fb0ab2764`（explainer）/ `9b78f411c`+`4ec0adebe`+`bdfba4524`+`02d1da49d`+`c2cbe2c97`+`5cd6c1717`+`bd72d333d`+`e8076c1eb`+`234ac0093`（安全 wave 9 commit）/ `96643b4a5`+`7a315bd70`+`6f8975dcd`（file/terminal/spawn）/ `296fcdfa5`+`460771bf0`（LSP Windows）/ `794519c6a`+`e1945ff69`（state 模型切换）/ `1bdb29d93`+`2334228ec`+`14517ac1f`+`2475244ca`+`9ed9af2f7`+`bb79bcde6`+`c1b2d0917`+`bebd4f851`（update 8 簇）/ `1044d9f25`+`32899279a`+`0036c7292`+`dc4de1437`+`3c21fed09`+`e8cacb57d`+`44f3e5186`+`6d2727ef1`+`0bfe19ba1`+`d3724c0be`+`bfc4a2603`+`8bd00607d`+`9d4c81130`+`2259c15e4`+`45bc65abb`+`91a98d151`+`45465b0d5`+`2b16b756a`+`51d165a8e`+`1b955450e`+`20d073fd0`+`827ce602d`+`aa32edcac`+`d27601837`+`860cf28da`+`04de307d6`+`5921d6678`+`6a72af044`+`9fbde54b5`+`433bffff5`+`f2d4cf4f7`+`897f9533e`+`bede3cf12`+`182739fcd`+`6baf0016b`+`8ae0802d5`+`83a7d0b60`+`6a08fd3c3`+`8e5a6854c`+`6ab71d3bb`+`c70dca3a8`+`10dec7c6d`+`40fcb9658`+`622e53437`+`2062a8400`+`54aa4db1d`+`636ff636d`+`b4cf114f6`+`9d2571c86`+`e481b1533`+`5a72e82fd`+`8738cb92c`+`87e ...` 等约 100+ 杂项 fix/perf/test/chore/refactor commit
+- 验证策略：每条结论至少一条 `grep -n` / `Read` 命中 `/tmp/hermes-agent` clone @ `eb3cf9750`；每个 `file:line` 引用现行 source 实际行号；功能描述对照对应 PR 标题 + commit body + 实际 hunk 内容；141 commit 量级 + 97% fix 占比下重点抓 11 个 feat + 4 perf + 1 security + 1 revert 上游 PR + 大块代码新增（235 / 153 / 59 行三新模块）验证
+
 ## [2026-05-29] sync | hermes-agent 963d22c → 689ef5e2（275 commits, v0.15.0 + v0.15.1）
 - 同步范围：hermes-agent/main `963d22c`（2026-05-27）→ `689ef5e2`（2026-05-29），275 个 commit
 - 验证基线：`/tmp/hermes-src` blobless clone @ `689ef5e2`，逐 commit + git grep + Read 实证

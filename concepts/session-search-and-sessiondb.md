@@ -1,9 +1,9 @@
 ---
 title: Session Search and SessionDB
 created: 2026-04-07
-updated: 2026-05-20
+updated: 2026-05-31
 type: concept
-tags: [session-search, session-store, memory, architecture, state-db]
+tags: [session-search, session-store, memory, architecture, state-db, fts5-degrade, mid-session-model-switch]
 sources: [hermes_state.py, tools/session_search_tool.py]
 ---
 
@@ -248,6 +248,59 @@ class SessionDB:
 - CLI（`cli.py`）：`concurrent.futures.ThreadPoolExecutor(max_workers=1)` + 10s timeout 里 fetch，慢 provider 不会卡 prompt
 - Gateway（`gateway/run.py`）：通过 `asyncio.to_thread` fetch；无 agent 驻留时从 `billing_provider` / `billing_base_url` 持久化字段解析 provider
 - 新模块 `agent/account_usage.py`（326 行）提供 `fetch_account_usage(provider, base_url, api_key)` 和 `render_account_usage_lines(snapshot, markdown)` 两个入口
+
+## v0.15.1 维护窗口增量（2026-05-31，hermes `eb3cf9750`）
+
+### 1. FTS5 优雅降级 — SQLite 不带 FTS5 时不再启动失败（4 commit 簇）
+
+`5ad2b4c6d` `97ecfa0fc` `a7421dc7d` `355af2c20` 四连：
+
+**探测点** (`hermes_state.py:452 _sqlite_supports_fts5(cursor)`)
+
+```python
+# 实际逻辑：CREATE VIRTUAL TABLE ... USING fts5(...); 失败 → False
+```
+
+**门控点 — `_ensure_fts_schema`**（`:514`）
+
+- FTS5 可用：建普通 FTS5 表 + 触发器 + trigram CJK 表（`:778 v10`）
+- FTS5 不可用：仅记 `logger.warning("SQLite FTS5 unavailable for %s; full-text session search disabled. Use a Python whose bundled SQLite ships FTS5 ... rather than a stripped distribution.", db_path)`（`:441-444`），**会话写入路径继续**（FTS5 表不存在，正文消息仍 INSERT 进 messages 表）。
+
+**自动 backfill**（`:525` 备注 + `:797-812`）
+
+- 首次切换到**有** FTS5 的运行时时，`_ensure_fts_schema` 重新尝试 CREATE，把已存在的 messages 表回填进 FTS5 索引。
+
+**Trigram CJK 表同闸**（`:774-812`）
+
+- v10 trigram FTS5 表（用于 CJK / substring 搜索，因为 unicode61 tokenizer 不分词 CJK）同样被 `fts5_available` flag 门控。
+- `:812` 任何阶段建表失败设 `fts5_available = False`，保险整 sweep 都跳。
+
+### 2. uv-managed Python 确保 FTS5（`4fa20f9a8`，#?）
+
+`fix(install): ensure the uv-managed Python ships SQLite FTS5`：
+
+- uv 的 python-build-standalone（PBS）中期 2025 才加 FTS5（PBS #694）。
+- uv 的本地 store 里**老 interpreter**（用户上次装 uv 时下来的 stale 版本）可能没 FTS5。`uv python find` 可能命中这个 stale 版。
+- 修：install 走 `uv python install --force` 或选 newer build，确保 FTS5 进。
+
+### 3. `ec67def5b` `fix(install): refresh stale uv so installs actually get FTS5 Python`（#35541）
+
+如 §2 但从 **uv 自身**层面：uv binary 老就 refresh uv，让它能拉到带 FTS5 的 PBS。
+
+### 4. `fix(session): point no-FTS5 warning at the supported install`（`a7421dc7d`）
+
+把 warning 文案从 "use a Python with FTS5" 改成具体指引："Use `uv tool install hermes-agent --force` to get the supported uv-managed Python with FTS5"。
+
+### 5. Mid-session 模型切换持久化到 DB（`794519c6a` + `e1945ff69`）
+
+`fix(state): persist mid-session model switch to database`：
+
+- 用户 `/model` 切模型后：gateway 更新**内存中** agent + session override，但 **DB 没动**。
+- `update_token_counts()` 用 `COALESCE(model, ?)` 仅填 NULL，dashboard 始终显示原始模型。
+- 修：新增 `SessionDB.update_session_model(session_id, model)` 显式 UPDATE。
+- `e1945ff69` 跟进测试：assert overwrite 而非仅 fill NULL；getattr-guard 文本路径（gateway test 用 `object.__new__()` 构造 mock gateway，没有 `_session_db` 属性，需要 `getattr(self, '_session_db', None)` 防 AttributeError）。
+
+---
 
 ## 相关页面
 

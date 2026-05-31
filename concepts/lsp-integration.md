@@ -1,13 +1,13 @@
 ---
 title: LSP 语义诊断集成
 created: 2026-05-20
-updated: 2026-05-20
+updated: 2026-05-31
 type: concept
-tags: [lsp, lint, diagnostics, file-operations]
+tags: [lsp, lint, diagnostics, file-operations, windows-cmd-shim]
 source_files:
   - agent/lsp/
   - tools/file_operations.py
-verified_against: hermes-agent HEAD (2026-05-20)
+verified_against: hermes-agent HEAD (2026-05-31, eb3cf9750)
 ---
 
 # LSP 语义诊断集成（v0.14.0）
@@ -180,3 +180,19 @@ agent/lsp/servers.py                   每语言 ServerSpec
 tools/file_operations.py               _check_lint_delta 调用点
 website/docs/user-guide/features/lsp.md  用户文档
 ```
+
+## 10. 2026-05-31 增量 — Windows .cmd shim 双修复
+
+### `fix(lsp): handle Windows .cmd shims in LSP process spawn`（`296fcdfa5`）
+
+- `asyncio.create_subprocess_exec` 在 Windows 上**无法直接执行** `.cmd / .bat` —— `CreateProcess` 期待 PE 可执行文件，遇到批处理 shim 报 `WinError 193 (%1 is not a valid Win32 application)`。
+- 受影响的 LSP server：npm-installed 系列，如 `intelephense` / `typescript-language-server`，在 Windows 上 npm 自动生成 `.cmd` shim 入口。
+- **修**：spawn 前探测 path 后缀；`.cmd / .bat` 走 `subprocess.create_subprocess_shell(...)`（经 `cmd.exe`）而非 exec。
+
+### `fix(lsp): detect Windows wrapper binaries in installer probes`（`460771bf0`）
+
+- `agent/lsp/install.py` 的 binary-existence probe 原仅查无后缀文件；Windows 下二进制实际叫 `<name>.exe` 或 `<name>.cmd`。
+- **修**：probe sweep `[name, name+".exe", name+".cmd", name+".bat", name+".ps1"]`。
+- 配套 `agent/lsp/cli.py` 把 `which`-equivalent 输出 path 也带上 wrapper 后缀，让用户看到完整路径。
+
+测试 `tests/agent/lsp/test_install_and_lint_fixes.py:+41` 行覆盖。

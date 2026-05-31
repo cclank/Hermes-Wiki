@@ -1,10 +1,10 @@
 ---
 title: Smart Model Routing 智能模型路由
 created: 2026-04-08
-updated: 2026-05-20
+updated: 2026-05-31
 type: concept
-tags: [architecture, module, model-routing, performance, caching, anthropic, provider-plugin]
-sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py, providers/, plugins/model-providers/]
+tags: [architecture, module, model-routing, performance, caching, anthropic, provider-plugin, model-picker, catalog-ttl]
+sources: [agent/model_metadata.py, agent/models_dev.py, hermes_cli/model_switch.py, hermes_cli/model_normalize.py, hermes_cli/model_catalog.py, providers/, plugins/model-providers/]
 ---
 
 > v0.13.0 起，全部 30 个 provider 走 `providers/base.py:ProviderProfile` ABC + `plugins/model-providers/<name>/` 插件目录。Provider 行为是 *声明性* 的，由 transport 层读取，不再硬编码进 `model_metadata.py`。详见 [[provider-profile-plugins]]。
@@ -645,6 +645,36 @@ browser:
 **之后**：gateway 走 `resolve_runtime_provider()` 单一入口（无 `requested` override），`config.yaml model.provider` 为唯一权威。Policy：**"如果不是 secret 就进 config.yaml"** —— env 仅保存凭据，行为配置进 yaml。
 
 文档同步更新 `website/docs/reference/environment-variables.md`、`website/docs/reference/cli-commands.md`、`website/docs/guides/minimax-oauth.md`、`website/docs/guides/xai-grok-oauth.md` 等 11 处。
+
+## 2026-05-31 增量 — Model picker UX 三连
+
+### 1. 多 endpoint provider 合并到一行（#35227，`93e6a05ef`）
+
+- 之前：同一 provider 跨多 endpoint（如 Nous Portal vs. 直连 OpenAI vs. OpenRouter 都跑 GPT-5）占多行，picker 看上去重复。
+- 改：合并到一行 + 子菜单选 endpoint。`hermes model` 显式 "Provider: openai (3 endpoints)"，选中后下钻列 endpoint。
+
+### 2. catalog TTL 24h → 1h（#35756，`e1293bde4`）
+
+`feat(models): refresh model catalog hourly instead of daily`：
+
+- `hermes_cli/model_catalog.py` 的磁盘缓存 TTL 由 24h 降到 **1h**。
+- 新发布的 `model-catalog.json`（CDN-served）在一小时内进 picker，不再要用户等一天或手动 `hermes model refresh`。
+- Picker 在 cache 老于 1h 时下次 `hermes model` / `/model` 自动 refetch；younger cache 仍 hit local（避免每次 picker 都 round-trip CDN）。
+
+### 3. deepseek-v4-flash + 按 maker 分组（#35659，`50db2d9c1`）
+
+- `deepseek/deepseek-v4-flash` 进 OpenRouter + Nous Portal 的**精选列表**（之前只在原生 deepseek provider catalog）。
+- "trim variants" —— 删除冗余子型号（精选清单只放主力，进阶用户用完整 `hermes model search`）。
+- curated lists 按 maker（OpenAI / Anthropic / DeepSeek / Mistral / xAI / 其它）分组渲染，picker 头部展示 group 标签。
+
+### 4. mirror test 清理（`7b0915037`）
+
+`test: remove low-value model-catalog mirror tests`：
+
+- 删那些仅复制常量的"mirror"测试（如 "断言 'glm-5' 仍在 `provider_model_ids('zai')`"）—— 这种测试不验证逻辑，只复述当前值；每加/删一个模型都误报，等同维护两份 catalog。
+- 保留**行为**测试（解析、fallback、context length 推导）。
+
+---
 
 ## 与其他系统的关系
 

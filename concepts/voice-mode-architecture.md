@@ -1,9 +1,9 @@
 ---
 title: 语音模式架构
 created: 2026-04-10
-updated: 2026-05-20
+updated: 2026-05-31
 type: concept
-tags: [voice, stt, tts, architecture, provider-registry]
+tags: [voice, stt, tts, architecture, provider-registry, ssh-pulseaudio]
 sources: [tools/voice_mode.py, tools/tts_tool.py, tools/transcription_tools.py, agent/voice/, cli.py]
 ---
 
@@ -196,3 +196,22 @@ VAD 循环 + TTS + crash 取证全部在 Ink-based TUI 里实现 parity（之前
 | `tools/tts_tool.py`（2225 行）| TTS Provider 路由（10 内置 + 命令型自定义）、流式播报 |
 | `tools/transcription_tools.py`（921 行）| STT Provider 统一接口 |
 | `cli.py` | Push-to-talk 键绑定（Ctrl+B） |
+
+## 2026-05-31 增量 — SSH 下允许语音（探 PulseAudio / PipeWire socket）
+
+`fix(voice): allow /voice over SSH when a sound server is reachable`（`d4e7b2fc1`，#35719）：
+
+**问题**：之前 SSH 会话**硬 fail** voice mode，仅凭存在 `SSH_*` env vars 就拒。但实际上很多用户的工作流是：
+
+- 主机跑 PulseAudio / PipeWire；
+- 通过 SSH 进 hermes，但通过 X11/audio forwarding 或本机 socket 让 ffplay/aplay/pw-play 直接走 host audio。
+
+这种 setup 下 voice mode 应该能工作。
+
+**修**：在 SSH detection 后**继续探测**默认 sound-server 套接字：
+
+- `PULSE_SERVER`（unix path 模式）
+- `PULSE_RUNTIME_PATH/native`（默认 PulseAudio runtime dir）
+- PipeWire socket（`XDG_RUNTIME_DIR/pipewire-*`）
+
+任何一个 reachable → 允许 voice mode；都不可达 → 保持原 fail（含友好错误信息指出哪些 socket 被探测过）。

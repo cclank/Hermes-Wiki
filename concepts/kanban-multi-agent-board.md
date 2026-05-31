@@ -1,13 +1,64 @@
 ---
 title: Kanban Multi-Agent Board
 created: 2026-05-22
+updated: 2026-05-31
 type: concept
-tags: [kanban, multi-agent, delegation, durable, sqlite, dispatcher, worker]
+tags: [kanban, multi-agent, delegation, durable, sqlite, dispatcher, worker, attachments, goal-mode]
 sources: [plugins/kanban/, hermes_cli/kanban.py, hermes_cli/kanban_db.py, hermes_cli/kanban_decompose.py, hermes_cli/kanban_swarm.py, hermes_cli/kanban_diagnostics.py, tools/kanban_tools.py, gateway/run.py]
 ---
 
 # Kanban 多 Agent 看板
 
+> **2026-05-31 增量（hermes-agent `eb3cf9750`）—— 两个新特性 + 三个可靠性修复**：
+>
+> ### 文件附件（#35395，`b47cb1bbf`）
+>
+> 任务可直接挂 PDF / 图片 / 源文档，worker 经 `read_file` / `pdftotext` 读取，不再需要把源材料路径粘到任务正文。
+>
+> **数据层** (`hermes_cli/kanban_db.py`)：
+>
+> - `:889 class Attachment` dataclass
+> - `:1044-1079 CREATE TABLE task_attachments`（additive 迁移）+ `idx_attachments_task(task_id, created_at)` 索引
+> - `:399 attachments_root(board)` + `:429 task_attachments_dir(task_id, board)` 路径助手；可经 `HERMES_KANBAN_ATTACHMENTS_ROOT` 覆盖
+> - `:2535 add_attachment(...)` INSERT + `:2557 list_attachments` + `:2577 get_attachment`
+>
+> **Dashboard API** (`plugins/kanban/dashboard/plugin_api.py`)：
+>
+> - `:638-640 _MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024`（25 MB 单次上传上限）
+> - `:687-727` POST multipart 上传，超限拒
+> - `:763 root.resolve()` containment 校验，traversal-safe 文件名
+>
+> **Worker 上下文**：`build_worker_context` 把每个附件的**绝对路径**注入 worker 系统提示，worker 经 full file/terminal 工具读取。
+>
+> **测试**：13 用例（DB accessor、REST round-trip、traversal 防护、download 路径 root-containment）。
+>
+> ### goal_mode 卡片（#35710，`0cd7d54b0`）
+>
+> 卡片可声明 `goal_mode=true`，dispatch 出去的 worker 自动包进 Ralph-style `/goal` 循环：每轮一个辅助 LLM judge 对照 card title+body 检查，未完成就在**同一 session** 内继续直到（a）judge 通过 / (b)worker 自己 `complete_task` / (c)轮次预算耗尽 → **block 卡片等人审**（永不静默退出）。
+>
+> **Schema** (`hermes_cli/kanban_db.py`)：
+>
+> - `:737 goal_mode: bool = False` + `:740 goal_max_turns: Optional[int] = None`（Task 字段）
+> - `:974 goal_mode INTEGER NOT NULL DEFAULT 0` + `:977 goal_max_turns INTEGER`（CREATE TABLE）
+> - `:1616-1624` additive 迁移：老库自动 ADD COLUMN
+> - `:813-817` row → Task 反序列化（旧库 NULL 字段 fallback false / None）
+>
+> **对外接口**：
+>
+> - `tools/kanban_tools.py` `kanban_create` 工具加 `goal_mode` / `goal_max_turns` 参数（orchestrator fan-out 时可单卡选 mode）
+> - Kanban CLI：`hermes kanban create --goal` / `--goal-max-turns N`
+>
+> 与 [[goal-and-ralph-loop]] 共享判定逻辑（同一 judge schema）。
+>
+> ### 可靠性三连
+>
+> - **`c70dca3a8` `fix(kanban): rebuild legacy TEXT-PK tables to INTEGER AUTOINCREMENT on open`** —— pre-AUTOINCREMENT schema 库 `int(None)` on NULL id 让 gateway notifier 每 tick 崩。打开时**重建**为 INTEGER PRIMARY KEY AUTOINCREMENT，保留数据。
+> - **`6ab71d3bb` `fix(kanban): prevent infinite retry loop when worker exhausts iteration budget`** —— `recompute_ready()` 不再把 `consecutive_failures` 在 auto-recover 时重置为 0，让 circuit-breaker 正确生效，防止 iteration budget 耗尽后无限重试。
+> - **`8e5a6854c` `fix(kanban): align recompute_ready guard with breaker's configured failure_limit`** —— guard 阈值跟 breaker 的 configured `failure_limit` 对齐（之前是硬编码常量，与 config 脱节）。
+> - **`10dec7c6d` `fix(kanban): respect mobile safe areas in task detail drawer` (#35378)** —— Dashboard 移动端任务详情抽屉避开 notch / home indicator。
+>
+> ---
+>
 > **2026-05-23 更新**：新增 `hermes kanban promote <id> [--ids id...]` 子命令，手动 todo→ready 恢复（详见 § CLI 命令一览）。
 >
 > **2026-05-29 更新（hermes-agent `689ef5e2`）— 可靠性 wave**：
@@ -463,7 +514,11 @@ connect(path)                              # kanban_db.py:1135
 | `KanbanDbCorruptError` + `_guard_existing_db_is_healthy` | `kanban_db.py:1010-1132`（2026-05-23+） |
 | `_backup_corrupt_db`（CodeQL 硬化） | `kanban_db.py:1029-1074` |
 | Scratch tip + sentinel | `kanban_db.py:3109-3181`（2026-05-23+） |
+| **Attachment dataclass + table** | `kanban_db.py:889`（dataclass）+ `:1044-1079`（schema）+ `:2505-2620`（accessors，2026-05-30 #35395） |
+| **`attachments_root` / `task_attachments_dir`** | `kanban_db.py:399` / `:429`（`HERMES_KANBAN_ATTACHMENTS_ROOT` 可覆盖） |
+| **Attachment Dashboard API** | `plugins/kanban/dashboard/plugin_api.py:638-727`（POST/GET/DELETE，25 MB 上限，containment） |
+| **`goal_mode` / `goal_max_turns` 字段** | `kanban_db.py:737,740`（Task）+ `:974,977`（CREATE TABLE）+ `:1616-1624`（additive 迁移） |
 
 ---
 
-*Last verified: 2026-05-22, HEAD `09afafb87`*
+*Last verified: 2026-05-31, HEAD `eb3cf9750` (Kanban attachments + goal_mode + legacy schema rebuild verified in source).*

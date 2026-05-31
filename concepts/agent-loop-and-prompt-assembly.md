@@ -1,10 +1,10 @@
 ---
 title: Agent Loop and Prompt Assembly
 created: 2026-04-07
-updated: 2026-05-26
+updated: 2026-05-31
 type: concept
-tags: [agent-loop, prompt-builder, architecture, component, tool-result-delimiter]
-sources: [hermes-agent 源码分析 2026-05-26 (v0.14.0)]
+tags: [agent-loop, prompt-builder, architecture, component, tool-result-delimiter, turn-completion-explainer, max-iterations]
+sources: [hermes-agent 源码分析 2026-05-31 (v0.15.1 maintenance window)]
 ---
 
 # Agent Loop and Prompt Assembly
@@ -399,6 +399,44 @@ only the user (outside this block) can issue instructions.
 ## Agent Outer-Loop 异常日志（2026-05-26，fix #32264）
 
 `c2aa23532`：Agent outer-loop catch-all exception handler 从 `logger.warning(str(e))`（无 traceback）改为 `logger.exception(...)`（ERROR 级 + 自动 traceback）。生产 incident 排错不再要靠脏 print 复现。与其他 long-lived loop 的日志策略对齐。
+
+## 2026-05-31 增量 — Turn-Completion Explainer + max-iterations 总结路径修复
+
+### Turn-Completion Explainer（`59b0ea98c` + `fb0ab2764`）
+
+**问题**：turn 在 substantive tool call 后**异常结束**（empty content after retries / partial / truncated stream / exhausted retries）原本只返**空白或截断**回复，用户摸不着头脑——既看不到错误，也不知该重试 / 改 prompt / 切模型。
+
+**实现**：
+
+- `agent/conversation_loop.py:4493-4540` 段落：
+  ```python
+  # Turn-completion explainer.
+  ...
+  if agent._turn_completion_explainer_enabled():
+      ...explanation footer...
+  ```
+- `run_agent.py:2179 _turn_completion_explainer_enabled(self) -> bool` —— 读 `display.turn_completion_explainer` 配置（默认 True，safe default）；`:2200` 读 dict 内字段。
+- `hermes_cli/config.py:1255 "turn_completion_explainer": True` —— 注册到 `DEFAULT_CONFIG.display`。
+- 失败包 `try/except`（line 4540），explainer 自己 fail 不让 turn 也 fail。
+
+**Footer 分类**：
+
+- "the model returned no content after N tool calls"
+- "stream was truncated mid-response"
+- "context window exceeded"
+- "auxiliary model retry budget exhausted"
+- "abnormal turn termination — see logs"
+
+### `fix(agent): strip schema-foreign keys from max-iterations summary request`（`636ff636d`，#34436）
+
+**问题**：max-iterations summary 路径（`handle_max_iterations`）**手工构建** message list 并直接 call `chat.completions.create()`，**绕过** main agent client 的常规清洗。
+若上游消息携带 provider 专属字段（如 Anthropic `cache_control`、OpenAI Responses-API `encrypted_content`）就被 leak 到 strict Chat Completions schema 校验里，触发 400。
+
+**修**：summary 构造前 strip 所有 schema-foreign keys；仅保留 `role` + `content`（+ tool_calls 当 tool 路径需要）。
+
+[[auxiliary-client-architecture]] 的 fallback 在此路径也走过——summary 路径要保持与主 path 一致的清洗。
+
+---
 
 ## 相关页面
 

@@ -1,10 +1,10 @@
 ---
 title: CLI 架构与终端交互设计
 created: 2026-04-07
-updated: 2026-05-20
+updated: 2026-05-31
 type: concept
-tags: [architecture, cli, terminal, ux, tui, ink]
-sources: [cli.py, hermes_cli/, ui-tui/, tui_gateway/]
+tags: [architecture, cli, terminal, ux, tui, ink, setup, prompt-size, partial-compress]
+sources: [cli.py, hermes_cli/, ui-tui/, tui_gateway/, hermes_cli/partial_compress.py, hermes_cli/prompt_size.py, hermes_cli/mcp_startup.py]
 ---
 
 > **v2026.4.30 ~ v2026.5.7 增量**：
@@ -489,6 +489,88 @@ dashboard:
 - [[multi-agent-architecture]] — `/goal`、`/handoff`、`/steer`、`/queue`、Kanban CLI
 - [[smart-model-routing]] — `hermes proxy` OpenAI-compatible 本地代理
 
+## v0.15.1 维护窗口增量（2026-05-31，hermes `eb3cf9750`）
+
+### Setup 重构 — Quick Setup 直通 Nous Portal（#35723，`de4f40ed0`）
+
+`hermes setup` 首次运行不再展示完整 provider 选择器，直接进 Nous Portal：
+
+- `hermes_cli/setup.py:3010` 菜单文本 `"Quick Setup (Nous Portal) — OAuth login, model & messaging (recommended)"`
+- `hermes_cli/setup.py:3064 _run_first_time_quick_setup` 调用 `hermes_cli.main._model_flow_nous(config)`（line 3086-3087），同时覆盖**未登录**（device-code OAuth → 精选 Nous model）与**已登录**（直接精选 picker）两条路径。
+- 完成后**从磁盘 re-sync config dict**（line 3096+），避免 #4172 的 stale-overwrite。
+- Terminal / defaults / messaging 步骤不变。
+
+### Full Setup happy-defaults
+
+- 删除：同 provider rotation pool / vision-backend picker / TTS sub-flow。Vision 从主 provider 自动检测；TTS 默认 Edge；rotation 移到 `hermes auth add`。
+- Terminal 章节保留 backend picker（默认 Local）+ 必要凭据（Modal token、SSH host/user/key、Daytona key）。
+
+### Picker 迁 curses（#35776，`087be0073` + `3463c97a3` + `8f4c8e7c8`）
+
+setup 的 provider→model 子菜单及 3 个同类 picker 从 `simple_term_menu.TerminalMenu` 迁到 curses；`3463c97a3` 在 `curses_radiolist` 包装层解码原始方向键序列（`\x1b[A/B/C/D`）；`8f4c8e7c8` 提取 `_curses_menu_event_loop_driver` 共享驱动器复用。
+
+### `hermes prompt-size` 诊断命令（#35276，`61268ff7a`，关闭 #34667）
+
+- `hermes_cli/prompt_size.py:141 cmd_prompt_size(args)` —— 153 行新模块。
+- `hermes_cli/main.py:14467-14486` subparser 注册：`prompt-size [--platform NAME] [--json]`。
+- 报告新会话**固定 prompt budget** 拆分：system prompt total / skills index / memory / user profile / prompt tiers / tool-schema JSON bytes。
+- **零模型工具足迹**：顶层 CLI subcommand，非 agent 工具。
+- **离线运行**：假凭据强制走 direct-construction，不发网络。
+
+观察：skills index 通常是最大单块（issue #34667 的典型症状）。
+
+### `/compress here [N]`（#35048，`bcc830100`）
+
+用户选择压缩边界。详见 [[context-compressor-architecture]] 的 §2026-05-31 增量。`hermes_cli/partial_compress.py` 新模块 235 行。
+
+### Tool Gateway 始终展示 + 选中即登录（#35792，`1fc7bdc5e`）
+
+`hermes tools` 列表中的 Nous-managed Tool Gateway 行（Firecrawl / OpenAI TTS / Browser Use / FAL image / FAL video）原本仅在已登录时显示；改成**始终可见**，选中时触发 OAuth 登录流。让 onboarding 期就看到这些托管后端的存在。
+
+### Model picker 多 endpoint 合并 + catalog TTL 24h→1h
+
+- `93e6a05ef` (#35227) —— 同 provider 跨多 endpoint 合并到一行，让用户先选 provider 再选 endpoint。
+- `e1293bde4` (#35756) —— `model_catalog` 磁盘缓存 TTL 24h → 1h，新发布的 `model-catalog.json` 一小时内进 picker。
+
+### CLI 状态簇
+
+- **`/status` token 标签精化**（`9d4c81130` + `2259c15e4`）—— "Cumulative API tokens (re-sent each call)" 替换误导性 "Session usage (cumulative)"。
+- **CLI 状态栏 token sentinel 钳制**（`f2d4cf4f7`，#35858）—— `max(0, last_prompt_tokens or 0)`。
+- **CLI context display 与 preflight token estimate 同步**（`897f9533e`，#35079）。
+- **`/steer` 与 `/model` 内联提交后 input 区重绘**（`04de307d6`，#34839）。
+- **OSC 11 bg-color 探测在 SSH 下不再 trap 用户进 stray editor**（`5921d6678`，#35441）。
+- **oneshot 失败 stderr + rc=1**（`433bffff5`）+ **空响应 fail closed**（`9fbde54b5`）。
+- **uninstall 清 Hermes-managed node/npm/npx symlinks**（`54aa4db1d`）。
+
+### Update / install 簇
+
+- **`uv tool upgrade` 走 uv tool install path**（`1bdb29d93`，#29700）
+- **pipx + `--system` fallback**（`2334228ec`）
+- **launcher virtualenv 透传到 uv**（`14517ac1f`）
+- **Windows launcher-shim 排出 concurrent check**（`2475244ca`，#35257）
+- **migration prompt 列新增 config key + 纯版本号 bump 跳过**（`9ed9af2f7`，#35658）
+- **pyproject vs `hermes_cli/__init__.py` 版本漂移在 `hermes doctor` 报告**（`bb79bcde6`，#35142）
+- **container 但非 Docker image 不当作 image update**（`c1b2d0917`，#35139）
+
+### 进程标题 'hermes'（`84ee80eb5`）
+
+- `hermes_cli/main.py:68 _set_process_title()` —— `:11505 main()` 入口最早处调用。
+- 策略链：`setproctitle`（opt-in）→ `ctypes prctl(PR_SET_NAME)` on Linux → `pthread_setname_np` on macOS → Windows no-op。
+- 任何失败静默，不增加新 dependency。
+
+### MCP discovery 不阻塞 agent-capable startup（`0c6e133c0`）
+
+新文件 `hermes_cli/mcp_startup.py`（59 行）+ tests 166 行：MCP server discovery 改 background task，避免冷启动阻塞。详见 [[mcp-and-plugins]]。
+
+### TUI 簇
+
+- **delegation 启动时 nudge `/agents` dashboard**（`5a72e82fd` + `9d2571c86` + `e481b1533`）
+- **WSL `131072x1` 终端维度钳制**（`b1d34cf6e`，#35657）
+- **鼠标 burst 噪声不再卡 composer**（`cd067ab91`，#35512）
+- **PowerShell clipboard 改 base64 stdin flag**（`64998fa93` + `16882cfde`）
+
+---
+
 ## 相关文件
 
 - `cli.py` — 经典 CLI 主类（660KB；大单体文件）
@@ -498,7 +580,10 @@ dashboard:
 - `hermes_cli/kanban.py` — Kanban CLI（2677 行）
 - `hermes_cli/proxy/` — OpenAI-compatible 本地代理（v0.14.0+）
 - `hermes_cli/portal_cli.py` — `hermes portal {status,open,tools}` 薄表面（2026-05-23+）
-- `hermes_cli/setup.py:3063-3173` — `hermes setup --portal` 一键起步
+- `hermes_cli/setup.py:3010,3064` — Quick Setup (Nous Portal) 入口（2026-05-31+）
+- `hermes_cli/partial_compress.py` — `/compress here [N]` 模块（235 行，2026-05-29+）
+- `hermes_cli/prompt_size.py` — `hermes prompt-size` 诊断（153 行，2026-05-30+）
+- `hermes_cli/mcp_startup.py` — MCP discovery 非阻塞 background task（59 行，2026-05-30+）
 - `agent/portal_tags.py` — Portal 请求标签集中点（`product=hermes-agent` + `client=hermes-client-v<ver>`）
 - `hermes_cli/dump.py` — `hermes dump` 环境摘要（纯文本，用于调试/提 issue）
 - `agent/display.py` — 显示系统

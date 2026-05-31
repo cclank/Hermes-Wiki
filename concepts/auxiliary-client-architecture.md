@@ -1,10 +1,10 @@
 ---
 title: Auxiliary Client 辅助客户端架构
 created: 2026-04-08
-updated: 2026-05-19
+updated: 2026-05-31
 type: concept
-tags: [architecture, module, component, agent, tool]
-sources: [agent/auxiliary_client.py, providers/base.py]
+tags: [architecture, module, component, agent, tool, streaming-saga, anthropic-thinking]
+sources: [agent/auxiliary_client.py, providers/base.py, agent/conversation_loop.py]
 ---
 
 # Auxiliary Client — 辅助客户端架构
@@ -377,6 +377,56 @@ print(get_available_vision_backends())
 ### Auxiliary 统一 main-model fallback（2026-05-25 wave，已在上次同步）
 
 `auxiliary_client.py` 在 vision / web_extract / compression 各 task 上都接 main-model fallback —— 详见 [[2026-05-25-update]]。
+
+## v0.15.1 维护窗口增量（2026-05-31，hermes `eb3cf9750`）
+
+### 1. Cumulative-Resend 工具参数修复 → 6h 后 revert（streaming saga）
+
+**Round 1 — `ca03486b6 fix(streaming): stop duplicating tool-call args from cumulative-resend providers (#35718)`**：
+
+- DeepSeek / Baidu Qianfan 的 stream tool-call **不是 delta 模式**：每个 chunk 重发**截至目前完整 args**，而不是新片段。
+- 通用 stream 累加器盲目 `+=` 把 `{"x":` + `{"x":1}` 拼成 `{"x":{"x":1}`，json.loads 失败被清成 `{}`。
+- 修：每槽加 cumulative-resend latch —— delta 是 prev 严格超集（`len(_new) > len(_prev)` 且 `_new.startswith(_prev)`）就触发，把新累积值替换而非追加。
+
+**Round 2 — `2b5268f71 revert: drop cumulative-resend tool-arg heuristic from shared streaming path (#35718) (#35860)` (6h 后)**：
+
+- latch 误触正常 provider 的 delta：部分 delta 也会**偶然满足** `startswith`（如先发 `{"x":1`、后发 `{"x":1, "y":2}` —— 第二条既是 delta extension 也是第一条的 superset）。
+- 把正常增量误判为累积重发，反而**漏数据**。
+- → 共享 streaming path 不带 cumulative-resend 启发式；DeepSeek / Qianfan 的修复需另开 **provider 局部分支**。
+
+**教训**：在 polymorphic stream protocol 上做启发式判定要么 100% 准要么不要做。
+
+### 2. Anthropic thinking-signature 在 orphan-strip 后降级（`64628ea89`）
+
+`fix(anthropic): demote dead thinking signature when orphan-strip mutates the latest turn`：
+
+- Claude 4.6+（含 Opus 4.8）的 extended-thinking 模型在 assistant turn 同时携带**并行 `tool_use` 块**时也输出**签名的 `thinking` 块**。Anthropic 服务端对该签名校验**完整原始 turn content**。
+- 当 orphan-strip（剥离没有 `tool_result` 配对的 `tool_use` 块）改写了**最新 turn** 后，原签名因校验 hash 变化而失效。
+- 修：检测 orphan-strip mutate 了最新 turn 后，把 thinking 块从 "signed thinking" 降级为**普通文本块**（保留内容，去签名字段）。不再因签名校验失败拒整轮。
+
+[[provider-transport-architecture]] 的 Anthropic transport 会经此规范化层。
+
+### 3. 辅助 LLM 默认不再 cap max_tokens（`2062a8400`，#34530/#34845）
+
+`fix(auxiliary): stop capping output with max_tokens by default`：
+
+- 默认 `max_tokens` cap 让 summary / vision / web_extract 等长输出被截。
+- 改：默认不 cap；用户可在 config 显式 set。
+
+### 4. Custom provider auxiliary 路由（`40fcb9658` + `622e53437`）
+
+`fix(auxiliary): pass base_url/api_key/api_mode through set_runtime_main for custom providers`：
+
+- 用户配 `custom:openclaw-router` 时，`set_runtime_main()` 仅存 provider + model 到 process-local globals。
+- auxiliary_client 解析时拿不到 base_url / api_key / api_mode → 走默认 provider endpoint 失败。
+- 修：runtime main 状态完整携带 4 元组 `(provider, model, base_url, api_key, api_mode)`。
+- e2e 测试 `622e53437` 断言 custom-provider aux 解析正确路由。
+
+### 5. Agent outer-loop 异常分类（`59b0ea98c` + `fb0ab2764`）
+
+Turn-completion explainer —— 详见 [[agent-loop-and-prompt-assembly]] §2026-05-31 增量。
+
+---
 
 ## 与其他系统的关系
 
