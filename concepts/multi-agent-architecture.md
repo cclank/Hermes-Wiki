@@ -1,9 +1,9 @@
 ---
 title: Hermes 多 Agent 架构
 created: 2026-04-08
-updated: 2026-05-22
+updated: 2026-06-12
 type: concept
-tags: [architecture, module, agent, delegation, concurrency, kanban]
+tags: [architecture, module, agent, delegation, concurrency, kanban, heartbeat-staleness, no-default-timeout]
 sources: [tools/delegate_tool.py, tools/mixture_of_agents_tool.py, run_agent.py, hermes_cli/kanban_db.py, plugins/kanban/]
 ---
 
@@ -596,10 +596,29 @@ delegation:
   model: google/gemini-3-flash    # 可选：子代理用廉价模型
   max_iterations: 50              # 每个子代理最大迭代次数
   reasoning_effort: low           # 可选：控制子代理推理深度（low/medium/high/xhigh）
+  child_timeout_seconds: 0        # 默认 0 = 无墙钟超时（2026-06-12 翻转，#45149）
+                                  # opt-in 正数 → max(30.0, parsed) floor 后生效
   # 或直接指定端点
   base_url: https://api.openai.com/v1
   api_key: sk-xxx
 ```
+
+### 子代理墙钟超时（2026-06-12 默认翻转 — `bba9b519` / #45149）
+
+**默认值**：`tools/delegate_tool.py:567 DEFAULT_CHILD_TIMEOUT: Optional[float] = None` — **无墙钟超时**。
+
+**为什么**：合法重活（深度 code review / 研究 fan-out / 慢 reasoning 模型）在已成功跑 36 次 API call、仍稳步推进时，被旧 600s 毯子式 cap 一刀切。失败信号应来自子代理实际在干的事——API 错误、工具错误、迭代预算——而不是 delegation 级别的秒表。
+
+**Stuck-child 保护**改由 heartbeat staleness 监控承担（`tools/delegate_tool.py:577-578`）：
+
+| 状态 | 阈值 | 触发后行为 |
+| --- | --- | --- |
+| **Idle**（无 `current_tool`） | `_HEARTBEAT_STALE_CYCLES_IDLE = 15` × 30s = **450s** 无 API-call 进展 | 停止刷新 parent activity → gateway 闲置超时接管 |
+| **In-tool**（有 `current_tool`） | `_HEARTBEAT_STALE_CYCLES_IN_TOOL = 40` × 30s = **1200s** 同工具无进展 | 同上 |
+
+In-tool ceiling 远高于 idle，因合法 long-running 工具（terminal 命令、web fetch、大文件读）需要充足时间。
+
+**Opt back in 硬性上限**：`delegation.child_timeout_seconds: <positive>` 或环境变量 `DELEGATION_CHILD_TIMEOUT_SECONDS=<positive>` 重新启用墙钟 cap，自动 floor 到 30s（防止 user 误设极小值致使 subagent 来不及完成一次 API 调用就被杀）。`0` 或负值显式表示 disabled。
 
 ### 使用示例
 
